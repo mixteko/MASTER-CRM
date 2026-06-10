@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mini Farmacia | Tienda por WhatsApp</title>
+    <meta
+      name="description"
+      content="Tienda demo de Mini Farmacia conectada a un flujo inicial de WhatsApp."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#inicio" aria-label="Ir al inicio">
+        <img class="brand-logo" src="assets/mini-farmacia-logo.svg" alt="" aria-hidden="true" />
+        <span>
+          <strong>Mini Farmacia</strong>
+          <small>SICMA Marketplace</small>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="Navegación principal">
+        <a href="#tienda">Tienda</a>
+        <a href="#whatsapp">WhatsApp</a>
+        <a href="#pedidos">Pedidos</a>
+      </nav>
+
+      <div class="topbar-actions">
+        <button class="icon-button" id="accountButton" type="button" aria-label="Cuenta">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 21a8 8 0 0 0-16 0" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        </button>
+        <button class="cart-button" id="cartButton" type="button" aria-label="Abrir carrito">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="9" cy="21" r="1" />
+            <circle cx="20" cy="21" r="1" />
+            <path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h8.7a2 2 0 0 0 2-1.6L23 6H6" />
+          </svg>
+          <span id="cartCount">0</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" id="inicio">
+        <div class="hero-pattern" aria-hidden="true"></div>
+        <div class="hero-content">
+          <img
+            class="hero-logo"
+            src="assets/mini-farmacia-logo.svg"
+            alt="Mini Farmacia"
+          />
+          <p class="eyebrow">Mini Farmacia México</p>
+          <h1>Compra fácil desde WhatsApp</h1>
+          <p>
+            Catálogo de medicamentos, registro de clientes, carrito, cobro y envío
+            desde una liga compartida por WhatsApp.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#tienda">Comprar ahora</a>
+            <a class="secondary-link" href="#whatsapp">Probar bienvenida</a>
+          </div>
+        </div>
+        <aside class="hero-showcase" aria-label="Vista rápida de la tienda">
+          <div class="showcase-tag">!SUPER PRECIOS!</div>
+          <div class="showcase-card">
+            <img src="assets/pharmacy-hero.png" alt="" />
+            <div>
+              <strong>Tienda conectada</strong>
+              <span>Productos, favoritos, carrito y envíos.</span>
+            </div>
+          </div>
+          <div class="mini-metrics">
+            <span>Venta libre</span>
+            <span>Receta</span>
+            <span>Local/Nacional</span>
+          </div>
+        </aside>
+      </section>
+
+      <section class="store-section" id="tienda" aria-labelledby="storeTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Catálogo</p>
+            <h2 id="storeTitle">Medicamentos y cuidado personal</h2>
+          </div>
+          <div class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <input id="searchInput" type="search" placeholder="Buscar producto" />
+          </div>
+        </div>
+
+        <div class="category-tabs" id="categoryTabs" role="tablist" aria-label="Categorías"></div>
+        <div class="product-grid" id="productGrid"></div>
+      </section>
+
+      <section class="workflow-section" id="whatsapp" aria-labelledby="whatsappTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Entrada de clientes</p>
+            <h2 id="whatsappTitle">WhatsApp conectado a la tienda</h2>
+          </div>
+        </div>
+
+        <div class="whatsapp-layout">
+          <article class="phone-shell" aria-label="Simulación de chat de WhatsApp">
+            <div class="phone-header">
+              <img class="chat-logo" src="assets/mini-farmacia-logo.svg" alt="" aria-hidden="true" />
+              <div>
+                <strong>Mini Farmacia</strong>
+                <small>En línea</small>
+              </div>
+            </div>
+            <div class="chat-log" id="chatLog"></div>
+            <form class="chat-form" id="chatForm">
+              <input
+                id="incomingMessage"
+                type="text"
+                autocomplete="off"
+                placeholder="Mensaje del cliente"
+              />
+              <button class="icon-button" type="submit" aria-label="Enviar mensaje de prueba">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m22 2-7 20-4-9-9-4Z" />
+                  <path d="M22 2 11 13" />
+                </svg>
+              </button>
+            </form>
+          </article>
+
+          <aside class="ops-panel">
+            <div class="panel-row">
+              <label for="marketplaceUrl">Liga de tienda</label>
+              <input id="marketplaceUrl" type="url" value="https://minifarmacia.mx/tienda" />
+            </div>
+            <div class="panel-row">
+              <label for="businessPhone">WhatsApp de negocio</label>
+              <input id="businessPhone" type="tel" value="5218112345678" />
+            </div>
+            <div class="panel-row">
+              <label for="welcomeMessage">Mensaje de bienvenida</label>
+              <textarea id="welcomeMessage" rows="5"></textarea>
+            </div>
+            <button class="primary-button" id="copyWelcomeButton" type="button">
+              Copiar respuesta
+            </button>
+            <div class="integration-note">
+              <strong>Webhook listo para backend</strong>
+              <p>
+                El texto se arma con la liga configurable y queda preparado para
+                conectarse a WhatsApp Cloud API, Twilio o una sesión web controlada.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="orders-section" id="pedidos" aria-labelledby="ordersTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Seguimiento</p>
+            <h2 id="ordersTitle">Pedidos recientes</h2>
+          </div>
+        </div>
+        <div class="orders-list" id="ordersList"></div>
+      </section>
+    </main>
+
+    <aside class="drawer" id="cartDrawer" aria-hidden="true">
+      <div class="drawer-backdrop" data-close-drawer></div>
+      <div class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
+        <div class="drawer-header">
+          <h2 id="cartTitle">Carrito</h2>
+          <button class="icon-button" type="button" data-close-drawer aria-label="Cerrar carrito">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="cart-items" id="cartItems"></div>
+
+        <form class="checkout" id="checkoutForm">
+          <label>
+            Tipo de envío
+            <select id="shippingType">
+              <option value="local">Local</option>
+              <option value="national">Nacional</option>
+            </select>
+          </label>
+          <label>
+            Forma de pago
+            <select id="paymentMethod">
+              <option value="Tarjeta">Tarjeta</option>
+              <option value="Transferencia">Transferencia</option>
+              <option value="Efectivo al recibir">Efectivo al recibir</option>
+            </select>
+          </label>
+          <label>
+            Dirección de entrega
+            <textarea id="deliveryAddress" rows="3" placeholder="Calle, colonia, ciudad"></textarea>
+          </label>
+
+          <div class="totals">
+            <div><span>Subtotal</span><strong id="subtotalAmount">$0</strong></div>
+            <div><span>Envío</span><strong id="shippingAmount">$0</strong></div>
+            <div class="total-line"><span>Total</span><strong id="totalAmount">$0</strong></div>
+          </div>
+
+          <button class="primary-button" type="submit">Confirmar pedido</button>
+          <a class="whatsapp-link" id="whatsappOrderLink" href="#" target="_blank" rel="noreferrer">
+            Enviar resumen por WhatsApp
+          </a>
+        </form>
+      </div>
+    </aside>
+
+    <dialog class="account-dialog" id="accountDialog">
+      <form method="dialog" class="dialog-close-form">
+        <button class="icon-button" type="submit" aria-label="Cerrar cuenta">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
+      </form>
+
+      <form class="account-form" id="accountForm">
+        <p class="eyebrow">Cuenta de cliente</p>
+        <h2>Registro y acceso</h2>
+        <div class="form-grid">
+          <label>
+            Nombre
+            <input id="customerName" type="text" required />
+          </label>
+          <label>
+            Teléfono
+            <input id="customerPhone" type="tel" required />
+          </label>
+          <label>
+            Correo
+            <input id="customerEmail" type="email" required />
+          </label>
+          <label>
+            Contraseña
+            <input id="customerPassword" type="password" required minlength="6" />
+          </label>
+          <label class="full-field">
+            Dirección
+            <textarea id="customerAddress" rows="3" required></textarea>
+          </label>
+        </div>
+        <button class="primary-button" type="submit">Guardar cuenta</button>
+        <p class="saved-user" id="savedUser"></p>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
