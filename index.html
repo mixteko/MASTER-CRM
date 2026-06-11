@@ -166,7 +166,7 @@
               <h2>Farmacia en linea</h2>
               <p>Esta es la pantalla que recibe el cliente desde la liga enviada por WhatsApp.</p>
             </div>
-            <button class="primary-button" type="button" id="storeLoginButton">Registrarme / iniciar sesion</button>
+            <button class="primary-button" type="button" id="storeLoginButton">Iniciar sesion</button>
           </header>
 
           <div class="store-toolbar">
@@ -418,7 +418,20 @@
       <form method="dialog" class="dialog-close-form">
         <button class="ghost-button" type="submit">Cerrar</button>
       </form>
-      <form class="account-form" id="storeCustomerForm">
+      <form class="account-form" id="storeLoginForm">
+        <div class="account-intro">
+          <img src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
+          <p class="account-breadcrumb">Inicio · Mi cuenta · Iniciar sesion</p>
+          <h2>Iniciar sesion</h2>
+          <p>Entra con tu correo para continuar tu pedido y revisar tus datos de entrega.</p>
+        </div>
+        <label>Correo electronico <input id="storeLoginEmail" type="email" placeholder="ej. tuemail@email.com" required /></label>
+        <label>Contrasena <input id="storeLoginPassword" type="password" placeholder="ej. tucontrasena" required /></label>
+        <button class="primary-button store-register-button" type="submit">Iniciar sesion</button>
+        <p class="account-login-link">No tienes cuenta? <button id="showRegisterButton" type="button">Registrate</button></p>
+      </form>
+
+      <form class="account-form is-hidden" id="storeCustomerForm">
         <div class="account-intro">
           <img src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
           <p class="account-breadcrumb">Inicio · Mi cuenta · Crear cuenta</p>
@@ -437,7 +450,7 @@
           <small>Verificacion de cuenta</small>
         </label>
         <button class="primary-button store-register-button" type="submit">Crear cuenta</button>
-        <p class="account-login-link">Ya tienes una cuenta? <button type="button">Inicia sesion</button></p>
+        <p class="account-login-link">Ya tienes una cuenta? <button id="showLoginButton" type="button">Inicia sesion</button></p>
       </form>
     </dialog>
 

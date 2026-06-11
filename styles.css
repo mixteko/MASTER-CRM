@@ -978,6 +978,10 @@ td span {
   background: #fff;
 }
 
+.account-form.is-hidden {
+  display: none;
+}
+
 .account-intro {
   display: grid;
   justify-items: center;

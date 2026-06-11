@@ -190,6 +190,9 @@ const elements = {
   storeShipping: $("#storeShipping"),
   storeTotal: $("#storeTotal"),
   customerDialog: $("#customerDialog"),
+  storeLoginForm: $("#storeLoginForm"),
+  storeLoginEmail: $("#storeLoginEmail"),
+  storeLoginPassword: $("#storeLoginPassword"),
   storeCustomerForm: $("#storeCustomerForm"),
   storeRegisterName: $("#storeRegisterName"),
   storeRegisterPhone: $("#storeRegisterPhone"),
@@ -198,6 +201,8 @@ const elements = {
   storeRegisterConfirmPassword: $("#storeRegisterConfirmPassword"),
   storeRegisterAddress: $("#storeRegisterAddress"),
   storeRegisterRobot: $("#storeRegisterRobot"),
+  showRegisterButton: $("#showRegisterButton"),
+  showLoginButton: $("#showLoginButton"),
   customerForm: $("#customerForm"),
   customerFormTitle: $("#customerFormTitle"),
   customerId: $("#customerId"),
@@ -259,12 +264,15 @@ function bindEvents() {
     state.storeCategory = event.target.value;
     renderStore();
   });
-  elements.storeLoginButton.addEventListener("click", () => elements.customerDialog.showModal());
+  elements.storeLoginButton.addEventListener("click", openLoginDialog);
   elements.clearStoreCartButton.addEventListener("click", clearStoreCart);
   elements.storeDeliveryType.addEventListener("change", renderStoreCart);
   elements.storeCustomer.addEventListener("change", fillStoreCustomerAddress);
   elements.storeCheckoutForm.addEventListener("submit", createOnlineOrder);
+  elements.storeLoginForm.addEventListener("submit", loginStoreCustomer);
   elements.storeCustomerForm.addEventListener("submit", saveStoreCustomer);
+  elements.showRegisterButton.addEventListener("click", () => showAccountView("register"));
+  elements.showLoginButton.addEventListener("click", () => showAccountView("login"));
 
   elements.customerForm.addEventListener("submit", saveCustomer);
   elements.clearCustomerForm.addEventListener("click", clearCustomerForm);
@@ -579,6 +587,33 @@ function createOnlineOrder(event) {
   elements.storeCheckoutForm.reset();
   renderAll();
   showToast(`Pedido ${order.id} generado`);
+}
+
+function openLoginDialog() {
+  showAccountView("login");
+  elements.customerDialog.showModal();
+}
+
+function showAccountView(view) {
+  const isRegister = view === "register";
+  elements.storeLoginForm.classList.toggle("is-hidden", isRegister);
+  elements.storeCustomerForm.classList.toggle("is-hidden", !isRegister);
+}
+
+function loginStoreCustomer(event) {
+  event.preventDefault();
+  const email = elements.storeLoginEmail.value.trim().toLowerCase();
+  const customer = state.customers.find((item) => (item.email || "").toLowerCase() === email);
+  if (!customer) {
+    showAccountView("register");
+    elements.storeRegisterEmail.value = elements.storeLoginEmail.value.trim();
+    return showToast("No encontramos esa cuenta. Completa tu registro");
+  }
+  elements.customerDialog.close();
+  elements.storeLoginForm.reset();
+  elements.storeCustomer.value = customer.id;
+  elements.storeAddress.value = customer.address || "";
+  showToast("Sesion iniciada");
 }
 
 function saveStoreCustomer(event) {
