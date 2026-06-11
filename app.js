@@ -445,12 +445,15 @@ function renderStore() {
                 <p class="product-category">${escapeHTML(product.category)}</p>
                 <h3>${escapeHTML(product.name)}</h3>
                 <p>${escapeHTML(product.description)}</p>
+                <p>Precio: ${currency.format(product.price)}</p>
+                <p>Stock: ${product.stock}</p>
               </div>
               <div class="product-actions">
-                <strong>${currency.format(product.price)}</strong>
+                <strong>Cantidad 1</strong>
                 <button class="primary-button small" type="button" data-action="add-store-item" data-id="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>
-                  Agregar
+                  Agregar al carrito
                 </button>
+                <button class="ghost-button small" type="button">♡ Favoritos</button>
               </div>
             </article>
           `,
