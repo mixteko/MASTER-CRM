@@ -1,41 +1,70 @@
-# Mini Farmacia
+# PROJECT_CONTEXT
 
-Objetivo:
+## Proyecto
 
-Crear una app web sencilla para administrar una farmacia local.
+Mini Farmacia CRM
 
-Módulos:
+## Objetivo
 
-- Dashboard
-- Productos
-- Inventario
-- Ventas
-- Clientes
-- Pagos
-- WhatsApp
+Permitir que clientes de una farmacia realicen pedidos desde un enlace enviado por WhatsApp.
 
-Funciones principales:
+## Tecnologías
 
-- Agregar productos
-- Editar productos
-- Controlar existencias
-- Registrar ventas
-- Calcular total
-- Registrar método de pago
-- Preparar pedido
-- Enviar resumen por WhatsApp
+* HTML
+* CSS
+* JavaScript Vanilla
+* LocalStorage
 
-Tecnología inicial:
+## Funciones actuales
 
-- HTML
-- CSS
-- JavaScript
+### Clientes
 
-Futuro:
+* Registro
+* Inicio de sesión
+* Dirección de entrega
 
-- Supabase
-- Usuarios
-- Roles
-- WhatsApp Cloud API
-- Mercado Pago
-- Clip
+### Productos
+
+* Catálogo
+* Categorías
+* Búsqueda
+* Inventario demo
+
+### Carrito
+
+* Agregar productos
+* Modificar cantidades
+* Eliminar productos
+* Calcular total
+
+### Pedidos
+
+* Confirmación
+* Historial local
+
+### WhatsApp
+
+* Enlace wa.me
+* Mensaje de bienvenida
+* Envío de resumen de pedido
+
+## Estado actual
+
+Frontend funcional.
+
+Sin backend.
+
+Persistencia mediante LocalStorage.
+
+## Futuras integraciones
+
+* Node.js
+* PostgreSQL
+* Mercado Pago
+* Clip
+* WhatsApp Cloud API
+* Panel administrativo
+
+## Flujo principal
+
+WhatsApp → Catálogo → Carrito → Confirmación → Pedido

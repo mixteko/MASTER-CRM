@@ -1,26 +1,33 @@
-# Mini Farmacia
+# AGENTS
 
-Reglas obligatorias para Codex:
+## Objetivo
 
-1. Siempre entregar archivos completos.
-2. Nunca entregar fragmentos de código.
-3. Indicar el nombre exacto del archivo modificado.
-4. Mantener estructura simple: index.html, styles.css y app.js.
-5. Antes de modificar, analizar impacto.
-6. Después de modificar, explicar cambios.
-7. Mantener diseño moderno, limpio y responsive.
-8. No romper funciones existentes.
+Mantener Mini Farmacia CRM.
 
-Proyecto:
+## Reglas
 
-Mini sistema para farmacia local con:
+* Modificar únicamente lo solicitado.
+* Reutilizar código existente.
+* No agregar frameworks.
+* Mantener JavaScript Vanilla.
+* Mantener compatibilidad móvil.
+* Evitar código duplicado.
+* Corregir errores antes de agregar funciones.
+* Conservar nombres actuales de variables y funciones cuando sea posible.
 
-- Productos
-- Inventario
-- Ventas
-- Clientes
-- Carrito
-- Total de compra
-- Métodos de pago
-- Preparado para WhatsApp
-- Preparado para Mercado Pago o Clip
+## Archivos principales
+
+* index.html
+* styles.css
+* app.js
+
+## Verificación
+
+Antes de finalizar:
+
+* Sin errores en consola.
+* Carrito funcional.
+* Registro funcional.
+* WhatsApp funcional.
+* Responsive funcional.
+

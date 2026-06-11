@@ -2,20 +2,20 @@
 
 :root {
   color-scheme: light;
-  --ink: #101322;
+  --ink: #182033;
   --muted: #667085;
-  --line: #e7e9f4;
+  --line: #e5e8f0;
   --panel: #ffffff;
-  --page: #f7f8ff;
+  --page: #f6f7fb;
   --red: #ef0b36;
-  --pink: #ff2bbf;
-  --blue: #0057ff;
-  --cyan: #00d6c9;
-  --violet: #6c2cff;
+  --pink: #d92f7f;
+  --blue: #1f4fd8;
+  --cyan: #14b8a6;
+  --violet: #5a47d6;
   --green: #119c68;
   --amber: #c47a00;
   --danger: #c92a42;
-  --shadow: 0 20px 48px rgba(22, 25, 45, 0.12);
+  --shadow: 0 14px 34px rgba(24, 32, 51, 0.08);
 }
 
 * {
@@ -30,12 +30,10 @@ body {
   margin: 0;
   color: var(--ink);
   background:
-    radial-gradient(circle at 20% -8%, rgba(0, 214, 201, 0.22), transparent 34%),
-    radial-gradient(circle at 100% 0%, rgba(255, 43, 191, 0.16), transparent 30%),
-    linear-gradient(180deg, #fbfcff 0%, #f3f5ff 100%),
+    linear-gradient(180deg, #fbfcff 0%, #f4f6fb 44%, #eef2f7 100%),
     var(--page);
   font-family:
-    Outfit, "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   text-rendering: geometricPrecision;
 }
@@ -67,8 +65,8 @@ button:disabled {
   height: 100vh;
   padding: 20px 16px;
   border-right: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(14px);
 }
 
 .brand {
@@ -76,7 +74,7 @@ button:disabled {
   gap: 8px;
   padding: 6px 8px 24px;
   color: var(--blue);
-  font-weight: 950;
+  font-weight: 850;
   text-decoration: none;
 }
 
@@ -92,7 +90,7 @@ button:disabled {
   padding: 5px 11px;
   border-radius: 999px;
   color: #fff;
-  background: linear-gradient(135deg, #101322, var(--blue) 48%, var(--pink));
+  background: #182033;
   font-size: 0.74rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -107,7 +105,7 @@ button:disabled {
   margin: 16px 8px 4px;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -123,12 +121,12 @@ button:disabled {
   padding: 0 12px;
   color: #3f4857;
   background: transparent;
-  font-weight: 850;
+  font-weight: 750;
   text-align: left;
   transition:
     background 160ms ease,
     color 160ms ease,
-    transform 160ms ease;
+    box-shadow 160ms ease;
 }
 
 .nav-item span {
@@ -138,16 +136,16 @@ button:disabled {
   place-items: center;
   border-radius: 8px;
   color: var(--blue);
-  background: linear-gradient(135deg, #eef2ff, #f5f8ff);
+  background: #eef3ff;
   font-size: 0.74rem;
-  font-weight: 950;
+  font-weight: 800;
 }
 
 .nav-item.active,
 .nav-item:hover {
-  color: #07122f;
-  background: linear-gradient(135deg, rgba(0, 87, 255, 0.13), rgba(255, 43, 191, 0.11));
-  transform: translateX(2px);
+  color: #14213d;
+  background: #eef4ff;
+  box-shadow: inset 3px 0 0 var(--blue);
 }
 
 .nav-badge,
@@ -162,7 +160,7 @@ button:disabled {
   place-items: center;
   border-radius: 7px;
   color: #fff;
-  background: linear-gradient(135deg, var(--blue), var(--pink));
+  background: var(--blue);
   font-size: 0.78rem;
 }
 
@@ -203,10 +201,10 @@ button:disabled {
 
 .eyebrow {
   margin: 0 0 6px;
-  color: var(--pink);
+  color: var(--blue);
   font-size: 0.72rem;
-  font-weight: 950;
-  letter-spacing: 0.14em;
+  font-weight: 850;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -224,20 +222,22 @@ h3 {
 }
 
 h1 {
-  font-size: clamp(2.35rem, 4.2vw, 4rem);
-  line-height: 0.9;
-  font-weight: 950;
+  font-family: Outfit, "Plus Jakarta Sans", Inter, sans-serif;
+  font-size: clamp(2rem, 3.5vw, 3.35rem);
+  line-height: 1;
+  font-weight: 850;
 }
 
 h2 {
-  font-size: clamp(1.45rem, 2.5vw, 2.35rem);
-  line-height: 0.98;
-  font-weight: 950;
+  font-family: Outfit, "Plus Jakarta Sans", Inter, sans-serif;
+  font-size: clamp(1.35rem, 2.2vw, 2.05rem);
+  line-height: 1.04;
+  font-weight: 850;
 }
 
 h3 {
   font-size: 1rem;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .primary-button,
@@ -249,7 +249,7 @@ h3 {
   min-height: 42px;
   border-radius: 8px;
   padding: 0 14px;
-  font-weight: 900;
+  font-weight: 800;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -257,12 +257,12 @@ h3 {
 .primary-button {
   border: 0;
   color: #fff;
-  background: linear-gradient(135deg, #101322, var(--blue) 45%, var(--pink));
-  box-shadow: 0 14px 28px rgba(0, 87, 255, 0.22);
+  background: var(--blue);
+  box-shadow: 0 10px 22px rgba(31, 79, 216, 0.18);
 }
 
 .primary-button:hover {
-  filter: saturate(1.08) brightness(0.98);
+  background: #183fb1;
 }
 
 .primary-button:disabled {
@@ -272,7 +272,7 @@ h3 {
 .ghost-button {
   border: 1px solid var(--line);
   color: var(--blue);
-  background: rgba(255, 255, 255, 0.82);
+  background: #fff;
 }
 
 .ghost-button:hover {
@@ -289,8 +289,8 @@ h3 {
 
 .status-pill {
   min-height: 30px;
-  color: #07122f;
-  background: linear-gradient(135deg, rgba(0, 214, 201, 0.22), rgba(255, 43, 191, 0.16));
+  color: #0f6259;
+  background: #e7f8f5;
   font-size: 0.78rem;
 }
 
@@ -306,7 +306,7 @@ h3 {
 .metric-card {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--panel);
   box-shadow: var(--shadow);
 }
 
@@ -340,7 +340,7 @@ h3 {
   width: 120px;
   height: 120px;
   border-radius: 999px;
-  background: rgba(22, 72, 255, 0.08);
+  background: rgba(20, 184, 166, 0.08);
   content: "";
 }
 
@@ -356,16 +356,17 @@ label {
 .metric-card span {
   display: block;
   font-size: 0.86rem;
-  font-weight: 850;
+  font-weight: 750;
 }
 
 .metric-card strong {
   display: block;
   margin: 12px 0 4px;
   color: var(--ink);
-  font-size: clamp(1.95rem, 3.4vw, 2.8rem);
-  line-height: 0.92;
-  font-weight: 950;
+  font-family: Outfit, "Plus Jakarta Sans", Inter, sans-serif;
+  font-size: clamp(1.75rem, 3vw, 2.45rem);
+  line-height: 1;
+  font-weight: 850;
 }
 
 .metric-card small {
@@ -414,7 +415,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
+  background: #fff;
   color: var(--ink);
 }
 
@@ -432,8 +433,8 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: rgba(249, 45, 147, 0.65);
-  outline: 3px solid rgba(249, 45, 147, 0.12);
+  border-color: rgba(31, 79, 216, 0.6);
+  outline: 3px solid rgba(31, 79, 216, 0.12);
 }
 
 .inline-search {
@@ -491,7 +492,7 @@ td span {
   padding: 0 9px;
   border-radius: 999px;
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .badge.success {
@@ -531,7 +532,7 @@ td span {
 
 .list-row strong,
 .ticket-line strong {
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .list-row:last-child,
@@ -549,7 +550,7 @@ td span {
 .list-row em {
   color: var(--blue);
   font-style: normal;
-  font-weight: 900;
+  font-weight: 800;
   text-align: right;
 }
 
@@ -601,7 +602,7 @@ td span {
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--panel);
 }
 
 .avatar {
@@ -611,8 +612,8 @@ td span {
   place-items: center;
   border-radius: 8px;
   color: #fff;
-  background: linear-gradient(135deg, var(--blue), var(--pink));
-  font-weight: 950;
+  background: linear-gradient(135deg, var(--blue), var(--cyan));
+  font-weight: 850;
 }
 
 .customer-card h3,
@@ -643,7 +644,7 @@ td span {
   color: var(--blue);
   background: #eef2ff;
   font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .empty-state {
@@ -667,9 +668,9 @@ td span {
   padding: 9px 10px;
   border-radius: 8px;
   color: #0f3fb5;
-  background: linear-gradient(135deg, #eef2ff, #eafffb);
+  background: #eef6ff;
   font-size: 0.82rem;
-  font-weight: 900;
+  font-weight: 800;
   text-align: center;
 }
 
@@ -677,7 +678,7 @@ td span {
 .store-hero {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--panel);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -715,9 +716,7 @@ td span {
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  background:
-    radial-gradient(circle at 18% 10%, rgba(34, 199, 184, 0.1), transparent 28%),
-    #f8fafc;
+  background: #f6f8fb;
   overflow: auto;
 }
 
@@ -726,13 +725,14 @@ td span {
   padding: 10px 12px;
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 8px 18px rgba(24, 32, 46, 0.08);
+  box-shadow: 0 7px 16px rgba(24, 32, 46, 0.06);
   line-height: 1.42;
 }
 
 .bubble.business {
   align-self: flex-end;
-  background: linear-gradient(135deg, #dcfff9, #eef2ff);
+  color: #0d4d45;
+  background: #ddf8f2;
 }
 
 .bubble.customer {
@@ -760,7 +760,7 @@ td span {
   border-left: 4px solid var(--cyan);
   border-radius: 8px;
   color: #31505b;
-  background: #eafffb;
+  background: #edfdfa;
   font-size: 0.9rem;
   line-height: 1.45;
 }
@@ -774,8 +774,7 @@ td span {
   padding: 26px;
   color: #fff;
   background:
-    radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.18), transparent 30%),
-    linear-gradient(135deg, #101322 0%, #0057ff 42%, #ff2bbf 100%);
+    linear-gradient(135deg, rgba(239, 11, 54, 0.92) 0%, rgba(31, 79, 216, 0.92) 55%, rgba(20, 184, 166, 0.92) 100%);
 }
 
 .store-hero img {
@@ -825,7 +824,7 @@ td span {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--panel);
   box-shadow: var(--shadow);
 }
 
@@ -835,7 +834,7 @@ td span {
   border-radius: 8px;
   background:
     radial-gradient(circle at 24% 30%, rgba(255, 255, 255, 0.9) 0 18px, transparent 19px),
-    linear-gradient(135deg, #0057ff, #00d6c9);
+    linear-gradient(135deg, #eaf0ff, #d9fbf5);
   overflow: hidden;
 }
 
@@ -846,16 +845,16 @@ td span {
   padding: 5px 8px;
   border-radius: 6px;
   color: #fff;
-  background: rgba(17, 24, 39, 0.78);
+  background: rgba(24, 32, 51, 0.86);
   font-size: 0.72rem;
-  font-weight: 950;
+  font-weight: 850;
 }
 
 .product-category {
   margin: 14px 0 6px;
   color: var(--blue) !important;
   font-size: 0.78rem;
-  font-weight: 950;
+  font-weight: 850;
   text-transform: uppercase;
 }
 
@@ -877,7 +876,7 @@ td span {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--panel);
   box-shadow: var(--shadow);
 }
 
@@ -892,7 +891,7 @@ td span {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: linear-gradient(135deg, #f8fafc, #ffffff);
+  background: #f8fafc;
 }
 
 .account-dialog {
@@ -929,7 +928,7 @@ td span {
   padding: 12px 14px;
   border-radius: 8px;
   color: #fff;
-  background: linear-gradient(135deg, #101322, var(--blue), var(--pink));
+  background: #182033;
   text-align: center;
   box-shadow: var(--shadow);
   opacity: 0;

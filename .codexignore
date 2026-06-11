@@ -1,0 +1,58 @@
+# Dependencias
+
+node_modules/
+
+# Git
+
+.git/
+
+# Logs
+
+*.log
+
+# Builds
+
+dist/
+build/
+
+# Caché
+
+.cache/
+
+# Sistema Mac
+
+.DS_Store
+
+# Imágenes pesadas
+
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# PDFs
+
+*.pdf
+
+# Videos
+
+*.mp4
+*.mov
+
+# Archivos temporales
+
+tmp/
+temp/
+
+# Backups
+
+backup/
+backups/
+
+# VS Code
+
+.vscode/
+
+# Reportes
+
+coverage/
