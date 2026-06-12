@@ -99,7 +99,7 @@ async function handleIncomingWebhook(request, response) {
 
     for (const message of messages) {
       console.log("WEBHOOK NUMERO RECIBIDO:", message.from);
-      const reply = await buildChatbotReply(message.text);
+      const reply = await buildChatbotReply(message.text, message.from);
       if (reply) {
         try {
           await sendWhatsAppMessage(message.from, reply);
@@ -139,8 +139,9 @@ function extractIncomingMessages(body) {
   });
 }
 
-async function buildChatbotReply(text) {
-  const fixedReply = buildFixedReply(text);
+async function buildChatbotReply(text, from) {
+  const botConfig = loadBotConfig();
+  const fixedReply = await buildFixedReply(text, from, botConfig);
   if (fixedReply) return fixedReply;
   if (AI_ENABLED) {
     console.log("IA ACTIVADA");
@@ -149,34 +150,56 @@ async function buildChatbotReply(text) {
   return "Gracias por escribir a Mini Farmacia. Por ahora puedo ayudarte con: horario, ubicacion, medicamento, pedido o asesor.";
 }
 
-function buildFixedReply(text) {
+async function buildFixedReply(text, from, botConfig) {
   const normalizedText = normalizeText(text);
+  const respuestas = botConfig.respuestas || {};
+  const negocio = botConfig.negocio || {};
+  const sinDato = respuestas.sin_dato || "Por ahora no tengo ese dato disponible. Un asesor te apoyara lo antes posible.";
 
   if (normalizedText.includes("hola")) {
-    return "Hola, gracias por escribir a Mini Farmacia. Puedes preguntar por horario, ubicacion, pedido o escribir asesor para atencion personalizada.";
+    return respuestas.hola || sinDato;
   }
 
   if (normalizedText.includes("horario")) {
-    return "Nuestro horario de atencion es de lunes a sabado de 9:00 AM a 7:00 PM.";
+    return negocio.horario || sinDato;
   }
 
   if (normalizedText.includes("ubicacion")) {
-    return "Estamos en Monterrey, Nuevo Leon. Comparte tu zona y te ayudamos con entrega local o nacional.";
+    return negocio.direccion || sinDato;
   }
 
   if (normalizedText.includes("medicamento")) {
-    return "Claro. Escribenos el nombre del medicamento, presentacion y cantidad que necesitas para revisar disponibilidad.";
+    return respuestas.medicamento || sinDato;
   }
 
   if (normalizedText.includes("pedido")) {
-    return "Para revisar tu pedido, compartenos tu nombre completo y numero de pedido.";
+    return respuestas.pedido || sinDato;
   }
 
-  if (normalizedText.includes("asesor")) {
-    return "Un asesor de Mini Farmacia revisara tu mensaje y te respondera lo antes posible.";
+  if (normalizedText.includes("asesor") || normalizedText.includes("humano")) {
+    if (!respuestas.asesor) return sinDato;
+    await sendAdminAlerts(botConfig, from, text);
+    return respuestas.asesor;
   }
 
   return "";
+}
+
+async function sendAdminAlerts(botConfig, from, text) {
+  const admins = Array.isArray(botConfig.admins) ? botConfig.admins : [];
+  const negocio = botConfig.negocio || {};
+  const sinDato = botConfig.respuestas?.sin_dato || "Por ahora no tengo ese dato disponible. Un asesor te apoyara lo antes posible.";
+  if (!admins.length) return;
+
+  const alertMessage = `Alerta de asesor humano - ${negocio.nombre || "Mini Farmacia"}\nCliente: ${cleanPhone(from) || sinDato}\nMensaje: ${text}`;
+
+  for (const admin of admins) {
+    try {
+      await sendWhatsAppMessage(admin, alertMessage);
+    } catch (error) {
+      console.error("No se pudo alertar al administrador:", admin, error.message);
+    }
+  }
 }
 
 async function getDeepSeekReply(text) {
@@ -223,6 +246,25 @@ async function getDeepSeekReply(text) {
   } catch (error) {
     console.error("DEEPSEEK REQUEST ERROR:", error.message);
     return "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
+  }
+}
+
+function loadBotConfig() {
+  const configPath = join(__dirname, "bot-config.json");
+  const fallback = {
+    negocio: {},
+    admins: [],
+    respuestas: {
+      sin_dato: "Por ahora no tengo ese dato disponible. Un asesor te apoyara lo antes posible.",
+    },
+  };
+
+  try {
+    if (!existsSync(configPath)) return fallback;
+    return JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (error) {
+    console.error("No se pudo leer bot-config.json:", error.message);
+    return fallback;
   }
 }
 

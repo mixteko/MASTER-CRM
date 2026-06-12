@@ -1,0 +1,17 @@
+{
+  "negocio": {
+    "nombre": "Mini Farmacia",
+    "horario": "Nuestro horario de atencion es de lunes a sabado de 9:00 AM a 7:00 PM.",
+    "direccion": "Estamos en Monterrey, Nuevo Leon. Comparte tu zona y te ayudamos con entrega local o nacional."
+  },
+  "admins": [
+    "528113116539"
+  ],
+  "respuestas": {
+    "hola": "Hola, gracias por escribir a Mini Farmacia. Puedes preguntar por horario, ubicacion, medicamento, pedido o escribir asesor para atencion personalizada.",
+    "medicamento": "Claro. Escribenos el nombre del medicamento, presentacion y cantidad que necesitas para revisar disponibilidad.",
+    "pedido": "Para revisar tu pedido, compartenos tu nombre completo y numero de pedido.",
+    "asesor": "Un asesor de Mini Farmacia revisara tu mensaje y te respondera lo antes posible.",
+    "sin_dato": "Por ahora no tengo ese dato disponible. Un asesor te apoyara lo antes posible."
+  }
+}
