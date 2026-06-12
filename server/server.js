@@ -178,7 +178,7 @@ async function sendWhatsAppMessage(telefono, mensaje) {
     throw new Error("Credenciales de WhatsApp no configuradas");
   }
 
-  const whatsappResponse = await fetch(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+  const whatsappResponse = await fetch(`https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${WHATSAPP_TOKEN}`,
