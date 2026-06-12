@@ -13,6 +13,7 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mini_farmacia_webhook_2026";
 
 const server = createServer(async (request, response) => {
+  console.log("REQUEST:", request.method, request.url);
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
