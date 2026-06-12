@@ -4308,6 +4308,7 @@ const elements = {
   conversationList: $("#conversationList"),
   storeSearch: $("#storeSearch"),
   storeCategory: $("#storeCategory"),
+  storeCategoryMenu: $("#storeCategoryMenu"),
   storeProductGrid: $("#storeProductGrid"),
   storeLoginButton: $("#storeLoginButton"),
   storeCartList: $("#storeCartList"),
@@ -4402,6 +4403,11 @@ function bindEvents() {
   elements.storeCategory.addEventListener("change", (event) => {
     state.storeCategory = event.target.value;
     renderStore();
+    scrollStoreSection("products");
+  });
+  elements.storeCategoryMenu.addEventListener("click", handleStoreCategoryClick);
+  $$("[data-store-scroll]").forEach((button) => {
+    button.addEventListener("click", () => scrollStoreSection(button.dataset.storeScroll));
   });
   elements.storeLoginButton.addEventListener("click", openLoginDialog);
   elements.clearStoreCartButton.addEventListener("click", clearStoreCart);
@@ -4567,6 +4573,20 @@ function renderStore() {
     .map((category) => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`)
     .join("");
   elements.storeCategory.value = state.storeCategory;
+  elements.storeCategoryMenu.innerHTML = categories
+    .map((category) => {
+      const count =
+        category === "Todas"
+          ? state.products.filter((product) => product.status === "Activo").length
+          : state.products.filter((product) => product.status === "Activo" && product.category === category).length;
+      return `
+        <button class="${category === state.storeCategory ? "active" : ""}" type="button" data-category="${escapeHTML(category)}">
+          <span>${escapeHTML(category)}</span>
+          <strong>${count}</strong>
+        </button>
+      `;
+    })
+    .join("");
 
   const products = state.products.filter((product) => {
     const matchesCategory = state.storeCategory === "Todas" || product.category === state.storeCategory;
@@ -4604,6 +4624,27 @@ function renderStore() {
     : emptyState("No hay productos disponibles.");
 
   renderStoreCart();
+}
+
+function handleStoreCategoryClick(event) {
+  const button = event.target.closest("[data-category]");
+  if (!button) return;
+  state.storeCategory = button.dataset.category;
+  elements.storeCategory.value = state.storeCategory;
+  renderStore();
+  scrollStoreSection("products");
+}
+
+function scrollStoreSection(section) {
+  const targets = {
+    home: "#storeHomeAnchor",
+    products: "#storeProductsAnchor",
+    categories: "#storeCategoriesAnchor",
+    promos: "#storePromosAnchor",
+    cart: ".store-cart",
+  };
+  const target = document.querySelector(targets[section] || "#storeProductsAnchor");
+  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function addStoreItem(productId) {

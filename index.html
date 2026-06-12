@@ -159,19 +159,75 @@
         </section>
 
         <section class="view" id="tienda">
-          <header class="store-hero">
-            <div>
-              <img src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
-              <p class="eyebrow">Vista cliente</p>
-              <h2>Farmacia en linea</h2>
-              <p>Esta es la pantalla que recibe el cliente desde la liga enviada por WhatsApp.</p>
+          <div class="storefront">
+            <div class="store-topline">
+              <span>Pedidos a domicilio</span>
+              <strong>+52 81 0000 0000</strong>
+              <em>Mexico</em>
             </div>
-            <button class="primary-button" type="button" id="storeLoginButton">Iniciar sesion</button>
-          </header>
 
-          <div class="store-toolbar">
-            <input id="storeSearch" type="search" placeholder="Buscar medicamento" />
-            <select id="storeCategory"></select>
+            <header class="storefront-header">
+              <img class="storefront-logo" src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
+              <div class="store-search-bar">
+                <input id="storeSearch" type="search" placeholder="Busca tu Medicamento" />
+                <button type="button" aria-label="Buscar">⌕</button>
+              </div>
+              <div class="store-delivery">
+                <strong>Entrega en:</strong>
+                <span>Monterrey</span>
+              </div>
+              <button class="store-icon-button" type="button" id="storeLoginButton">Cuenta</button>
+              <button class="store-icon-button store-cart-link" type="button" data-store-scroll="cart">Carrito</button>
+            </header>
+
+            <nav class="storefront-nav" aria-label="Menu de tienda">
+              <button type="button" data-store-scroll="home">Inicio</button>
+              <button type="button" data-store-scroll="products">Productos</button>
+              <button type="button" data-store-scroll="categories">Categorias</button>
+              <button type="button" data-store-scroll="promos">Promociones</button>
+              <button type="button" data-store-scroll="cart">Carrito</button>
+            </nav>
+
+            <section class="store-promo-banner" id="storeHomeAnchor">
+              <div>
+                <span>Promocion online</span>
+                <h2>Medicamentos con entrega local y nacional</h2>
+                <p>Compra desde WhatsApp, registra tu cuenta y da seguimiento a tus pedidos en Mini Farmacia.</p>
+              </div>
+              <strong>Productos originales</strong>
+            </section>
+
+            <section class="store-service-row" aria-label="Servicios">
+              <article><span>▣</span> Servicio a domicilio</article>
+              <article><span>◎</span> Yo paso</article>
+              <article><span>⌖</span> Rastrear mi pedido</article>
+              <article><span>◷</span> Horarios</article>
+            </section>
+
+            <section class="store-categories-section" id="storeCategoriesAnchor">
+              <div class="store-section-heading">
+                <h2>Categorias</h2>
+                <p>Explora el catalogo por tipo de producto.</p>
+              </div>
+              <div class="store-category-menu" id="storeCategoryMenu"></div>
+            </section>
+
+            <section class="store-promos-section" id="storePromosAnchor">
+              <h2>Promociones especiales</h2>
+              <div class="store-promo-grid">
+                <article>Precio especial en medicamentos seleccionados</article>
+                <article>Entrega local en Monterrey</article>
+                <article>Atencion por WhatsApp</article>
+              </div>
+            </section>
+
+            <div class="store-section-heading store-products-heading" id="storeProductsAnchor">
+              <div>
+                <h2>Productos del mes</h2>
+                <p>Catalogo actualizado desde plantilla PDV.</p>
+              </div>
+              <select id="storeCategory"></select>
+            </div>
           </div>
 
           <div class="store-layout">
