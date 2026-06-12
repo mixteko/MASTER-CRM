@@ -142,8 +142,11 @@ function extractIncomingMessages(body) {
 async function buildChatbotReply(text) {
   const fixedReply = buildFixedReply(text);
   if (fixedReply) return fixedReply;
-  if (AI_ENABLED) return await getDeepSeekReply(text);
-  return "Gracias por escribir a Mini Farmacia. Por ahora puedo ayudarte con: horario, ubicacion, pedido o asesor.";
+  if (AI_ENABLED) {
+    console.log("IA ACTIVADA");
+    return await getDeepSeekReply(text);
+  }
+  return "Gracias por escribir a Mini Farmacia. Por ahora puedo ayudarte con: horario, ubicacion, medicamento, pedido o asesor.";
 }
 
 function buildFixedReply(text) {
@@ -159,6 +162,10 @@ function buildFixedReply(text) {
 
   if (normalizedText.includes("ubicacion")) {
     return "Estamos en Monterrey, Nuevo Leon. Comparte tu zona y te ayudamos con entrega local o nacional.";
+  }
+
+  if (normalizedText.includes("medicamento")) {
+    return "Claro. Escribenos el nombre del medicamento, presentacion y cantidad que necesitas para revisar disponibilidad.";
   }
 
   if (normalizedText.includes("pedido")) {
@@ -178,6 +185,7 @@ async function getDeepSeekReply(text) {
   }
 
   try {
+    console.log("CONSULTA IA", text);
     const deepSeekResponse = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -190,7 +198,7 @@ async function getDeepSeekReply(text) {
           {
             role: "system",
             content:
-              "Eres el asistente de WhatsApp de Mini Farmacia en Mexico. Responde breve, amable y en espanol. No diagnostiques, no indiques dosis medicas y recomienda consultar a un profesional de salud cuando aplique. Si el cliente pide compra o disponibilidad, solicita nombre del medicamento, presentacion y cantidad.",
+              "Eres el asistente virtual de Mini Farmacia. Responde breve. Maximo 3 lineas. No des diagnosticos. No indiques tratamientos. No inventes precios. No inventes existencia. Si preguntan algo medico, indica que consulte a un profesional de salud.",
           },
           {
             role: "user",
@@ -209,7 +217,9 @@ async function getDeepSeekReply(text) {
       return "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
     }
 
-    return data.choices?.[0]?.message?.content?.trim() || "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
+    const reply = data.choices?.[0]?.message?.content?.trim() || "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
+    console.log("RESPUESTA IA", reply);
+    return reply;
   } catch (error) {
     console.error("DEEPSEEK REQUEST ERROR:", error.message);
     return "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
