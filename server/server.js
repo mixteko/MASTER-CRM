@@ -132,7 +132,11 @@ async function handleIncomingWebhook(request, response) {
       if (reply) {
         await saveOutgoingMessage(record, replyText(reply), reply.conversationStatus);
         try {
-          await sendWhatsAppReply(message.from, reply);
+          if (reply?.buttons?.length) {
+            await sendWhatsAppInteractiveButtons(message.from, reply.text, reply.buttons);
+          } else {
+            await sendWhatsAppMessage(message.from, replyText(reply));
+          }
         } catch (error) {
           console.error("No se pudo enviar respuesta automatica:", error.message);
         }
@@ -1109,8 +1113,8 @@ async function sendWhatsAppInteractiveButtons(telefono, mensaje, buttons) {
   });
 
   const data = await whatsappResponse.json();
-  console.log("INTERACTIVE STATUS:", whatsappResponse.status);
-  console.log("INTERACTIVE RESPONSE:", data);
+  console.log("WHATSAPP INTERACTIVE STATUS:", whatsappResponse.status);
+  console.log("WHATSAPP INTERACTIVE RESPONSE:", data);
 
   if (!whatsappResponse.ok) {
     console.error("WHATSAPP INTERACTIVE ERROR:", JSON.stringify(data, null, 2));
