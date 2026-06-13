@@ -13,6 +13,8 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mini_farmacia_webhook_2026";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const AI_ENABLED = process.env.AI_ENABLED === "true";
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const server = createServer(async (request, response) => {
   console.log("REQUEST:", request.method, request.url);
@@ -41,6 +43,11 @@ const server = createServer(async (request, response) => {
 
   if (request.method === "POST" && request.url === "/api/send-whatsapp") {
     await handleSendWhatsApp(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && request.url.startsWith("/api/conversations")) {
+    await handleGetConversations(response);
     return;
   }
 
@@ -99,8 +106,10 @@ async function handleIncomingWebhook(request, response) {
 
     for (const message of messages) {
       console.log("WEBHOOK NUMERO RECIBIDO:", message.from);
+      const record = await saveIncomingMessage(message);
       const reply = await buildChatbotReply(message.text, message.from);
       if (reply) {
+        await saveOutgoingMessage(record, reply);
         try {
           await sendWhatsAppMessage(message.from, reply);
         } catch (error) {
@@ -112,6 +121,22 @@ async function handleIncomingWebhook(request, response) {
     sendJSON(response, 200, { ok: true });
   } catch (error) {
     sendJSON(response, 500, { error: "Error al procesar webhook", details: error.message });
+  }
+}
+
+async function handleGetConversations(response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 200, { ok: true, conversations: [] });
+    return;
+  }
+
+  try {
+    const conversations = await supabaseRequest(
+      "/rest/v1/conversaciones?select=id,estado,ultimo_mensaje,ultimo_mensaje_at,created_at,clientes(id,nombre,telefono)&order=updated_at.desc&limit=50",
+    );
+    sendJSON(response, 200, { ok: true, conversations });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudieron cargar conversaciones", details: error.message });
   }
 }
 
@@ -132,6 +157,7 @@ function extractIncomingMessages(body) {
       return messages
         .filter((message) => message.from && message.text?.body)
         .map((message) => ({
+          id: message.id,
           from: message.from,
           text: message.text.body,
         }));
@@ -140,7 +166,7 @@ function extractIncomingMessages(body) {
 }
 
 async function buildChatbotReply(text, from) {
-  const botConfig = loadBotConfig();
+  const botConfig = await loadBotConfig();
   const fixedReply = await buildFixedReply(text, from, botConfig);
   if (fixedReply) return fixedReply;
   if (AI_ENABLED) {
@@ -202,6 +228,139 @@ async function sendAdminAlerts(botConfig, from, text) {
   }
 }
 
+async function saveIncomingMessage(message) {
+  if (!isSupabaseEnabled()) return null;
+
+  try {
+    const telefono = cleanPhone(message.from);
+    const cliente = await findOrCreateCliente(telefono, message.text);
+    const conversacion = await findOrCreateConversacion(cliente, message.text, conversationStatusFromMessage(message.text));
+    await createMensaje({
+      conversacionId: conversacion.id,
+      clienteId: cliente.id,
+      direccion: "entrante",
+      mensaje: message.text,
+      whatsappMessageId: message.id,
+      metadata: message,
+    });
+    return { cliente, conversacion };
+  } catch (error) {
+    console.error("No se pudo guardar mensaje entrante:", error.message);
+    return null;
+  }
+}
+
+async function saveOutgoingMessage(record, reply) {
+  if (!record || !isSupabaseEnabled()) return;
+
+  try {
+    await createMensaje({
+      conversacionId: record.conversacion.id,
+      clienteId: record.cliente.id,
+      direccion: "saliente",
+      mensaje: reply,
+      metadata: { origen: "bot" },
+    });
+    await updateConversacion(record.conversacion.id, reply, record.conversacion.estado);
+  } catch (error) {
+    console.error("No se pudo guardar respuesta del bot:", error.message);
+  }
+}
+
+async function findOrCreateCliente(telefono, ultimoMensaje) {
+  const clientes = await supabaseRequest(`/rest/v1/clientes?telefono=eq.${encodeURIComponent(telefono)}&limit=1`);
+  const now = new Date().toISOString();
+
+  if (clientes[0]) {
+    const updated = await supabaseRequest(`/rest/v1/clientes?id=eq.${clientes[0].id}`, {
+      method: "PATCH",
+      body: {
+        ultimo_mensaje: ultimoMensaje,
+        updated_at: now,
+      },
+      prefer: "return=representation",
+    });
+    return updated[0] || clientes[0];
+  }
+
+  const created = await supabaseRequest("/rest/v1/clientes", {
+    method: "POST",
+    body: {
+      nombre: "Cliente WhatsApp",
+      telefono,
+      whatsapp_id: telefono,
+      ultimo_mensaje: ultimoMensaje,
+      estado: "nuevo",
+    },
+    prefer: "return=representation",
+  });
+  return created[0];
+}
+
+async function findOrCreateConversacion(cliente, ultimoMensaje, estado) {
+  const conversaciones = await supabaseRequest(
+    `/rest/v1/conversaciones?cliente_id=eq.${cliente.id}&canal=eq.whatsapp&order=updated_at.desc&limit=1`,
+  );
+
+  if (conversaciones[0]) {
+    const updated = await updateConversacion(conversaciones[0].id, ultimoMensaje, estado || conversaciones[0].estado);
+    return updated || conversaciones[0];
+  }
+
+  const created = await supabaseRequest("/rest/v1/conversaciones", {
+    method: "POST",
+    body: {
+      cliente_id: cliente.id,
+      canal: "whatsapp",
+      estado: estado || "nuevo",
+      ultimo_mensaje: ultimoMensaje,
+      ultimo_mensaje_at: new Date().toISOString(),
+    },
+    prefer: "return=representation",
+  });
+  return created[0];
+}
+
+async function updateConversacion(id, ultimoMensaje, estado) {
+  const updated = await supabaseRequest(`/rest/v1/conversaciones?id=eq.${id}`, {
+    method: "PATCH",
+    body: {
+      estado,
+      ultimo_mensaje: ultimoMensaje,
+      ultimo_mensaje_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    prefer: "return=representation",
+  });
+  return updated[0];
+}
+
+async function createMensaje({ conversacionId, clienteId, direccion, mensaje, whatsappMessageId, metadata }) {
+  const created = await supabaseRequest("/rest/v1/mensajes", {
+    method: "POST",
+    body: {
+      conversacion_id: conversacionId,
+      cliente_id: clienteId,
+      direccion,
+      origen: "whatsapp",
+      tipo: "text",
+      mensaje,
+      whatsapp_message_id: whatsappMessageId || null,
+      metadata: metadata || null,
+    },
+    prefer: "return=representation",
+  });
+  return created[0];
+}
+
+function conversationStatusFromMessage(message) {
+  const text = normalizeText(message);
+  if (text.includes("asesor") || text.includes("humano")) return "asesor humano";
+  if (text.includes("pedido")) return "pedido";
+  if (text.includes("entregado")) return "entregado";
+  return "nuevo";
+}
+
 async function getDeepSeekReply(text) {
   if (!DEEPSEEK_API_KEY) {
     return "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
@@ -249,7 +408,16 @@ async function getDeepSeekReply(text) {
   }
 }
 
-function loadBotConfig() {
+async function loadBotConfig() {
+  if (isSupabaseEnabled()) {
+    try {
+      const configs = await supabaseRequest("/rest/v1/configuracion_bot?select=*&order=updated_at.desc&limit=1");
+      if (configs[0]) return mapDbBotConfig(configs[0]);
+    } catch (error) {
+      console.error("No se pudo leer configuracion_bot:", error.message);
+    }
+  }
+
   const configPath = join(__dirname, "bot-config.json");
   const fallback = {
     negocio: {},
@@ -266,6 +434,50 @@ function loadBotConfig() {
     console.error("No se pudo leer bot-config.json:", error.message);
     return fallback;
   }
+}
+
+function mapDbBotConfig(config) {
+  return {
+    negocio: {
+      nombre: config.negocio_nombre,
+      horario: config.horario,
+      direccion: config.direccion,
+    },
+    admins: config.telefonos_admin || [],
+    respuestas: {
+      hola: config.respuesta_hola,
+      medicamento: config.respuesta_medicamento,
+      pedido: config.respuesta_pedido,
+      asesor: config.respuesta_asesor,
+      sin_dato: config.respuesta_sin_dato,
+    },
+  };
+}
+
+function isSupabaseEnabled() {
+  return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function supabaseRequest(path, options = {}) {
+  const response = await fetch(`${SUPABASE_URL}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      ...(options.prefer ? { Prefer: options.prefer } : {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(JSON.stringify(data || { status: response.status }));
+  }
+
+  return data || [];
 }
 
 function normalizeText(text) {

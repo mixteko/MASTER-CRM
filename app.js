@@ -4390,6 +4390,7 @@ function init() {
   bindEvents();
   seedChat();
   renderAll();
+  loadServerConversations();
 }
 
 function bindEvents() {
@@ -4490,6 +4491,41 @@ function renderAll() {
   renderShipments();
   renderPayments();
   renderCustomerSelects();
+}
+
+async function loadServerConversations() {
+  try {
+    const response = await fetch("/api/conversations");
+    if (!response.ok) return;
+
+    const data = await response.json();
+    if (!Array.isArray(data.conversations) || !data.conversations.length) return;
+
+    state.conversations = data.conversations.map(mapServerConversation);
+    renderConversations();
+  } catch {
+    // La app puede seguir operando con localStorage cuando el backend no esta disponible.
+  }
+}
+
+function mapServerConversation(conversation) {
+  const customer = conversation.clientes || {};
+  return {
+    id: conversation.id,
+    customerName: customer.nombre || "Cliente WhatsApp",
+    phone: customer.telefono || "Por identificar",
+    status: normalizeConversationStatus(conversation.estado),
+    lastMessage: conversation.ultimo_mensaje || "Sin mensaje reciente",
+    createdAt: conversation.ultimo_mensaje_at || conversation.created_at || new Date().toISOString(),
+  };
+}
+
+function normalizeConversationStatus(status) {
+  const value = String(status || "nuevo").toLowerCase();
+  if (value.includes("asesor")) return "Asesor humano";
+  if (value.includes("pedido")) return "Pedido";
+  if (value.includes("entregado")) return "Entregado";
+  return "Nuevo";
 }
 
 function renderDashboard() {
