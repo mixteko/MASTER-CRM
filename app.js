@@ -4246,7 +4246,7 @@ const initialConversations = [
 ];
 
 const state = {
-  products: readJSON(storageKeys.products, initialProducts),
+  products: [],
   customers: readJSON(storageKeys.customers, initialCustomers),
   orders: readJSON(storageKeys.orders, []),
   payments: readJSON(storageKeys.payments, []),
@@ -4270,9 +4270,11 @@ const state = {
   lastConversationsUpdate: "",
   renderedConversationId: "",
   renderedMessageSignature: "",
+  productLoadError: "",
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
+const productsApiUrl = "https://minifarmacia.onrender.com/api/products";
 
 const viewTitles = {
   dashboard: "Inicio",
@@ -4392,10 +4394,11 @@ init();
 
 function init() {
   elements.todayLabel.textContent = `Operacion local - ${formatShortDate(new Date().toISOString())}`;
-  syncProductCatalog();
+  createProductRefreshButton();
   hydrateSettings();
   bindEvents();
   renderAll();
+  loadProducts();
   loadRealConversations();
   window.setInterval(loadRealConversations, 5000);
 }
@@ -4473,6 +4476,7 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "mark-conversation-delivered") updateLatestConversation("Entregado");
   if (action.dataset.action === "send-store-link") sendStoreLinkToConversation();
   if (action.dataset.action === "refresh-conversations") loadRealConversations({ manual: true, forceChatRender: true });
+  if (action.dataset.action === "refresh-products") loadProducts({ manual: true });
   if (action.dataset.action === "select-conversation") selectConversation(id);
 }
 
@@ -5191,6 +5195,62 @@ function moveOrderNext(orderId) {
   renderAll();
 }
 
+function createProductRefreshButton() {
+  const heading = elements.productSearch?.closest(".panel-heading");
+  if (!heading || heading.querySelector("[data-action='refresh-products']")) return;
+
+  const button = document.createElement("button");
+  button.className = "ghost-button small";
+  button.type = "button";
+  button.dataset.action = "refresh-products";
+  button.textContent = "Actualizar productos";
+  heading.appendChild(button);
+}
+
+async function loadProducts(options = {}) {
+  try {
+    const response = await fetch(productsApiUrl);
+    if (!response.ok) throw new Error("Backend no disponible");
+
+    const data = await response.json();
+    if (!Array.isArray(data.products)) throw new Error("Respuesta invalida");
+
+    state.products = data.products;
+    state.productLoadError = "";
+    renderAll();
+    if (options.manual) showToast("Productos actualizados");
+  } catch {
+    state.products = [];
+    state.productLoadError = "No se pudieron cargar productos desde Supabase.";
+    renderAll();
+    showToast(state.productLoadError);
+  }
+}
+
+async function saveProductToApi(product) {
+  const isUpdate = Boolean(product.id);
+  const url = isUpdate ? `${productsApiUrl}/${encodeURIComponent(product.id)}` : productsApiUrl;
+  const response = await fetch(url, {
+    method: isUpdate ? "PATCH" : "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(product),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo guardar producto");
+  return data.product;
+}
+
+async function deactivateProductInApi(id) {
+  const response = await fetch(`${productsApiUrl}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo desactivar producto");
+  return data.product;
+}
+
 function renderProducts() {
   const products = state.products.filter((product) => {
     const text = `${product.sku || ""} ${product.name} ${product.category} ${product.type} ${product.status} ${product.substance || ""}`.toLowerCase();
@@ -5227,13 +5287,13 @@ function renderProducts() {
           `;
         })
         .join("")
-    : tableEmpty(6, "No hay productos.");
+    : tableEmpty(6, state.productLoadError || "No hay productos.");
 }
 
-function saveProduct(event) {
+async function saveProduct(event) {
   event.preventDefault();
   const sku = elements.productSku.value.trim();
-  const id = elements.productId.value || `prod-${sku.toLowerCase()}`;
+  const id = elements.productId.value;
   const cost = toNumber(elements.productCost.value);
   const regularPrice = toNumber(elements.productRegularPrice.value);
   const price = toNumber(elements.productPrice.value);
@@ -5265,13 +5325,15 @@ function saveProduct(event) {
     iva: elements.productIva.value === "Si",
     status: elements.productStatus.value,
   };
-  const index = state.products.findIndex((item) => item.id === id);
-  if (index >= 0) state.products[index] = product;
-  else state.products.unshift(product);
-  persist(storageKeys.products, state.products);
-  clearProductForm();
-  renderAll();
-  showToast("Producto guardado");
+
+  try {
+    await saveProductToApi(product);
+    await loadProducts();
+    clearProductForm();
+    showToast("Producto guardado");
+  } catch (error) {
+    showToast(error.message || "No se pudo guardar producto en Supabase");
+  }
 }
 
 function editProduct(id) {
@@ -5298,12 +5360,19 @@ function editProduct(id) {
   showView("productos");
 }
 
-function toggleProduct(id) {
+async function toggleProduct(id) {
   const product = getProduct(id);
   if (!product) return;
-  product.status = product.status === "Activo" ? "Pausado" : "Activo";
-  persist(storageKeys.products, state.products);
-  renderAll();
+  try {
+    if (product.status === "Activo") {
+      await deactivateProductInApi(id);
+    } else {
+      await saveProductToApi({ ...product, status: "Activo" });
+    }
+    await loadProducts();
+  } catch (error) {
+    showToast(error.message || "No se pudo actualizar producto en Supabase");
+  }
 }
 
 function clearProductForm() {
@@ -5431,7 +5500,7 @@ function stockStatus(product) {
 
 function resetDemoData() {
   if (!window.confirm("Reiniciar demo de Mini Farmacia?")) return;
-  state.products = initialProducts.map((item) => ({ ...item }));
+  state.products = [];
   state.customers = initialCustomers.map((item) => ({ ...item }));
   state.orders = [];
   state.payments = [];
@@ -5443,19 +5512,15 @@ function resetDemoData() {
   localStorage.setItem(storageKeys.catalogVersion, PRODUCT_CATALOG_VERSION);
   seedChat();
   renderAll();
+  loadProducts();
   showToast("Demo reiniciado");
 }
 
 function syncProductCatalog() {
-  if (localStorage.getItem(storageKeys.catalogVersion) === PRODUCT_CATALOG_VERSION) return;
-  state.products = initialProducts.map((item) => ({ ...item }));
   state.storeCart = [];
-  persist(storageKeys.products, state.products);
-  localStorage.setItem(storageKeys.catalogVersion, PRODUCT_CATALOG_VERSION);
 }
 
 function persistAll() {
-  persist(storageKeys.products, state.products);
   persist(storageKeys.customers, state.customers);
   persist(storageKeys.orders, state.orders);
   persist(storageKeys.payments, state.payments);

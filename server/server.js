@@ -46,6 +46,26 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && request.url.startsWith("/api/products")) {
+    await handleGetProducts(response);
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/api/products") {
+    await handleCreateProduct(request, response);
+    return;
+  }
+
+  if (request.method === "PATCH" && request.url.startsWith("/api/products/")) {
+    await handleUpdateProduct(request, response);
+    return;
+  }
+
+  if (request.method === "DELETE" && request.url.startsWith("/api/products/")) {
+    await handleDeactivateProduct(request, response);
+    return;
+  }
+
   if (request.method === "GET" && request.url.startsWith("/api/conversations")) {
     await handleGetConversations(response);
     return;
@@ -137,6 +157,83 @@ async function handleGetConversations(response) {
     sendJSON(response, 200, { ok: true, conversations });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudieron cargar conversaciones", details: error.message });
+  }
+}
+
+async function handleGetProducts(response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const products = await getProductsFromSupabase();
+    sendJSON(response, 200, { ok: true, products });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudieron cargar productos", details: error.message });
+  }
+}
+
+async function handleCreateProduct(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const product = await readJSONBody(request);
+    const created = await createSupabaseProduct(product);
+    sendJSON(response, 200, { ok: true, product: created });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo crear producto", details: error.message });
+  }
+}
+
+async function handleUpdateProduct(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const id = getProductIdFromUrl(request.url);
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de producto requerido" });
+      return;
+    }
+
+    const product = await readJSONBody(request);
+    const updated = await updateSupabaseProduct(id, product);
+    sendJSON(response, 200, { ok: true, product: updated });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo actualizar producto", details: error.message });
+  }
+}
+
+async function handleDeactivateProduct(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const id = getProductIdFromUrl(request.url);
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de producto requerido" });
+      return;
+    }
+
+    const updated = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: {
+        activo: false,
+        updated_at: new Date().toISOString(),
+      },
+      prefer: "return=representation",
+    });
+    sendJSON(response, 200, { ok: true, product: mapDbProduct(updated[0]) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo desactivar producto", details: error.message });
   }
 }
 
@@ -266,6 +363,136 @@ async function searchProductsByMessage(text) {
   }
 }
 
+async function getProductsFromSupabase() {
+  const products = await supabaseRequest(
+    "/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,fecha_caducidad,costo)&order=nombre.asc",
+  );
+  return products.map(mapDbProduct);
+}
+
+async function createSupabaseProduct(product) {
+  const categoriaId = await findOrCreateCategoriaId(product.category);
+  const created = await supabaseRequest("/rest/v1/productos", {
+    method: "POST",
+    body: mapProductToDb(product, categoriaId),
+    prefer: "return=representation",
+  });
+  const dbProduct = created[0];
+  await upsertProductInventory(dbProduct.id, product);
+  return (await getSupabaseProductById(dbProduct.id)) || mapDbProduct(dbProduct);
+}
+
+async function updateSupabaseProduct(id, product) {
+  const categoriaId = await findOrCreateCategoriaId(product.category);
+  const updated = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: mapProductToDb(product, categoriaId),
+    prefer: "return=representation",
+  });
+  await upsertProductInventory(id, product);
+  return (await getSupabaseProductById(id)) || mapDbProduct(updated[0]);
+}
+
+async function getSupabaseProductById(id) {
+  const products = await supabaseRequest(
+    `/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`,
+  );
+  return products[0] ? mapDbProduct(products[0]) : null;
+}
+
+async function findOrCreateCategoriaId(categoryName) {
+  const nombre = String(categoryName || "").trim();
+  if (!nombre) return null;
+
+  const existing = await supabaseRequest(`/rest/v1/categorias?select=id&nombre=eq.${encodeURIComponent(nombre)}&limit=1`);
+  if (existing[0]) return existing[0].id;
+
+  const created = await supabaseRequest("/rest/v1/categorias", {
+    method: "POST",
+    body: {
+      nombre,
+      activo: true,
+    },
+    prefer: "return=representation",
+  });
+  return created[0]?.id || null;
+}
+
+async function upsertProductInventory(productId, product) {
+  const inventory = await supabaseRequest(`/rest/v1/inventario?select=id&producto_id=eq.${encodeURIComponent(productId)}&limit=1`);
+  const body = {
+    producto_id: productId,
+    stock: toInteger(product.stock),
+    stock_minimo: toInteger(product.minStock),
+    stock_maximo: toNullableInteger(product.maxStock),
+    fecha_caducidad: product.expiresAt || null,
+    costo: toNumber(product.cost),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (inventory[0]) {
+    await supabaseRequest(`/rest/v1/inventario?id=eq.${inventory[0].id}`, {
+      method: "PATCH",
+      body,
+      prefer: "return=representation",
+    });
+    return;
+  }
+
+  await supabaseRequest("/rest/v1/inventario", {
+    method: "POST",
+    body,
+    prefer: "return=representation",
+  });
+}
+
+function mapDbProduct(product) {
+  const inventory = Array.isArray(product?.inventario) ? product.inventario[0] : null;
+  const category = product?.categorias?.nombre || "";
+
+  return {
+    id: product.id,
+    sku: product.codigo_barras || "",
+    name: product.nombre || "",
+    category,
+    description: product.descripcion || "",
+    substance: product.descripcion || "",
+    expiresAt: inventory?.fecha_caducidad || "",
+    stock: toInteger(product.stock),
+    minStock: toInteger(inventory?.stock_minimo),
+    maxStock: toInteger(inventory?.stock_maximo),
+    cost: toNumber(inventory?.costo),
+    regularPrice: toNumber(product.precio),
+    price: toNumber(product.precio),
+    discountPrice: toNumber(product.precio),
+    imageUrl: "",
+    type: product.requiere_receta ? "Receta medica" : "Venta libre",
+    requiresRecipe: Boolean(product.requiere_receta),
+    iva: false,
+    status: product.activo ? "Activo" : "Pausado",
+  };
+}
+
+function mapProductToDb(product, categoriaId) {
+  return {
+    categoria_id: categoriaId,
+    nombre: String(product.name || "").trim(),
+    descripcion: String(product.description || product.substance || "").trim(),
+    precio: toNumber(product.price),
+    stock: toInteger(product.stock),
+    codigo_barras: String(product.sku || "").trim() || null,
+    presentacion: null,
+    laboratorio: null,
+    activo: product.status !== "Pausado",
+    requiere_receta: product.requiresRecipe || product.type === "Receta medica",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function getProductIdFromUrl(url) {
+  return decodeURIComponent(url.split("?")[0].replace("/api/products/", "").trim());
+}
+
 function getProductSearchTerms(text) {
   const stopwords = new Set([
     "agregar",
@@ -308,6 +535,21 @@ function encodeSupabaseFilterValue(value) {
 function formatPrice(price) {
   const amount = Number(price || 0);
   return amount.toFixed(2);
+}
+
+function toNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function toInteger(value) {
+  const number = Number.parseInt(value, 10);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function toNullableInteger(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  return toInteger(value);
 }
 
 async function saveIncomingMessage(message) {
@@ -682,7 +924,7 @@ function cleanPhone(phone) {
 
 function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
-  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
