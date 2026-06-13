@@ -4264,6 +4264,7 @@ const state = {
   customerQuery: "",
   storeQuery: "",
   storeCategory: "Todas",
+  conversationQuery: "",
 };
 
 const viewTitles = {
@@ -4301,11 +4302,17 @@ const elements = {
   chatLog: $("#chatLog"),
   chatForm: $("#chatForm"),
   incomingMessage: $("#incomingMessage"),
+  conversationSearch: $("#conversationSearch"),
   storeLink: $("#storeLink"),
   businessPhone: $("#businessPhone"),
   welcomeMessage: $("#welcomeMessage"),
   copyWelcomeButton: $("#copyWelcomeButton"),
   conversationList: $("#conversationList"),
+  profileName: $("#profileName"),
+  profilePhone: $("#profilePhone"),
+  profileLastMessage: $("#profileLastMessage"),
+  profileStatus: $("#profileStatus"),
+  advisorAlert: $("#advisorAlert"),
   storeSearch: $("#storeSearch"),
   storeCategory: $("#storeCategory"),
   storeCategoryMenu: $("#storeCategoryMenu"),
@@ -4393,6 +4400,10 @@ function bindEvents() {
   elements.resetDemoButton.addEventListener("click", resetDemoData);
   elements.chatForm.addEventListener("submit", simulateIncomingMessage);
   elements.copyWelcomeButton.addEventListener("click", copyWelcomeMessage);
+  elements.conversationSearch.addEventListener("input", (event) => {
+    state.conversationQuery = event.target.value.trim().toLowerCase();
+    renderConversations();
+  });
   [elements.storeLink, elements.businessPhone].forEach((input) => input.addEventListener("input", saveSettings));
   elements.welcomeMessage.addEventListener("input", saveSettings);
 
@@ -4449,6 +4460,10 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "order-next") moveOrderNext(id);
   if (action.dataset.action === "mark-paid") markPaymentPaid(id);
   if (action.dataset.action === "mark-shipped") markShipmentSent(id);
+  if (action.dataset.action === "take-conversation") updateLatestConversation("Asesor humano");
+  if (action.dataset.action === "mark-conversation-order") updateLatestConversation("Pedido");
+  if (action.dataset.action === "mark-conversation-delivered") updateLatestConversation("Entregado");
+  if (action.dataset.action === "send-store-link") sendStoreLinkToConversation();
 }
 
 function showView(viewId) {
@@ -4524,7 +4539,7 @@ async function simulateIncomingMessage(event) {
     id: createId("conv"),
     customerName: "Cliente WhatsApp",
     phone: "Por identificar",
-    status: "Liga enviada",
+    status: conversationStatusFromMessage(message),
     lastMessage: message,
     createdAt: new Date().toISOString(),
   });
@@ -4579,12 +4594,97 @@ function saveSettings() {
 }
 
 function renderConversations() {
-  elements.conversationList.innerHTML = state.conversations.length
-    ? state.conversations
-        .slice(0, 8)
-        .map((conversation) => listRow(conversation.customerName, conversation.lastMessage, conversation.status))
+  const conversations = state.conversations.filter((conversation) => {
+    const text = `${conversation.customerName} ${conversation.phone} ${conversation.lastMessage} ${conversation.status}`.toLowerCase();
+    return text.includes(state.conversationQuery);
+  });
+  const selected = conversations[0] || state.conversations[0];
+
+  elements.conversationList.innerHTML = conversations.length
+    ? conversations
+        .slice(0, 12)
+        .map(
+          (conversation, index) => `
+            <article class="conversation-item ${index === 0 ? "active" : ""}">
+              <div class="conversation-avatar">${escapeHTML(initials(conversation.customerName))}</div>
+              <div class="conversation-main">
+                <strong>${escapeHTML(conversation.customerName)}</strong>
+                <span>${escapeHTML(conversation.lastMessage)}</span>
+                <div class="conversation-meta">
+                  <small>${formatTime(conversation.createdAt)}</small>
+                  <em class="conversation-status ${conversationStatusClass(conversation.status)}">${escapeHTML(conversation.status)}</em>
+                </div>
+              </div>
+            </article>
+          `,
+        )
         .join("")
     : emptyState("Sin conversaciones.");
+
+  renderConversationProfile(selected);
+  renderAdvisorAlert(selected);
+}
+
+function renderConversationProfile(conversation) {
+  if (!conversation) {
+    elements.profileName.textContent = "Cliente WhatsApp";
+    elements.profilePhone.textContent = "Por identificar";
+    elements.profileLastMessage.textContent = "Sin mensaje reciente";
+    elements.profileStatus.textContent = "Nuevo";
+    return;
+  }
+
+  elements.profileName.textContent = conversation.customerName;
+  elements.profilePhone.textContent = conversation.phone;
+  elements.profileLastMessage.textContent = conversation.lastMessage;
+  elements.profileStatus.innerHTML = `<span class="profile-status-badge ${conversationStatusClass(conversation.status)}">${escapeHTML(conversation.status)}</span>`;
+}
+
+function renderAdvisorAlert(conversation) {
+  const alertConversation =
+    conversation?.status === "Asesor humano" ? conversation : state.conversations.find((item) => item.status === "Asesor humano");
+
+  if (!alertConversation) {
+    elements.advisorAlert.classList.add("is-hidden");
+    elements.advisorAlert.innerHTML = "";
+    return;
+  }
+
+  elements.advisorAlert.classList.remove("is-hidden");
+  elements.advisorAlert.innerHTML = `
+    <strong>Solicitud de asesor humano</strong>
+    <span>Cliente: ${escapeHTML(alertConversation.customerName)}</span>
+    <span>Telefono: ${escapeHTML(alertConversation.phone)}</span>
+    <span>Mensaje: ${escapeHTML(alertConversation.lastMessage)}</span>
+    <button class="primary-button small" type="button" data-action="take-conversation">Tomar conversacion</button>
+  `;
+}
+
+function conversationStatusFromMessage(message) {
+  const text = message.toLowerCase();
+  if (text.includes("asesor") || text.includes("humano")) return "Asesor humano";
+  if (text.includes("pedido")) return "Pedido";
+  return "Nuevo";
+}
+
+function conversationStatusClass(status) {
+  if (status === "Asesor humano") return "human";
+  if (status === "Pedido") return "order";
+  if (status === "Entregado") return "delivered";
+  return "new";
+}
+
+function updateLatestConversation(status) {
+  if (!state.conversations.length) return showToast("Sin conversaciones");
+  state.conversations[0].status = status;
+  persist(storageKeys.conversations, state.conversations);
+  renderConversations();
+  showToast(`Conversacion marcada: ${status}`);
+}
+
+function sendStoreLinkToConversation() {
+  addBubble("business", buildWelcomeMessage());
+  showToast("Liga de tienda enviada");
 }
 
 function renderStore() {

@@ -105,57 +105,85 @@
         </section>
 
         <section class="view" id="whatsapp">
-          <div class="module-grid">
-            <article class="phone-shell">
+          <div class="whatsapp-status-bar" aria-label="Estado de integraciones">
+            <span><i></i>WhatsApp conectado</span>
+            <span><i></i>Webhook activo</span>
+            <span><i></i>IA activa</span>
+            <span><i></i>Render online</span>
+          </div>
+
+          <div class="whatsapp-crm">
+            <aside class="whatsapp-sidebar">
+              <div class="whatsapp-panel-heading">
+                <div>
+                  <p class="eyebrow">Inbox</p>
+                  <h2>Conversaciones</h2>
+                </div>
+              </div>
+              <input id="conversationSearch" type="search" placeholder="Buscar cliente" autocomplete="off" />
+              <div class="conversation-list" id="conversationList"></div>
+            </aside>
+
+            <article class="phone-shell whatsapp-chat-panel">
               <div class="phone-header">
                 <img src="assets/mini-farmacia-logo.svg" alt="" />
                 <div>
                   <strong>Mini Farmacia</strong>
-                  <small>Canal de entrada</small>
+                  <small>Canal WhatsApp Business</small>
                 </div>
               </div>
+              <div class="advisor-alert is-hidden" id="advisorAlert"></div>
               <div class="chat-log" id="chatLog"></div>
               <form class="chat-form" id="chatForm">
-                <input id="incomingMessage" type="text" placeholder="Mensaje del cliente" autocomplete="off" />
-                <button class="primary-button" type="submit">Responder</button>
+                <input id="incomingMessage" type="text" placeholder="Escribe o simula un mensaje del cliente" autocomplete="off" />
+                <button class="primary-button" type="submit">Enviar</button>
               </form>
             </article>
 
-            <section class="panel-card form-panel">
-              <div class="panel-heading">
+            <aside class="whatsapp-profile">
+              <div class="whatsapp-panel-heading">
                 <div>
-                  <p class="eyebrow">Automatizacion</p>
-                  <h2>Mensaje con liga de tienda</h2>
+                  <p class="eyebrow">Perfil</p>
+                  <h2 id="profileName">Cliente WhatsApp</h2>
                 </div>
               </div>
-              <label>
-                Liga publica de tienda
-                <input id="storeLink" type="url" value="https://mixteko.github.io/Minifarmacia/" />
-              </label>
-              <label>
-                WhatsApp del negocio
-                <input id="businessPhone" type="tel" value="5218112345678" />
-              </label>
-              <label>
-                Mensaje de bienvenida
-                <textarea id="welcomeMessage" rows="5"></textarea>
-              </label>
-              <button class="primary-button" type="button" id="copyWelcomeButton">Copiar respuesta</button>
-              <div class="note-box">
-                Preparado para WhatsApp Cloud API: webhook de entrada, respuesta con liga y registro de conversacion.
+              <div class="profile-stack">
+                <span>Telefono</span>
+                <strong id="profilePhone">Por identificar</strong>
               </div>
-            </section>
-          </div>
+              <div class="profile-stack">
+                <span>Ultimo mensaje</span>
+                <strong id="profileLastMessage">Sin mensaje reciente</strong>
+              </div>
+              <div class="profile-stack">
+                <span>Estado</span>
+                <strong id="profileStatus">Nuevo</strong>
+              </div>
+              <div class="quick-actions">
+                <button class="ghost-button small" type="button" data-action="take-conversation">Tomar conversacion</button>
+                <button class="ghost-button small" type="button" data-action="mark-conversation-order">Marcar como pedido</button>
+                <button class="ghost-button small" type="button" data-action="mark-conversation-delivered">Marcar como entregado</button>
+                <button class="primary-button small" type="button" data-action="send-store-link">Enviar liga de tienda</button>
+              </div>
 
-          <section class="panel-card">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Conversaciones</p>
-                <h2>Clientes recientes</h2>
-              </div>
-            </div>
-            <div class="list-stack" id="conversationList"></div>
-          </section>
+              <section class="settings-card">
+                <h3>Automatizacion</h3>
+                <label>
+                  Liga publica de tienda
+                  <input id="storeLink" type="url" value="https://mixteko.github.io/Minifarmacia/" />
+                </label>
+                <label>
+                  WhatsApp del negocio
+                  <input id="businessPhone" type="tel" value="5218112345678" />
+                </label>
+                <label>
+                  Mensaje de bienvenida
+                  <textarea id="welcomeMessage" rows="5"></textarea>
+                </label>
+                <button class="ghost-button small" type="button" id="copyWelcomeButton">Copiar respuesta</button>
+              </section>
+            </aside>
+          </div>
         </section>
 
         <section class="view" id="tienda">
