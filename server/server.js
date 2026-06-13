@@ -339,14 +339,7 @@ function mainMenuMessage() {
       "👋 ¡Hola! Bienvenido a Mini Farmacia.\n\n" +
       "Soy tu asistente virtual.\n" +
       "Puedo ayudarte con productos, precios, pedidos y atención personalizada.\n\n" +
-      "Selecciona una opción:\n\n" +
-      "1️⃣ Consultar medicamento o precio\n" +
-      "2️⃣ Ver productos disponibles\n" +
-      "3️⃣ Hacer pedido\n" +
-      "4️⃣ Horario y ubicación\n" +
-      "5️⃣ Hablar con asesor humano\n" +
-      "6️⃣ Seguimiento de pedido\n" +
-      "7️⃣ Promociones",
+      "Selecciona una opción:",
     buttons: [
       { id: "consultar_producto", title: "Consultar producto" },
       { id: "hacer_pedido", title: "Hacer pedido" },
@@ -1067,11 +1060,11 @@ async function sendWhatsAppMessage(telefono, mensaje) {
 
 async function sendWhatsAppReply(telefono, reply) {
   if (typeof reply === "string") return await sendWhatsAppMessage(telefono, reply);
-  if (reply?.buttons?.length) return await sendWhatsAppButtonMessage(telefono, reply.text, reply.buttons);
+  if (reply?.buttons?.length) return await sendWhatsAppInteractiveButtons(telefono, reply.text, reply.buttons);
   return await sendWhatsAppMessage(telefono, replyText(reply));
 }
 
-async function sendWhatsAppButtonMessage(telefono, mensaje, buttons) {
+async function sendWhatsAppInteractiveButtons(telefono, mensaje, buttons) {
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
     throw new Error("Credenciales de WhatsApp no configuradas");
   }
@@ -1099,11 +1092,12 @@ async function sendWhatsAppButtonMessage(telefono, mensaje, buttons) {
     },
   };
 
+  console.log("ENVIANDO MENU INTERACTIVO");
   console.log("WHATSAPP NUMERO RECIBIDO:", telefono);
   console.log("WHATSAPP DESTINO:", destination);
   console.log("WHATSAPP MENSAJE:", mensaje);
   console.log("WHATSAPP GRAPH URL:", graphUrl);
-  console.log("WHATSAPP INTERACTIVE PAYLOAD:", JSON.stringify(payload, null, 2));
+  console.log("INTERACTIVE PAYLOAD:", payload);
 
   const whatsappResponse = await fetch(graphUrl, {
     method: "POST",
@@ -1115,7 +1109,8 @@ async function sendWhatsAppButtonMessage(telefono, mensaje, buttons) {
   });
 
   const data = await whatsappResponse.json();
-  console.log("WHATSAPP INTERACTIVE STATUS:", whatsappResponse.status);
+  console.log("INTERACTIVE STATUS:", whatsappResponse.status);
+  console.log("INTERACTIVE RESPONSE:", data);
 
   if (!whatsappResponse.ok) {
     console.error("WHATSAPP INTERACTIVE ERROR:", JSON.stringify(data, null, 2));
