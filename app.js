@@ -4252,7 +4252,7 @@ const state = {
   payments: readJSON(storageKeys.payments, []),
   shipments: readJSON(storageKeys.shipments, []),
   sales: readJSON(storageKeys.sales, []),
-  conversations: readJSON(storageKeys.conversations, initialConversations),
+  conversations: [],
   settings: readJSON(storageKeys.settings, {
     storeLink: "https://mixteko.github.io/Minifarmacia/",
     businessPhone: "5218112345678",
@@ -4267,6 +4267,9 @@ const state = {
   conversationQuery: "",
   selectedConversationId: "",
   usingRealConversations: false,
+  lastConversationsUpdate: "",
+  renderedConversationId: "",
+  renderedMessageSignature: "",
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
@@ -4393,7 +4396,8 @@ function init() {
   hydrateSettings();
   bindEvents();
   renderAll();
-  loadServerConversations();
+  loadRealConversations();
+  window.setInterval(loadRealConversations, 5000);
 }
 
 function bindEvents() {
@@ -4468,7 +4472,7 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "mark-conversation-order") updateLatestConversation("Pedido");
   if (action.dataset.action === "mark-conversation-delivered") updateLatestConversation("Entregado");
   if (action.dataset.action === "send-store-link") sendStoreLinkToConversation();
-  if (action.dataset.action === "refresh-conversations") loadServerConversations();
+  if (action.dataset.action === "refresh-conversations") loadRealConversations({ manual: true, forceChatRender: true });
   if (action.dataset.action === "select-conversation") selectConversation(id);
 }
 
@@ -4498,7 +4502,7 @@ function renderAll() {
   renderCustomerSelects();
 }
 
-async function loadServerConversations() {
+async function loadRealConversations(options = {}) {
   try {
     const response = await fetch(conversationsApiUrl);
     if (!response.ok) throw new Error("Backend no disponible");
@@ -4506,18 +4510,25 @@ async function loadServerConversations() {
     const data = await response.json();
     if (!Array.isArray(data.conversations)) throw new Error("Respuesta invalida");
 
+    const selectedId = state.selectedConversationId;
     state.conversations = data.conversations.map(mapServerConversation);
     state.usingRealConversations = true;
-    state.selectedConversationId = state.conversations[0]?.id || "";
+    state.selectedConversationId = state.conversations.some((conversation) => conversation.id === selectedId)
+      ? selectedId
+      : state.conversations[0]?.id || "";
+    state.lastConversationsUpdate = new Date().toISOString();
     if (!state.conversations.length) {
       elements.chatLog.innerHTML = emptyState("Sin historial real.");
     }
-    renderConversations();
-    showToast("Conversaciones actualizadas");
+    renderConversations({ forceChatRender: options.forceChatRender });
+    if (options.manual) showToast("Conversaciones actualizadas");
   } catch {
     state.conversations = [];
     state.usingRealConversations = false;
     state.selectedConversationId = "";
+    state.lastConversationsUpdate = "";
+    state.renderedConversationId = "";
+    state.renderedMessageSignature = "";
     elements.conversationList.innerHTML = emptyState("No se pudo cargar historial real");
     elements.chatLog.innerHTML = emptyState("No se pudo cargar historial real");
     renderConversationProfile(null);
@@ -4535,7 +4546,7 @@ function mapServerConversation(conversation) {
     status: normalizeConversationStatus(conversation.estado),
     lastMessage: conversation.ultimo_mensaje || "Sin mensaje reciente",
     createdAt: conversation.ultimo_mensaje_at || conversation.created_at || new Date().toISOString(),
-    messages: (conversation.mensajes || []).map(mapServerMessage),
+    messages: uniqueMessages((conversation.mensajes || []).map(mapServerMessage)),
   };
 }
 
@@ -4546,6 +4557,16 @@ function mapServerMessage(message) {
     message: message.mensaje,
     createdAt: message.created_at,
   };
+}
+
+function uniqueMessages(messages) {
+  const seen = new Set();
+  return messages.filter((message) => {
+    const key = message.id || `${message.type}-${message.createdAt}-${message.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function normalizeConversationStatus(status) {
@@ -4657,7 +4678,7 @@ function saveSettings() {
   persist(storageKeys.settings, state.settings);
 }
 
-function renderConversations() {
+function renderConversations(options = {}) {
   const conversations = state.conversations.filter((conversation) => {
     const text = `${conversation.customerName} ${conversation.phone} ${conversation.lastMessage} ${conversation.status}`.toLowerCase();
     return text.includes(state.conversationQuery);
@@ -4666,7 +4687,11 @@ function renderConversations() {
   if (selected) state.selectedConversationId = selected.id;
 
   elements.conversationList.innerHTML = `
-    <button class="ghost-button small refresh-conversations-button" type="button" data-action="refresh-conversations">Actualizar conversaciones</button>
+    <div class="conversation-sync-status">
+      <strong><span></span>En linea</strong>
+      <small>Ultima actualizacion: ${state.lastConversationsUpdate ? formatFullTime(state.lastConversationsUpdate) : "--:--:--"}</small>
+    </div>
+    <button class="ghost-button small refresh-conversations-button" type="button" data-action="refresh-conversations">Actualizar ahora</button>
     ${
       conversations.length
         ? conversations
@@ -4692,28 +4717,43 @@ function renderConversations() {
   `;
 
   renderConversationProfile(selected);
-  renderConversationMessages(selected);
+  renderConversationMessages(selected, options);
   renderAdvisorAlert(selected);
 }
 
 function selectConversation(id) {
   state.selectedConversationId = id;
-  renderConversations();
+  renderConversations({ forceChatRender: true });
 }
 
-function renderConversationMessages(conversation) {
-  elements.chatLog.innerHTML = "";
+function renderConversationMessages(conversation, options = {}) {
   if (!conversation) {
+    state.renderedConversationId = "";
+    state.renderedMessageSignature = "";
     elements.chatLog.innerHTML = emptyState(state.usingRealConversations ? "Sin historial real." : "No se pudo cargar historial real");
     return;
   }
 
   if (!conversation.messages?.length) {
+    state.renderedConversationId = conversation.id;
+    state.renderedMessageSignature = "";
     elements.chatLog.innerHTML = emptyState("Esta conversacion aun no tiene mensajes.");
     return;
   }
 
+  const signature = conversation.messages.map((message) => message.id || `${message.type}-${message.createdAt}-${message.message}`).join("|");
+  const shouldRender =
+    options.forceChatRender ||
+    conversation.id !== state.renderedConversationId ||
+    signature !== state.renderedMessageSignature;
+
+  if (!shouldRender) return;
+
+  elements.chatLog.innerHTML = "";
   conversation.messages.forEach((message) => addBubble(message.type, message.message, message.createdAt));
+  state.renderedConversationId = conversation.id;
+  state.renderedMessageSignature = signature;
+  elements.chatLog.scrollTop = elements.chatLog.scrollHeight;
 }
 
 function renderConversationProfile(conversation) {
@@ -5479,6 +5519,10 @@ function formatShortDate(value) {
 
 function formatTime(value) {
   return new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatFullTime(value) {
+  return new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
 }
 
 function initials(name) {
