@@ -292,7 +292,7 @@ async function buildMenuReply(text, from, botConfig, record) {
     };
   }
 
-  if (normalizedText === "btn_consultar_producto" || normalizedText === "1") {
+  if (normalizedText === "consultar_producto" || normalizedText === "btn_consultar_producto" || normalizedText === "1") {
     return followUpMessage("Escribe el nombre del medicamento o producto que deseas consultar.");
   }
 
@@ -300,7 +300,7 @@ async function buildMenuReply(text, from, botConfig, record) {
     return followUpMessage(await buildCategoriesReply());
   }
 
-  if (normalizedText === "btn_hacer_pedido" || normalizedText === "3") {
+  if (normalizedText === "hacer_pedido" || normalizedText === "btn_hacer_pedido" || normalizedText === "3") {
     return followUpMessage("Para levantar tu pedido, envíanos nombre, producto, cantidad y domicilio de entrega.");
   }
 
@@ -308,7 +308,7 @@ async function buildMenuReply(text, from, botConfig, record) {
     return followUpMessage(buildScheduleLocationReply(botConfig));
   }
 
-  if (normalizedText === "btn_asesor_humano" || normalizedText === "5") {
+  if (normalizedText === "asesor_humano" || normalizedText === "btn_asesor_humano" || normalizedText === "5") {
     await sendAdminAlerts(botConfig, from, text);
     return followUpMessage("Te canalizo con un asesor humano. En breve te atenderemos.", "asesor humano");
   }
@@ -321,8 +321,8 @@ async function buildMenuReply(text, from, botConfig, record) {
     return followUpMessage("Por ahora no hay promociones registradas.");
   }
 
-  if (normalizedText === "btn_menu_principal") return mainMenuMessage();
-  if (normalizedText === "btn_terminar_chat") {
+  if (normalizedText === "menu_principal" || normalizedText === "btn_menu_principal") return mainMenuMessage();
+  if (normalizedText === "terminar_chat" || normalizedText === "btn_terminar_chat") {
     if (record?.conversacion?.id) await updateConversacion(record.conversacion.id, "Chat finalizado", "cerrado");
     return {
       text: "✅ Chat finalizado. Cuando necesites ayuda nuevamente, escribe 'hola' o 'menú'.",
@@ -338,7 +338,7 @@ function mainMenuMessage() {
     text:
       "👋 ¡Hola! Bienvenido a Mini Farmacia.\n\n" +
       "Soy tu asistente virtual.\n" +
-      "Puedo ayudarte con consultas rápidas, productos, precios, pedidos y atención personalizada.\n\n" +
+      "Puedo ayudarte con productos, precios, pedidos y atención personalizada.\n\n" +
       "Selecciona una opción:\n\n" +
       "1️⃣ Consultar medicamento o precio\n" +
       "2️⃣ Ver productos disponibles\n" +
@@ -348,9 +348,9 @@ function mainMenuMessage() {
       "6️⃣ Seguimiento de pedido\n" +
       "7️⃣ Promociones",
     buttons: [
-      { id: "btn_consultar_producto", title: "Consultar producto" },
-      { id: "btn_hacer_pedido", title: "Hacer pedido" },
-      { id: "btn_asesor_humano", title: "Asesor humano" },
+      { id: "consultar_producto", title: "Consultar producto" },
+      { id: "hacer_pedido", title: "Hacer pedido" },
+      { id: "asesor_humano", title: "Asesor humano" },
     ],
   };
 }
@@ -360,8 +360,8 @@ function followUpMessage(text, conversationStatus) {
     text,
     conversationStatus,
     buttons: [
-      { id: "btn_menu_principal", title: "Ir al menú principal" },
-      { id: "btn_terminar_chat", title: "Terminar Chat" },
+      { id: "menu_principal", title: "Ir al menú principal" },
+      { id: "terminar_chat", title: "Terminar Chat" },
     ],
   };
 }
@@ -1078,10 +1078,32 @@ async function sendWhatsAppButtonMessage(telefono, mensaje, buttons) {
 
   const destination = cleanPhone(telefono);
   const graphUrl = `https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`;
+  const payload = {
+    messaging_product: "whatsapp",
+    to: destination,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: {
+        text: mensaje,
+      },
+      action: {
+        buttons: buttons.slice(0, 3).map((button) => ({
+          type: "reply",
+          reply: {
+            id: button.id,
+            title: button.title,
+          },
+        })),
+      },
+    },
+  };
+
   console.log("WHATSAPP NUMERO RECIBIDO:", telefono);
   console.log("WHATSAPP DESTINO:", destination);
   console.log("WHATSAPP MENSAJE:", mensaje);
   console.log("WHATSAPP GRAPH URL:", graphUrl);
+  console.log("WHATSAPP INTERACTIVE PAYLOAD:", JSON.stringify(payload, null, 2));
 
   const whatsappResponse = await fetch(graphUrl, {
     method: "POST",
@@ -1089,33 +1111,14 @@ async function sendWhatsAppButtonMessage(telefono, mensaje, buttons) {
       Authorization: `Bearer ${WHATSAPP_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: destination,
-      type: "interactive",
-      interactive: {
-        type: "button",
-        body: {
-          text: mensaje,
-        },
-        action: {
-          buttons: buttons.slice(0, 3).map((button) => ({
-            type: "reply",
-            reply: {
-              id: button.id,
-              title: button.title,
-            },
-          })),
-        },
-      },
-    }),
+    body: JSON.stringify(payload),
   });
 
   const data = await whatsappResponse.json();
-  console.log("WHATSAPP STATUS:", whatsappResponse.status);
+  console.log("WHATSAPP INTERACTIVE STATUS:", whatsappResponse.status);
 
   if (!whatsappResponse.ok) {
-    console.error("WHATSAPP META ERROR:", JSON.stringify(data, null, 2));
+    console.error("WHATSAPP INTERACTIVE ERROR:", JSON.stringify(data, null, 2));
     throw new Error(data.error?.message || "No se pudo enviar el mensaje interactivo de WhatsApp");
   }
 
