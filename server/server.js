@@ -229,9 +229,12 @@ async function sendAdminAlerts(botConfig, from, text) {
 }
 
 async function saveIncomingMessage(message) {
+  console.log("SUPABASE_URL configurado:", SUPABASE_URL ? "SI" : "NO");
+  console.log("SUPABASE_SERVICE_ROLE_KEY configurado:", SUPABASE_SERVICE_ROLE_KEY ? "SI" : "NO");
   if (!isSupabaseEnabled()) return null;
 
   try {
+    console.log("ENTRANDO A GUARDAR MENSAJE ENTRANTE");
     const telefono = cleanPhone(message.from);
     const cliente = await findOrCreateCliente(telefono, message.text);
     const conversacion = await findOrCreateConversacion(cliente, message.text, conversationStatusFromMessage(message.text));
@@ -251,9 +254,12 @@ async function saveIncomingMessage(message) {
 }
 
 async function saveOutgoingMessage(record, reply) {
+  console.log("SUPABASE_URL configurado:", SUPABASE_URL ? "SI" : "NO");
+  console.log("SUPABASE_SERVICE_ROLE_KEY configurado:", SUPABASE_SERVICE_ROLE_KEY ? "SI" : "NO");
   if (!record || !isSupabaseEnabled()) return;
 
   try {
+    console.log("ENTRANDO A GUARDAR MENSAJE SALIENTE");
     await createMensaje({
       conversacionId: record.conversacion.id,
       clienteId: record.cliente.id,
@@ -268,6 +274,7 @@ async function saveOutgoingMessage(record, reply) {
 }
 
 async function findOrCreateCliente(telefono, ultimoMensaje) {
+  console.log("ENTRANDO A GUARDAR CLIENTE");
   const clientes = await supabaseRequest(`/rest/v1/clientes?telefono=eq.${encodeURIComponent(telefono)}&limit=1`);
   const now = new Date().toISOString();
 
@@ -298,6 +305,7 @@ async function findOrCreateCliente(telefono, ultimoMensaje) {
 }
 
 async function findOrCreateConversacion(cliente, ultimoMensaje, estado) {
+  console.log("ENTRANDO A GUARDAR CONVERSACION");
   const conversaciones = await supabaseRequest(
     `/rest/v1/conversaciones?cliente_id=eq.${cliente.id}&canal=eq.whatsapp&order=updated_at.desc&limit=1`,
   );
@@ -461,8 +469,9 @@ function isSupabaseEnabled() {
 async function supabaseRequest(path, options = {}) {
   const supabaseUrl = normalizeSupabaseUrl(SUPABASE_URL);
   const requestPath = path.startsWith("/rest/v1") ? path : `/rest/v1${path.startsWith("/") ? path : `/${path}`}`;
+  const requestUrl = `${supabaseUrl}${requestPath}`;
 
-  const response = await fetch(`${supabaseUrl}${requestPath}`, {
+  const response = await fetch(requestUrl, {
     method: options.method || "GET",
     headers: {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -475,6 +484,9 @@ async function supabaseRequest(path, options = {}) {
 
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
+  console.log("SUPABASE REQUEST:", options.method || "GET", requestUrl);
+  console.log("STATUS HTTP de Supabase:", response.status);
+  console.log("RESPUESTA COMPLETA de Supabase:", text || "");
 
   if (!response.ok) {
     throw new Error(JSON.stringify(data || { status: response.status }));
