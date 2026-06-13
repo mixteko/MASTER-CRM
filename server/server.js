@@ -459,13 +459,16 @@ function isSupabaseEnabled() {
 }
 
 async function supabaseRequest(path, options = {}) {
-  const response = await fetch(`${SUPABASE_URL}${path}`, {
+  const supabaseUrl = normalizeSupabaseUrl(SUPABASE_URL);
+  const requestPath = path.startsWith("/rest/v1") ? path : `/rest/v1${path.startsWith("/") ? path : `/${path}`}`;
+
+  const response = await fetch(`${supabaseUrl}${requestPath}`, {
     method: options.method || "GET",
     headers: {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       "Content-Type": "application/json",
-      ...(options.prefer ? { Prefer: options.prefer } : {}),
+      Prefer: options.prefer || "return=representation",
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -478,6 +481,13 @@ async function supabaseRequest(path, options = {}) {
   }
 
   return data || [];
+}
+
+function normalizeSupabaseUrl(url) {
+  return String(url || "")
+    .trim()
+    .replace(/\/rest\/v1\/?$/, "")
+    .replace(/\/$/, "");
 }
 
 function normalizeText(text) {
