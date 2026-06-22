@@ -1,6 +1,6 @@
-# Mini Farmacia CRM
+# MASTER CRM
 
-Tienda web para farmacia local con integración a WhatsApp.
+Sistema integral de gestión para farmacias con tienda web e integración a WhatsApp.
 
 ## Stack
 

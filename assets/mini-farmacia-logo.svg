@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 260" role="img" aria-labelledby="title desc">
-  <title id="title">MASTER CRM Commerce</title>
-  <desc id="desc">Logotipo MASTER CRM Commerce con capsula azul y roja.</desc>
+  <title id="title">MASTER CRM</title>
+  <desc id="desc">Logotipo MASTER CRM con capsula azul y roja.</desc>
   <defs>
     <linearGradient id="blue" x1="80" x2="180" y1="26" y2="148" gradientUnits="userSpaceOnUse">
       <stop stop-color="#0a7bff"/>
@@ -21,8 +21,7 @@
     <path d="M80 96c14 12 34 10 48-4" fill="none" stroke="#072b78" stroke-width="7" stroke-linecap="round"/>
   </g>
   <g font-family="Arial Black, Arial, sans-serif" font-weight="900">
-    <text x="164" y="112" fill="#123ed8" font-size="58" letter-spacing="-3">MASTER CRM</text>
-    <text x="165" y="164" fill="#123ed8" font-size="39" letter-spacing="-1">COMMERCE</text>
-    <rect x="168" y="184" width="236" height="11" rx="5.5" fill="#ef0b36"/>
+    <text x="164" y="145" fill="#123ed8" font-size="58" letter-spacing="-3">MASTER CRM</text>
+    <rect x="168" y="166" width="236" height="11" rx="5.5" fill="#ef0b36"/>
   </g>
 </svg>

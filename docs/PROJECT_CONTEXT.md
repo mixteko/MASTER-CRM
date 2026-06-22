@@ -2,7 +2,7 @@
 
 ## Proyecto
 
-Mini Farmacia CRM
+MASTER CRM
 
 ## Objetivo
 

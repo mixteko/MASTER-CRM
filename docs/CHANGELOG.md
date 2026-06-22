@@ -1,6 +1,6 @@
 # Changelog
 
-Los cambios relevantes de MASTER CRM Commerce se documentan en este archivo.
+Los cambios relevantes de MASTER CRM se documentan en este archivo.
 
 ## Hardening inicial
 
@@ -10,10 +10,10 @@ Los cambios relevantes de MASTER CRM Commerce se documentan en este archivo.
 - Se redujo la exposición de datos sensibles en logs.
 - Se estableció una lista explícita de orígenes CORS permitidos.
 
-## v0.1.0 — Rebranding MASTER CRM Commerce
+## v0.1.0 — Branding CRM inicial
 
-- Se adoptó el nombre MASTER CRM Commerce.
-- Se incorporó el subtítulo “CRM comercial para negocios locales”.
+- Se adoptó la identidad inicial del producto.
+- Se incorporó una primera propuesta de subtítulo comercial.
 - Se reorganizó la navegación alrededor de módulos comerciales.
 - Se añadieron al Dashboard el tipo de negocio y los canales activos.
 - Se añadió la interfaz inicial de plantillas de negocio.
@@ -35,3 +35,10 @@ Los cambios relevantes de MASTER CRM Commerce se documentan en este archivo.
 - Se incorporó Recetas como módulo esperado con validación manual y acceso restringido.
 - Se priorizaron lotes, caducidades, pedidos validados y envíos locales.
 - Los demás giros comerciales quedaron como ideas posteriores al MVP de farmacia.
+
+## v0.4.1 — Rebranding definitivo MASTER CRM
+
+- Se estableció MASTER CRM como nombre oficial del producto.
+- Se adoptó el subtítulo “Sistema integral de gestión para farmacias”.
+- Se actualizaron metadatos, navegación, encabezados, tienda, login, mensajes y logo.
+- Se añadieron al Dashboard la versión, el estado del sistema y el backend actual.

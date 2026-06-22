@@ -4257,7 +4257,7 @@ const state = {
     storeLink: "https://mixteko.github.io/Minifarmacia/",
     businessPhone: "5218112345678",
     welcomeMessage:
-      "Gracias por visitar MASTER CRM Commerce. Puedes comprar en esta liga: {{liga}}. Registrate para guardar tus datos de entrega y dar seguimiento a tu pedido.",
+      "Gracias por visitar MASTER CRM. Puedes comprar en esta liga: {{liga}}. Registrate para guardar tus datos de entrega y dar seguimiento a tu pedido.",
   }),
   storeCart: [],
   productQuery: "",
@@ -5675,7 +5675,7 @@ function stockStatus(product) {
 }
 
 function resetDemoData() {
-  if (!window.confirm("Reiniciar demo de MASTER CRM Commerce?")) return;
+  if (!window.confirm("Reiniciar demo de MASTER CRM?")) return;
   state.products = [];
   state.customers = initialCustomers.map((item) => ({ ...item }));
   state.orders = [];

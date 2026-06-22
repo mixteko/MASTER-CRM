@@ -1,4 +1,4 @@
-# Módulos de MASTER CRM Commerce
+# Módulos de MASTER CRM
 
 ## Dashboard
 

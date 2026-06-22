@@ -1,8 +1,8 @@
-# Arquitectura de MASTER CRM Commerce
+# Arquitectura de MASTER CRM
 
 ## Panorama general
 
-MASTER CRM Commerce se plantea como un CRM comercial modular. La implementación actual es una aplicación web monolítica en JavaScript Vanilla con un servidor Node.js y persistencia híbrida. La arquitectura objetivo separará responsabilidades gradualmente, sin reescrituras completas ni cambios simultáneos de alto riesgo.
+MASTER CRM se plantea como un sistema integral de gestión modular para farmacias. La implementación actual es una aplicación web monolítica en JavaScript Vanilla con un servidor Node.js y persistencia híbrida. La arquitectura objetivo separará responsabilidades gradualmente, sin reescrituras completas ni cambios simultáneos de alto riesgo.
 
 ## Core
 

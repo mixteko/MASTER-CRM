@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Este documento define los contratos de datos de la plantilla Farmacia de MASTER CRM Commerce para la versión `v0.3.0`. Es una especificación funcional previa a cualquier cambio de frontend, backend o base de datos; no representa todavía una migración SQL ni una API implementada.
+Este documento define los contratos de datos de la plantilla Farmacia de MASTER CRM para la versión `v0.3.0`. Es una especificación funcional previa a cualquier cambio de frontend, backend o base de datos; no representa todavía una migración SQL ni una API implementada.
 
 ## Convenciones generales
 

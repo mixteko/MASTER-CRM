@@ -1,8 +1,8 @@
-# Roadmap de MASTER CRM Commerce
+# Roadmap de MASTER CRM
 
 ## Visión del producto
 
-MASTER CRM Commerce será inicialmente un CRM comercial especializado en farmacias locales. Su objetivo es centralizar clientes, productos farmacéuticos, lotes, caducidades, inventario, recetas, pedidos, ventas, pagos, envíos y canales de atención sin interrumpir la operación existente.
+MASTER CRM será inicialmente un sistema integral de gestión especializado en farmacias locales. Su objetivo es centralizar clientes, productos farmacéuticos, lotes, caducidades, inventario, recetas, pedidos, ventas, pagos, envíos y canales de atención sin interrumpir la operación existente.
 
 Farmacia es la plantilla activa principal y concentra la prioridad del roadmap hasta alcanzar un MVP estable. La adaptación a ferreterías, refaccionarias, abarrotes, consultorios u otros giros se conserva como una idea futura, pero no dirige las decisiones actuales de producto. Se mantiene JavaScript Vanilla y una migración incremental de la persistencia local hacia servicios de backend.
 
@@ -10,13 +10,13 @@ Farmacia es la plantilla activa principal y concentra la prioridad del roadmap h
 
 La aplicación cuenta con una interfaz CRM responsive, tienda, carrito, clientes, productos, pedidos, ventas, pagos, envíos y administración de conversaciones de WhatsApp. El frontend mantiene parte de la operación en LocalStorage, mientras productos y conversaciones utilizan integraciones de backend y Supabase.
 
-El branding base de MASTER CRM Commerce y la navegación por módulos corresponden a la versión `v0.1.0`. Farmacia es la plantilla visual activa. La arquitectura todavía es monolítica, no todos los módulos tienen persistencia remota y aún no se implementan los contratos farmacéuticos definidos para productos, lotes, recetas y validaciones.
+El branding base de MASTER CRM y la navegación por módulos corresponden a la versión `v0.4.1`. Farmacia es la plantilla visual activa. La arquitectura todavía es monolítica, no todos los módulos tienen persistencia remota y aún no se implementan los contratos farmacéuticos definidos para productos, lotes, recetas y validaciones.
 
 ## Fases
 
 ### v0.1.0 — Branding CRM
 
-- Adoptar la identidad MASTER CRM Commerce.
+- Adoptar la identidad inicial MASTER CRM.
 - Organizar el menú alrededor de módulos comerciales.
 - Incorporar el concepto visual de plantillas de negocio.
 
