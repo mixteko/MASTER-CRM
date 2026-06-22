@@ -653,22 +653,22 @@
         <button class="ghost-button small" type="button" data-action="close-inventory-product-modal">Cerrar</button>
       </div>
       <form class="inventory-product-form" id="inventoryProductVisualForm">
-        <label>Nombre comercial<input type="text" required /></label>
-        <label>Sustancia activa<input type="text" /></label>
-        <label>Laboratorio<input type="text" /></label>
-        <label>Categoría<input type="text" /></label>
-        <label>Presentación<input type="text" /></label>
-        <label>Concentración<input type="text" /></label>
-        <label>Código de barras<input type="text" /></label>
-        <label>SKU<input type="text" /></label>
-        <label>Costo compra<input type="number" min="0" step="0.01" /></label>
-        <label>Precio venta<input type="number" min="0" step="0.01" /></label>
-        <label>Stock inicial<input type="number" min="0" step="1" /></label>
-        <label>Stock mínimo<input type="number" min="0" step="1" /></label>
-        <label class="inventory-check"><input type="checkbox" />Requiere receta</label>
-        <label class="inventory-check"><input type="checkbox" />Medicamento controlado</label>
-        <label class="inventory-check"><input type="checkbox" />Refrigeración</label>
-        <label>Imagen<input type="url" placeholder="https://" /></label>
+        <label>Nombre comercial<input id="inventoryProductName" name="name" type="text" required /></label>
+        <label>Sustancia activa<input id="inventoryProductSubstance" name="substance" type="text" /></label>
+        <label>Laboratorio<input id="inventoryProductLaboratory" name="laboratory" type="text" /></label>
+        <label>Categoría<input id="inventoryProductCategory" name="category" type="text" /></label>
+        <label>Presentación<input id="inventoryProductPresentation" name="presentation" type="text" /></label>
+        <label>Concentración<input id="inventoryProductConcentration" name="concentration" type="text" /></label>
+        <label>Código de barras<input id="inventoryProductBarcode" name="barcode" type="text" /></label>
+        <label>SKU<input id="inventoryProductSku" name="sku" type="text" /></label>
+        <label>Costo compra<input id="inventoryProductCost" name="cost" type="number" min="0" step="0.01" /></label>
+        <label>Precio venta<input id="inventoryProductPrice" name="price" type="number" min="0" step="0.01" required /></label>
+        <label>Stock inicial<input id="inventoryProductStock" name="stock" type="number" min="0" step="1" required /></label>
+        <label>Stock mínimo<input id="inventoryProductMinStock" name="minStock" type="number" min="0" step="1" /></label>
+        <label class="inventory-check"><input id="inventoryProductRequiresRecipe" name="requiresRecipe" type="checkbox" />Requiere receta</label>
+        <label class="inventory-check"><input id="inventoryProductControlled" name="controlled" type="checkbox" />Medicamento controlado</label>
+        <label class="inventory-check"><input id="inventoryProductRefrigeration" name="refrigeration" type="checkbox" />Refrigeración</label>
+        <label>Imagen<input id="inventoryProductImageUrl" name="imageUrl" type="url" placeholder="https://" /></label>
         <div class="inventory-form-actions">
           <button class="ghost-button" type="button" data-action="close-inventory-product-modal">Cancelar</button>
           <button class="primary-button" type="submit">Guardar producto</button>

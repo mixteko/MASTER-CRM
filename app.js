@@ -4422,6 +4422,19 @@ const elements = {
   openInventoryProductModal: $("#openInventoryProductModal"),
   inventoryProductDialog: $("#inventoryProductDialog"),
   inventoryProductVisualForm: $("#inventoryProductVisualForm"),
+  inventoryProductName: $("#inventoryProductName"),
+  inventoryProductSubstance: $("#inventoryProductSubstance"),
+  inventoryProductLaboratory: $("#inventoryProductLaboratory"),
+  inventoryProductCategory: $("#inventoryProductCategory"),
+  inventoryProductPresentation: $("#inventoryProductPresentation"),
+  inventoryProductBarcode: $("#inventoryProductBarcode"),
+  inventoryProductSku: $("#inventoryProductSku"),
+  inventoryProductCost: $("#inventoryProductCost"),
+  inventoryProductPrice: $("#inventoryProductPrice"),
+  inventoryProductStock: $("#inventoryProductStock"),
+  inventoryProductMinStock: $("#inventoryProductMinStock"),
+  inventoryProductRequiresRecipe: $("#inventoryProductRequiresRecipe"),
+  inventoryProductImageUrl: $("#inventoryProductImageUrl"),
   inventoryDetailDialog: $("#inventoryDetailDialog"),
   inventoryDetailTitle: $("#inventoryDetailTitle"),
   inventoryDetailContent: $("#inventoryDetailContent"),
@@ -4513,10 +4526,7 @@ function bindEvents() {
     renderInventory();
   });
   elements.openInventoryProductModal.addEventListener("click", () => elements.inventoryProductDialog.showModal());
-  elements.inventoryProductVisualForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    showToast("Interfaz lista. El guardado se habilitará en una fase posterior");
-  });
+  elements.inventoryProductVisualForm.addEventListener("submit", saveInventoryProduct);
 
   document.addEventListener("click", handleDocumentAction);
 }
@@ -5475,6 +5485,52 @@ function productImageMarkup(product) {
   const initialsText = initials(product.name || "Producto");
   if (!product.imageUrl) return `<div class="product-image-placeholder">${escapeHTML(initialsText)}</div>`;
   return `<img src="${escapeHTML(product.imageUrl)}" alt="${escapeHTML(product.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), { className: 'product-image-placeholder', textContent: '${escapeHTML(initialsText)}' }))" />`;
+}
+
+async function saveInventoryProduct(event) {
+  event.preventDefault();
+  const name = elements.inventoryProductName.value.trim();
+  const price = toNumber(elements.inventoryProductPrice.value);
+  const stock = toInteger(elements.inventoryProductStock.value);
+  const minStock = toInteger(elements.inventoryProductMinStock.value);
+
+  if (!name) return showToast("El nombre es obligatorio");
+  if (price < 0) return showToast("El precio venta no puede ser negativo");
+  if (stock < 0) return showToast("El stock inicial no puede ser negativo");
+  if (minStock < 0) return showToast("El stock minimo no puede ser negativo");
+
+  const sku = elements.inventoryProductSku.value.trim() || elements.inventoryProductBarcode.value.trim();
+  const substance = elements.inventoryProductSubstance.value.trim();
+  const payload = {
+    name,
+    substance,
+    laboratory: elements.inventoryProductLaboratory.value.trim(),
+    category: elements.inventoryProductCategory.value.trim(),
+    presentation: elements.inventoryProductPresentation.value.trim(),
+    sku,
+    cost: toNumber(elements.inventoryProductCost.value),
+    price,
+    stock,
+    minStock,
+    requiresRecipe: elements.inventoryProductRequiresRecipe.checked,
+    imageUrl: elements.inventoryProductImageUrl.value.trim(),
+    status: "Activo",
+    type: "Medicamento",
+  };
+
+  try {
+    await saveProductToApi(payload);
+    await loadProducts();
+    clearInventoryProductForm();
+    elements.inventoryProductDialog.close();
+    showToast("Producto guardado");
+  } catch (error) {
+    showToast(error.message || "No se pudo guardar producto en Supabase");
+  }
+}
+
+function clearInventoryProductForm() {
+  elements.inventoryProductVisualForm.reset();
 }
 
 async function saveProduct(event) {
