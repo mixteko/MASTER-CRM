@@ -360,6 +360,53 @@
           <div class="kanban-grid" id="ordersBoard"></div>
         </section>
 
+        <section class="view" id="inventario">
+          <div class="inventory-heading">
+            <div>
+              <p class="eyebrow">Control farmacéutico</p>
+              <h2>Inventario profesional</h2>
+              <p>Consulta existencias, lotes, caducidades y valor del inventario.</p>
+            </div>
+            <button class="primary-button" type="button" id="openInventoryProductModal">+ Nuevo producto</button>
+          </div>
+
+          <div class="inventory-kpi-grid">
+            <article class="metric-card"><span>Productos activos</span><strong id="inventoryActiveProducts">0</strong><small>Disponibles en catálogo</small></article>
+            <article class="metric-card"><span>Stock bajo</span><strong id="inventoryLowStock">0</strong><small>Requieren reposición</small></article>
+            <article class="metric-card"><span>Próximos a caducar</span><strong id="inventoryExpiringSoon">0</strong><small>Dentro de 90 días</small></article>
+            <article class="metric-card"><span>Valor total del inventario</span><strong id="inventoryTotalValue">$0</strong><small>Calculado a costo de compra</small></article>
+          </div>
+
+          <section class="panel-card inventory-panel">
+            <div class="inventory-toolbar" aria-label="Filtros de inventario">
+              <label class="inventory-search">Buscar producto<input id="inventorySearch" type="search" placeholder="Nombre, SKU o sustancia" /></label>
+              <label>Filtrar categoría<select id="inventoryCategoryFilter"><option value="">Todas</option></select></label>
+              <label>Filtrar laboratorio<select id="inventoryLaboratoryFilter"><option value="">Todos</option></select></label>
+              <label>Filtrar estado<select id="inventoryStatusFilter"><option value="">Todos</option><option value="Disponible">Disponible</option><option value="Stock bajo">Stock bajo</option><option value="Agotado">Agotado</option><option value="Próximo a caducar">Próximo a caducar</option></select></label>
+            </div>
+            <div class="table-scroll inventory-table-scroll">
+              <table class="inventory-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Laboratorio</th>
+                    <th>Categoría</th>
+                    <th>Presentación</th>
+                    <th>Lote</th>
+                    <th>Caducidad</th>
+                    <th>Stock actual</th>
+                    <th>Stock mínimo</th>
+                    <th>Estado</th>
+                    <th>Precio venta</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="inventoryTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
         <section class="view" id="productos">
           <div class="module-grid">
             <form class="panel-card form-panel" id="productForm">
@@ -581,6 +628,43 @@
         <button class="primary-button store-register-button" type="submit">Crear cuenta</button>
         <p class="account-login-link">Ya tienes una cuenta? <button id="showLoginButton" type="button">Inicia sesion</button></p>
       </form>
+    </dialog>
+
+    <dialog class="inventory-dialog" id="inventoryProductDialog">
+      <div class="inventory-dialog-header">
+        <div><p class="eyebrow">Alta de catálogo</p><h2>Nuevo producto farmacéutico</h2></div>
+        <button class="ghost-button small" type="button" data-action="close-inventory-product-modal">Cerrar</button>
+      </div>
+      <form class="inventory-product-form" id="inventoryProductVisualForm">
+        <label>Nombre comercial<input type="text" required /></label>
+        <label>Sustancia activa<input type="text" /></label>
+        <label>Laboratorio<input type="text" /></label>
+        <label>Categoría<input type="text" /></label>
+        <label>Presentación<input type="text" /></label>
+        <label>Concentración<input type="text" /></label>
+        <label>Código de barras<input type="text" /></label>
+        <label>SKU<input type="text" /></label>
+        <label>Costo compra<input type="number" min="0" step="0.01" /></label>
+        <label>Precio venta<input type="number" min="0" step="0.01" /></label>
+        <label>Stock inicial<input type="number" min="0" step="1" /></label>
+        <label>Stock mínimo<input type="number" min="0" step="1" /></label>
+        <label class="inventory-check"><input type="checkbox" />Requiere receta</label>
+        <label class="inventory-check"><input type="checkbox" />Medicamento controlado</label>
+        <label class="inventory-check"><input type="checkbox" />Refrigeración</label>
+        <label>Imagen<input type="url" placeholder="https://" /></label>
+        <div class="inventory-form-actions">
+          <button class="ghost-button" type="button" data-action="close-inventory-product-modal">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar producto</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="inventory-dialog inventory-detail-dialog" id="inventoryDetailDialog">
+      <div class="inventory-dialog-header">
+        <div><p class="eyebrow">Ficha farmacéutica</p><h2 id="inventoryDetailTitle">Detalle del producto</h2></div>
+        <button class="ghost-button small" type="button" data-action="close-inventory-detail">Cerrar</button>
+      </div>
+      <div id="inventoryDetailContent"></div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

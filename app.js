@@ -4271,6 +4271,10 @@ const state = {
   renderedConversationId: "",
   renderedMessageSignature: "",
   productLoadError: "",
+  inventoryQuery: "",
+  inventoryCategory: "",
+  inventoryLaboratory: "",
+  inventoryStatus: "",
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
@@ -4294,7 +4298,6 @@ const viewTitles = {
 };
 
 const viewAliases = {
-  inventario: "productos",
   pagos: "cobros",
   canales: "tienda",
   "whatsapp-manager": "whatsapp",
@@ -4396,6 +4399,21 @@ const elements = {
   productSearch: $("#productSearch"),
   productTable: $("#productTable"),
   clearProductForm: $("#clearProductForm"),
+  inventoryActiveProducts: $("#inventoryActiveProducts"),
+  inventoryLowStock: $("#inventoryLowStock"),
+  inventoryExpiringSoon: $("#inventoryExpiringSoon"),
+  inventoryTotalValue: $("#inventoryTotalValue"),
+  inventorySearch: $("#inventorySearch"),
+  inventoryCategoryFilter: $("#inventoryCategoryFilter"),
+  inventoryLaboratoryFilter: $("#inventoryLaboratoryFilter"),
+  inventoryStatusFilter: $("#inventoryStatusFilter"),
+  inventoryTable: $("#inventoryTable"),
+  openInventoryProductModal: $("#openInventoryProductModal"),
+  inventoryProductDialog: $("#inventoryProductDialog"),
+  inventoryProductVisualForm: $("#inventoryProductVisualForm"),
+  inventoryDetailDialog: $("#inventoryDetailDialog"),
+  inventoryDetailTitle: $("#inventoryDetailTitle"),
+  inventoryDetailContent: $("#inventoryDetailContent"),
   salesTable: $("#salesTable"),
   shipmentsTable: $("#shipmentsTable"),
   paymentsTable: $("#paymentsTable"),
@@ -4467,6 +4485,28 @@ function bindEvents() {
     renderProducts();
   });
 
+  elements.inventorySearch.addEventListener("input", (event) => {
+    state.inventoryQuery = event.target.value.trim().toLowerCase();
+    renderInventory();
+  });
+  elements.inventoryCategoryFilter.addEventListener("change", (event) => {
+    state.inventoryCategory = event.target.value;
+    renderInventory();
+  });
+  elements.inventoryLaboratoryFilter.addEventListener("change", (event) => {
+    state.inventoryLaboratory = event.target.value;
+    renderInventory();
+  });
+  elements.inventoryStatusFilter.addEventListener("change", (event) => {
+    state.inventoryStatus = event.target.value;
+    renderInventory();
+  });
+  elements.openInventoryProductModal.addEventListener("click", () => elements.inventoryProductDialog.showModal());
+  elements.inventoryProductVisualForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    showToast("Interfaz lista. El guardado se habilitará en una fase posterior");
+  });
+
   document.addEventListener("click", handleDocumentAction);
 }
 
@@ -4490,6 +4530,9 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "refresh-conversations") loadRealConversations({ manual: true, forceChatRender: true });
   if (action.dataset.action === "refresh-products") loadProducts({ manual: true });
   if (action.dataset.action === "select-conversation") selectConversation(id);
+  if (action.dataset.action === "view-inventory-product") openInventoryDetail(id);
+  if (action.dataset.action === "close-inventory-product-modal") elements.inventoryProductDialog.close();
+  if (action.dataset.action === "close-inventory-detail") elements.inventoryDetailDialog.close();
 }
 
 function showView(viewId) {
@@ -4513,6 +4556,7 @@ function renderAll() {
   renderCustomers();
   renderOrders();
   renderProducts();
+  renderInventory();
   renderSales();
   renderShipments();
   renderPayments();
@@ -5301,6 +5345,119 @@ function renderProducts() {
         })
         .join("")
     : tableEmpty(6, state.productLoadError || "No hay productos.");
+}
+
+function renderInventory() {
+  const activeProducts = state.products.filter((product) => product.status === "Activo");
+  const lowStockProducts = activeProducts.filter((product) => product.stock > 0 && product.stock <= product.minStock);
+  const expiringProducts = activeProducts.filter(isInventoryExpiringSoon);
+  const inventoryValue = activeProducts.reduce((total, product) => total + product.stock * toNumber(product.cost), 0);
+
+  elements.inventoryActiveProducts.textContent = String(activeProducts.length);
+  elements.inventoryLowStock.textContent = String(lowStockProducts.length);
+  elements.inventoryExpiringSoon.textContent = String(expiringProducts.length);
+  elements.inventoryTotalValue.textContent = currency.format(inventoryValue);
+
+  const categories = [...new Set(state.products.map((product) => product.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const laboratories = [...new Set(state.products.map(inventoryLaboratory).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  updateInventoryFilterOptions(elements.inventoryCategoryFilter, categories, "Todas", state.inventoryCategory);
+  updateInventoryFilterOptions(elements.inventoryLaboratoryFilter, laboratories, "Todos", state.inventoryLaboratory);
+
+  const products = state.products.filter((product) => {
+    const status = inventoryStatus(product).label;
+    const laboratory = inventoryLaboratory(product);
+    const searchText = `${product.name || ""} ${product.sku || ""} ${product.substance || ""} ${laboratory}`.toLowerCase();
+    return (
+      searchText.includes(state.inventoryQuery) &&
+      (!state.inventoryCategory || product.category === state.inventoryCategory) &&
+      (!state.inventoryLaboratory || laboratory === state.inventoryLaboratory) &&
+      (!state.inventoryStatus || status === state.inventoryStatus)
+    );
+  });
+
+  elements.inventoryTable.innerHTML = products.length
+    ? products
+        .map((product) => {
+          const status = inventoryStatus(product);
+          return `
+            <tr>
+              <td><div class="inventory-product-cell">${productImageMarkup(product)}<div><strong>${escapeHTML(product.name)}</strong><span>${escapeHTML(product.sku || "Sin SKU")}</span></div></div></td>
+              <td>${escapeHTML(inventoryLaboratory(product))}</td>
+              <td>${escapeHTML(product.category || "Sin categoría")}</td>
+              <td>${escapeHTML(product.presentation || product.presentacion || "No registrada")}</td>
+              <td>${escapeHTML(product.lot || product.lote || "Sin lote")}</td>
+              <td>${escapeHTML(product.expiresAt || "Sin fecha")}</td>
+              <td><strong>${toInteger(product.stock)}</strong></td>
+              <td>${toInteger(product.minStock)}</td>
+              <td><span class="inventory-status ${status.className}">${status.icon} ${escapeHTML(status.label)}</span></td>
+              <td><strong>${currency.format(product.price)}</strong></td>
+              <td><button class="ghost-button small" type="button" data-action="view-inventory-product" data-id="${product.id}">Ver detalle</button></td>
+            </tr>
+          `;
+        })
+        .join("")
+    : tableEmpty(11, state.productLoadError || "No hay productos que coincidan con los filtros.");
+}
+
+function updateInventoryFilterOptions(select, values, emptyLabel, selectedValue) {
+  select.innerHTML = `<option value="">${emptyLabel}</option>${values
+    .map((value) => `<option value="${escapeHTML(value)}">${escapeHTML(value)}</option>`)
+    .join("")}`;
+  select.value = selectedValue;
+}
+
+function inventoryLaboratory(product) {
+  return product.laboratory || product.laboratorio || "No registrado";
+}
+
+function isInventoryExpiringSoon(product) {
+  if (!product.expiresAt) return false;
+  const expiresAt = new Date(`${product.expiresAt}T23:59:59`);
+  const daysUntilExpiration = (expiresAt.getTime() - Date.now()) / 86400000;
+  return Number.isFinite(daysUntilExpiration) && daysUntilExpiration <= 90;
+}
+
+function inventoryStatus(product) {
+  if (toInteger(product.stock) <= 0) return { label: "Agotado", icon: "🔴", className: "is-out" };
+  if (isInventoryExpiringSoon(product)) return { label: "Próximo a caducar", icon: "🟠", className: "is-expiring" };
+  if (toInteger(product.stock) <= toInteger(product.minStock)) return { label: "Stock bajo", icon: "🟡", className: "is-low" };
+  return { label: "Disponible", icon: "🟢", className: "is-available" };
+}
+
+function openInventoryDetail(id) {
+  const product = getProduct(id);
+  if (!product) return;
+  const status = inventoryStatus(product);
+  elements.inventoryDetailTitle.textContent = product.name;
+  elements.inventoryDetailContent.innerHTML = `
+    <div class="inventory-detail-hero">
+      ${productImageMarkup(product)}
+      <div><span class="inventory-status ${status.className}">${status.icon} ${escapeHTML(status.label)}</span><p>${escapeHTML(product.description || "Sin descripción registrada")}</p></div>
+    </div>
+    <dl class="inventory-detail-grid">
+      ${inventoryDetailItem("Nombre comercial", product.name)}
+      ${inventoryDetailItem("Sustancia activa", product.substance || "No registrada")}
+      ${inventoryDetailItem("Laboratorio", inventoryLaboratory(product))}
+      ${inventoryDetailItem("Categoría", product.category || "Sin categoría")}
+      ${inventoryDetailItem("Presentación", product.presentation || product.presentacion || "No registrada")}
+      ${inventoryDetailItem("Concentración", product.concentration || product.concentracion || "No registrada")}
+      ${inventoryDetailItem("Código de barras / SKU", product.sku || "No registrado")}
+      ${inventoryDetailItem("Lote", product.lot || product.lote || "Sin lote")}
+      ${inventoryDetailItem("Caducidad", product.expiresAt || "Sin fecha")}
+      ${inventoryDetailItem("Costo compra", currency.format(product.cost || 0))}
+      ${inventoryDetailItem("Precio venta", currency.format(product.price || 0))}
+      ${inventoryDetailItem("Stock actual", String(toInteger(product.stock)))}
+      ${inventoryDetailItem("Stock mínimo", String(toInteger(product.minStock)))}
+      ${inventoryDetailItem("Requiere receta", product.requiresRecipe ? "Sí" : "No")}
+      ${inventoryDetailItem("Medicamento controlado", product.isControlled ? "Sí" : "No registrado")}
+      ${inventoryDetailItem("Refrigeración", product.requiresRefrigeration ? "Sí" : "No registrado")}
+    </dl>
+  `;
+  elements.inventoryDetailDialog.showModal();
+}
+
+function inventoryDetailItem(label, value) {
+  return `<div><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(value)}</dd></div>`;
 }
 
 function productImageMarkup(product) {
