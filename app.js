@@ -12,6 +12,9 @@ const storageKeys = {
 
 const PRODUCT_CATALOG_VERSION = "pdv-2026-06-11";
 
+let productImagePendingFile = null;
+let productImageObjectUrl = "";
+
 const initialProducts = [
   {
     "id": "prod-gf049",
@@ -4396,6 +4399,10 @@ const elements = {
   productCategory: $("#productCategory"),
   productSubstance: $("#productSubstance"),
   productImageUrl: $("#productImageUrl"),
+  productImageFile: $("#productImageFile"),
+  productImageUploadButton: $("#productImageUploadButton"),
+  productImagePreview: $("#productImagePreview"),
+  productImagePreviewImg: $("#productImagePreviewImg"),
   productCost: $("#productCost"),
   productRegularPrice: $("#productRegularPrice"),
   productPrice: $("#productPrice"),
@@ -4407,6 +4414,10 @@ const elements = {
   productIva: $("#productIva"),
   productStatus: $("#productStatus"),
   productDescription: $("#productDescription"),
+  productProfitSummary: $("#productProfitSummary"),
+  productProfitAmount: $("#productProfitAmount"),
+  productProfitPercent: $("#productProfitPercent"),
+  productProfitNote: $("#productProfitNote"),
   productSearch: $("#productSearch"),
   productTable: $("#productTable"),
   clearProductForm: $("#clearProductForm"),
@@ -4504,6 +4515,17 @@ function bindEvents() {
 
   elements.productForm.addEventListener("submit", saveProduct);
   elements.clearProductForm.addEventListener("click", clearProductForm);
+  elements.productImageUploadButton.addEventListener("click", handleProductImageUploadClick);
+  elements.productImageFile.addEventListener("change", handleProductImageFileChange);
+  elements.productImageUrl.addEventListener("input", handleProductImageUrlInput);
+  elements.productImageUrl.addEventListener("change", handleProductImageUrlInput);
+  elements.productImagePreviewImg.addEventListener("error", handleProductImagePreviewError);
+  [elements.productCost, elements.productRegularPrice, elements.productPrice].forEach((input) => {
+    input.addEventListener("input", updateProductProfitSummary);
+    input.addEventListener("change", updateProductProfitSummary);
+  });
+  updateProductProfitSummary();
+  updateProductImagePreview();
   elements.productSearch.addEventListener("input", (event) => {
     state.productQuery = event.target.value.trim().toLowerCase();
     renderProducts();
@@ -4615,7 +4637,7 @@ async function loadRealConversations(options = {}) {
     elements.chatLog.innerHTML = emptyState("No se pudo cargar historial real");
     renderConversationProfile(null);
     renderAdvisorAlert(null);
-    showToast("No se pudo cargar historial real");
+    if (options.manual) showToast("No se pudo cargar historial real");
   }
 }
 
@@ -5340,21 +5362,27 @@ function renderProducts() {
           const status = stockStatus(product);
           return `
             <tr>
-              <td>
+              <td class="product-cell-product">
                 <div class="admin-product-cell">
                   ${productImageMarkup(product)}
-                  <div>
-                    <strong>${escapeHTML(product.name)}</strong>
-                    <span>${escapeHTML(product.sku || "Sin SKU")} · ${escapeHTML(product.description)}</span>
+                  <div class="admin-product-copy">
+                    <strong class="admin-product-name">${escapeHTML(product.name)}</strong>
+                    <p class="admin-product-meta">
+                      <span>SKU: ${escapeHTML(product.sku || "Sin SKU")}</span>
+                      ${product.substance ? `<span>${escapeHTML(product.substance)}</span>` : ""}
+                    </p>
                   </div>
                 </div>
               </td>
-              <td>${escapeHTML(product.category)}</td>
-              <td>${currency.format(product.price)}</td>
-              <td><strong>${product.stock}</strong><span>${escapeHTML(status.label)} · Cad. ${escapeHTML(product.expiresAt || "N/D")}</span></td>
-              <td><span class="badge ${product.type === "Receta medica" ? "danger" : "success"}">${escapeHTML(product.type)}</span></td>
-              <td>
-                <div class="table-actions">
+              <td class="product-cell-category">${escapeHTML(product.category)}</td>
+              <td class="product-cell-price"><strong class="product-price-value">${currency.format(product.price)}</strong></td>
+              <td class="product-cell-stock">
+                <strong class="product-stock-value">${product.stock}</strong>
+                <span class="product-stock-meta">${escapeHTML(status.label)} · Cad. ${escapeHTML(product.expiresAt || "N/D")}</span>
+              </td>
+              <td class="product-cell-type"><span class="badge ${product.type === "Receta medica" ? "danger" : "success"}">${escapeHTML(product.type)}</span></td>
+              <td class="product-cell-actions">
+                <div class="table-actions product-row-actions">
                   <button class="ghost-button small" type="button" data-action="edit-product" data-id="${product.id}">Editar</button>
                   <button class="ghost-button small" type="button" data-action="toggle-product" data-id="${product.id}">
                     ${product.status === "Activo" ? "Pausar" : "Activar"}
@@ -5547,6 +5575,11 @@ async function saveProduct(event) {
   if (minStock > maxStock) return showToast("El minimo no puede superar el maximo");
   if (stock > maxStock) return showToast("El stock no puede superar el maximo");
 
+  const imageUrl = elements.productImageUrl.value.trim();
+  if (productImagePendingFile && !imageUrl) {
+    return showToast("La imagen seleccionada se previsualiza localmente. La subida a Supabase Storage se activará en la siguiente fase.");
+  }
+
   const product = {
     id,
     sku,
@@ -5562,7 +5595,7 @@ async function saveProduct(event) {
     regularPrice: regularPrice || price,
     price,
     discountPrice: price,
-    imageUrl: elements.productImageUrl.value.trim(),
+    imageUrl,
     type: elements.productType.value,
     requiresRecipe: elements.productType.value === "Receta medica",
     iva: elements.productIva.value === "Si",
@@ -5589,6 +5622,8 @@ function editProduct(id) {
   elements.productCategory.value = product.category;
   elements.productSubstance.value = product.substance || "";
   elements.productImageUrl.value = product.imageUrl || "";
+  clearProductImagePendingFile();
+  updateProductImagePreview();
   elements.productCost.value = product.cost || 0;
   elements.productRegularPrice.value = product.regularPrice || product.price;
   elements.productPrice.value = product.price;
@@ -5600,6 +5635,7 @@ function editProduct(id) {
   elements.productIva.value = product.iva ? "Si" : "No";
   elements.productStatus.value = product.status;
   elements.productDescription.value = product.description;
+  updateProductProfitSummary();
   showView("productos");
 }
 
@@ -5624,6 +5660,137 @@ function clearProductForm() {
   elements.productFormTitle.textContent = "Nuevo producto";
   elements.productMinStock.value = 5;
   elements.productMaxStock.value = 50;
+  clearProductImagePendingFile();
+  updateProductProfitSummary();
+  updateProductImagePreview();
+}
+
+function clearProductImagePendingFile(options = {}) {
+  if (productImageObjectUrl) {
+    URL.revokeObjectURL(productImageObjectUrl);
+    productImageObjectUrl = "";
+  }
+  productImagePendingFile = null;
+  if (!options.keepInput && elements.productImageFile) elements.productImageFile.value = "";
+}
+
+function handleProductImageUploadClick() {
+  elements.productImageFile.click();
+}
+
+function handleProductImageFileChange(event) {
+  const file = event.target.files?.[0];
+  clearProductImagePendingFile({ keepInput: true });
+  if (!file) {
+    updateProductImagePreview();
+    return;
+  }
+
+  const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+  if (!allowedTypes.includes(file.type)) {
+    event.target.value = "";
+    showToast("Solo se permiten imagenes PNG, JPEG o WebP");
+    updateProductImagePreview();
+    return;
+  }
+
+  productImagePendingFile = file;
+  productImageObjectUrl = URL.createObjectURL(file);
+  updateProductImagePreview();
+}
+
+function handleProductImageUrlInput() {
+  if (elements.productImageUrl.value.trim()) clearProductImagePendingFile();
+  updateProductImagePreview();
+}
+
+function handleProductImagePreviewError() {
+  if (productImageObjectUrl) return;
+  elements.productImagePreview.classList.add("is-empty");
+  elements.productImagePreviewImg.hidden = true;
+  elements.productImagePreviewImg.removeAttribute("src");
+  const empty = elements.productImagePreview.querySelector(".product-image-preview-empty");
+  if (empty) {
+    empty.hidden = false;
+    empty.textContent = "No se pudo cargar la imagen";
+  }
+}
+
+function isValidProductImageUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function updateProductImagePreview() {
+  if (!elements.productImagePreview || !elements.productImagePreviewImg) return;
+
+  const empty = elements.productImagePreview.querySelector(".product-image-preview-empty");
+  const url = elements.productImageUrl.value.trim();
+  let previewSrc = "";
+
+  if (productImageObjectUrl) previewSrc = productImageObjectUrl;
+  else if (isValidProductImageUrl(url)) previewSrc = url;
+
+  if (previewSrc) {
+    elements.productImagePreview.classList.remove("is-empty");
+    elements.productImagePreviewImg.hidden = false;
+    if (empty) {
+      empty.hidden = true;
+      empty.textContent = "Sin imagen";
+    }
+    if (elements.productImagePreviewImg.getAttribute("src") !== previewSrc) {
+      elements.productImagePreviewImg.src = previewSrc;
+    }
+    return;
+  }
+
+  elements.productImagePreview.classList.add("is-empty");
+  elements.productImagePreviewImg.hidden = true;
+  elements.productImagePreviewImg.removeAttribute("src");
+  if (empty) {
+    empty.hidden = false;
+    empty.textContent = "Sin imagen";
+  }
+}
+
+function updateProductProfitSummary() {
+  if (!elements.productProfitSummary) return;
+
+  const costRaw = elements.productCost.value.trim();
+  const cost = toNumber(costRaw);
+  const price = toNumber(elements.productPrice.value);
+  const hasCost = costRaw !== "" && cost > 0;
+
+  elements.productProfitSummary.classList.remove("is-loss", "is-profit", "is-neutral");
+
+  if (!hasCost) {
+    elements.productProfitAmount.textContent = "—";
+    elements.productProfitPercent.textContent = "Sin costo registrado";
+    elements.productProfitNote.textContent = "";
+    elements.productProfitSummary.classList.add("is-neutral");
+    return;
+  }
+
+  const profit = price - cost;
+  const marginPercent = (profit / cost) * 100;
+
+  elements.productProfitAmount.textContent = currency.format(profit);
+  elements.productProfitPercent.textContent = `${marginPercent.toFixed(1)}%`;
+
+  if (price < cost) {
+    elements.productProfitSummary.classList.add("is-loss");
+    elements.productProfitNote.textContent = "El precio de venta es menor que el costo (perdida).";
+    return;
+  }
+
+  elements.productProfitSummary.classList.add("is-profit");
+  elements.productProfitNote.textContent = profit === 0 ? "Sin ganancia sobre el costo." : "";
 }
 
 function renderSales() {

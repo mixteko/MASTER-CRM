@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "..");
 loadEnv();
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3090);
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "mini_farmacia_webhook_2026";
@@ -16,10 +16,8 @@ const AI_ENABLED = process.env.AI_ENABLED === "true";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ALLOWED_ORIGINS = new Set([
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://localhost:8080",
-  "http://127.0.0.1:8080",
+  "http://localhost:3090",
+  "http://127.0.0.1:3090",
   "https://mixteko.github.io",
   "https://minifarmacia.onrender.com",
 ]);
@@ -32,11 +30,6 @@ const server = createServer(async (request, response) => {
   if (request.method === "OPTIONS") {
     response.writeHead(204);
     response.end();
-    return;
-  }
-
-  if (request.method === "GET" && request.url === "/") {
-    sendJSON(response, 200, { ok: true, service: "Mini Farmacia WhatsApp API" });
     return;
   }
 
@@ -80,7 +73,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (request.method === "GET") {
+  if (request.method === "GET" || request.method === "HEAD") {
     sendStaticFile(request, response);
     return;
   }
@@ -1305,7 +1298,7 @@ function sendStaticFile(request, response) {
   }
 
   response.writeHead(200, { "Content-Type": getContentType(filePath) });
-  response.end(readFileSync(filePath));
+  response.end(request.method === "HEAD" ? undefined : readFileSync(filePath));
 }
 
 function getContentType(filePath) {

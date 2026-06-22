@@ -426,7 +426,7 @@
 
         <section class="view" id="productos">
           <div class="module-grid">
-            <form class="panel-card form-panel" id="productForm">
+            <form class="panel-card form-panel product-form-panel" id="productForm">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Catalogo</p>
@@ -435,52 +435,100 @@
                 <button class="ghost-button" type="button" id="clearProductForm">Limpiar</button>
               </div>
               <input id="productId" type="hidden" />
-              <label>SKU <input id="productSku" type="text" required /></label>
-              <label>Nombre <input id="productName" type="text" required /></label>
-              <label>Categoria <input id="productCategory" type="text" required /></label>
-              <label>Sustancia / slug <input id="productSubstance" type="text" /></label>
-              <label>Link imagen <input id="productImageUrl" type="url" /></label>
-              <div class="form-row">
-                <label>Costo <input id="productCost" type="number" min="0" step="0.01" /></label>
-                <label>Precio lista <input id="productRegularPrice" type="number" min="0" step="0.01" /></label>
-              </div>
-              <div class="form-row">
-                <label>Precio con descuento <input id="productPrice" type="number" min="0" step="0.01" required /></label>
-                <label>Stock <input id="productStock" type="number" min="0" step="1" required /></label>
-              </div>
-              <div class="form-row">
-                <label>Stock minimo <input id="productMinStock" type="number" min="0" step="1" required /></label>
-                <label>Stock maximo <input id="productMaxStock" type="number" min="0" step="1" required /></label>
-              </div>
-              <label>Caducidad <input id="productExpiresAt" type="date" /></label>
-              <div class="form-row">
-                <label>
-                  Tipo
-                  <select id="productType">
-                    <option value="Venta libre">Venta libre</option>
-                    <option value="Receta medica">Receta medica</option>
-                  </select>
-                </label>
-                <label>
-                  IVA
-                  <select id="productIva">
-                    <option value="No">No</option>
-                    <option value="Si">Si</option>
-                  </select>
-                </label>
-                <label>
-                  Estado
-                  <select id="productStatus">
-                    <option value="Activo">Activo</option>
-                    <option value="Pausado">Pausado</option>
-                  </select>
-                </label>
-              </div>
-              <label>Descripcion <textarea id="productDescription" rows="3"></textarea></label>
-              <button class="primary-button" type="submit">Guardar producto</button>
+
+              <section class="product-form-section">
+                <p class="product-form-section-title">Datos del producto</p>
+                <div class="product-form-grid product-form-grid--2">
+                  <label>SKU <input id="productSku" type="text" required /></label>
+                  <label>Nombre <input id="productName" type="text" required /></label>
+                </div>
+                <div class="product-form-grid product-form-grid--2">
+                  <label>Categoria <input id="productCategory" type="text" required /></label>
+                  <label>Sustancia / slug <input id="productSubstance" type="text" /></label>
+                </div>
+                <label class="product-form-full">Descripcion <textarea id="productDescription" rows="2"></textarea></label>
+                <div class="product-form-full product-image-field">
+                  <div class="product-image-field-header">
+                    <span class="product-image-label">Imagen del producto</span>
+                    <p class="product-image-help">Puedes pegar una URL o subir una imagen del producto.</p>
+                  </div>
+                  <div class="product-image-controls">
+                    <label class="product-image-url-label">
+                      URL de imagen
+                      <input id="productImageUrl" type="url" placeholder="https://" autocomplete="off" />
+                    </label>
+                    <input id="productImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+                    <button class="ghost-button product-image-upload-button" type="button" id="productImageUploadButton">Subir imagen</button>
+                  </div>
+                  <div class="product-image-preview is-empty" id="productImagePreview" aria-live="polite">
+                    <div class="product-image-preview-empty">Sin imagen</div>
+                    <img id="productImagePreviewImg" alt="Vista previa del producto" hidden />
+                  </div>
+                </div>
+              </section>
+
+              <section class="product-form-section">
+                <p class="product-form-section-title">Precios e inventario</p>
+                <div class="product-form-grid product-form-grid--2">
+                  <label>Costo <input id="productCost" type="number" min="0" step="0.01" /></label>
+                  <label>Precio lista <input id="productRegularPrice" type="number" min="0" step="0.01" /></label>
+                </div>
+                <div class="product-form-grid product-form-grid--2">
+                  <label>Precio con descuento <input id="productPrice" type="number" min="0" step="0.01" required /></label>
+                  <label>Stock <input id="productStock" type="number" min="0" step="1" required /></label>
+                </div>
+                <div id="productProfitSummary" class="product-profit-summary is-neutral" aria-live="polite">
+                  <p class="product-profit-heading">Resumen comercial</p>
+                  <div class="product-profit-metrics">
+                    <div class="product-profit-metric">
+                      <span>Ganancia estimada</span>
+                      <strong id="productProfitAmount">—</strong>
+                    </div>
+                    <div class="product-profit-metric">
+                      <span>Margen sobre costo</span>
+                      <strong id="productProfitPercent">—</strong>
+                    </div>
+                  </div>
+                  <p id="productProfitNote" class="product-profit-note"></p>
+                </div>
+                <div class="product-form-grid product-form-grid--2">
+                  <label>Stock minimo <input id="productMinStock" type="number" min="0" step="1" required /></label>
+                  <label>Stock maximo <input id="productMaxStock" type="number" min="0" step="1" required /></label>
+                </div>
+                <label class="product-form-full">Caducidad <input id="productExpiresAt" type="date" /></label>
+              </section>
+
+              <section class="product-form-section">
+                <p class="product-form-section-title">Clasificacion</p>
+                <div class="product-form-grid product-form-grid--3">
+                  <label>
+                    Tipo
+                    <select id="productType">
+                      <option value="Venta libre">Venta libre</option>
+                      <option value="Receta medica">Receta medica</option>
+                    </select>
+                  </label>
+                  <label>
+                    IVA
+                    <select id="productIva">
+                      <option value="No">No</option>
+                      <option value="Si">Si</option>
+                    </select>
+                  </label>
+                  <label>
+                    Estado
+                    <select id="productStatus">
+                      <option value="Activo">Activo</option>
+                      <option value="Pausado">Pausado</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <button class="primary-button product-form-submit" type="submit">Guardar producto</button>
             </form>
 
-            <section class="panel-card table-panel">
+            <section class="panel-card table-panel product-table-panel">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Inventario comercial</p>
@@ -488,8 +536,16 @@
                 </div>
                 <input class="inline-search" id="productSearch" type="search" placeholder="Buscar producto" />
               </div>
-              <div class="table-scroll">
-                <table>
+              <div class="table-scroll product-table-scroll">
+                <table class="product-admin-table">
+                  <colgroup>
+                    <col class="product-col-product" />
+                    <col class="product-col-category" />
+                    <col class="product-col-price" />
+                    <col class="product-col-stock" />
+                    <col class="product-col-type" />
+                    <col class="product-col-actions" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Producto</th>

@@ -623,6 +623,405 @@ label {
   gap: 14px;
 }
 
+.product-form-panel {
+  gap: 12px;
+  align-content: start;
+}
+
+.product-form-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e8edf3;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+
+.product-form-section-title {
+  margin: 0 0 2px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.product-form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.product-form-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.product-form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.product-form-full {
+  grid-column: 1 / -1;
+}
+
+.product-form-panel label {
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.product-form-panel textarea {
+  min-height: 72px;
+}
+
+.product-profit-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.product-profit-heading {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.product-profit-summary.is-profit {
+  border-color: #b7e4c7;
+  background: linear-gradient(180deg, #f3fbf6 0%, #f8fafc 100%);
+  box-shadow: inset 3px 0 0 #22a06b;
+}
+
+.product-profit-summary.is-loss {
+  border-color: #f1c0c0;
+  background: linear-gradient(180deg, #fff6f6 0%, #f8fafc 100%);
+  box-shadow: inset 3px 0 0 #d92d20;
+}
+
+.product-profit-summary.is-neutral {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  box-shadow: inset 3px 0 0 #94a3b8;
+}
+
+.product-profit-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.product-profit-metric {
+  display: grid;
+  gap: 2px;
+}
+
+.product-profit-metric span {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.product-profit-metric strong {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.product-profit-summary.is-profit .product-profit-metric strong {
+  color: #1f7a43;
+}
+
+.product-profit-summary.is-loss .product-profit-metric strong {
+  color: #b42318;
+}
+
+.product-profit-note {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #b42318;
+  line-height: 1.35;
+}
+
+.product-form-submit {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 2px;
+}
+
+.product-image-field {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed #d7dee8;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.product-image-field-header {
+  display: grid;
+  gap: 4px;
+}
+
+.product-image-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.product-image-help {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.product-image-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.product-image-url-label {
+  min-width: 0;
+}
+
+.product-image-upload-button {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.product-image-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 168px;
+  min-height: 132px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.product-image-preview.is-empty {
+  background: #f1f5f9;
+}
+
+.product-image-preview-empty {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.product-image-preview img {
+  display: block;
+  width: 100%;
+  max-height: 112px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+#productos .module-grid {
+  grid-template-columns: minmax(280px, 370px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.product-table-panel {
+  min-width: 0;
+}
+
+.product-table-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+.product-admin-table {
+  width: 100%;
+  min-width: 820px;
+  table-layout: fixed;
+}
+
+.product-admin-table .product-col-product {
+  width: 36%;
+}
+
+.product-admin-table .product-col-category {
+  width: 14%;
+}
+
+.product-admin-table .product-col-price {
+  width: 11%;
+}
+
+.product-admin-table .product-col-stock {
+  width: 15%;
+}
+
+.product-admin-table .product-col-type {
+  width: 12%;
+}
+
+.product-admin-table .product-col-actions {
+  width: 12%;
+}
+
+.product-admin-table th,
+.product-admin-table td {
+  padding: 14px 12px;
+  vertical-align: middle;
+}
+
+.product-admin-table th {
+  white-space: nowrap;
+}
+
+.product-admin-table td strong,
+.product-admin-table td span {
+  display: block;
+}
+
+.product-admin-table .admin-product-cell img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border: 1px solid #eef2f6;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.admin-product-cell {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.product-admin-table .admin-product-cell img,
+.product-admin-table .product-image-placeholder {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+}
+
+.product-admin-table .admin-product-cell img {
+  object-fit: contain;
+  border: 1px solid #eef2f6;
+  background: #fff;
+}
+
+.admin-product-copy {
+  min-width: 0;
+}
+
+.admin-product-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  line-height: 1.35;
+  font-size: 0.94rem;
+  font-weight: 700;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: none;
+}
+
+.admin-product-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  margin: 6px 0 0;
+  line-height: 1.35;
+}
+
+.admin-product-meta span {
+  display: inline;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.product-admin-table .admin-product-meta span {
+  margin-top: 0;
+}
+
+.admin-product-meta span + span::before {
+  content: "·";
+  margin: 0 6px;
+  color: #cbd5e1;
+}
+
+.product-cell-category {
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.product-cell-price {
+  white-space: nowrap;
+}
+
+.product-price-value {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.product-cell-stock {
+  min-width: 0;
+}
+
+.product-stock-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.product-stock-meta {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.35;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.product-cell-type .badge {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.product-row-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  min-width: 96px;
+}
+
+.product-row-actions .ghost-button {
+  width: 100%;
+  justify-content: center;
+  white-space: nowrap;
+}
+
 .form-row {
   gap: 12px;
 }
@@ -712,29 +1111,13 @@ td span {
   font-size: 0.84rem;
 }
 
-.admin-product-cell {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-}
-
-.admin-product-cell img {
-  width: 54px;
-  height: 54px;
-  object-fit: contain;
-  border: 1px solid #f0f0f0;
-  border-radius: 4px;
-  background: #fff;
-}
-
 .product-image-placeholder {
-  width: 54px;
-  height: 54px;
+  width: 52px;
+  height: 52px;
   display: grid;
   place-items: center;
   border: 1px solid #e5e7eb;
-  border-radius: 4px;
+  border-radius: 6px;
   background: #f8fafc;
   color: #64748b;
   font-size: 0.78rem;
@@ -1921,6 +2304,22 @@ td span {
     grid-template-columns: 1fr;
   }
 
+  #productos .module-grid {
+    gap: 14px;
+  }
+
+  .product-row-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-image-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .product-image-upload-button {
+    width: 100%;
+  }
+
   .product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2101,6 +2500,9 @@ td span {
   }
 
   .form-row,
+  .product-form-grid--2,
+  .product-form-grid--3,
+  .product-profit-metrics,
   .list-row,
   .ticket-line,
   .chat-form {

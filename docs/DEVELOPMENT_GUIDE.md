@@ -91,19 +91,16 @@ git diff --check
 
 Además:
 
-1. Levantar el servidor local (desde `server/`: `npm start`).
-2. Abrir el navegador en `http://localhost:3000/index.html`.
-3. Revisar la consola del navegador y del terminal — sin errores.
-
-Para cambios solo de frontend estático (sin API):
+1. Levantar el servidor local oficial:
 
 ```bash
-python3 -m http.server 8080
+npm --prefix server start
 ```
 
-Abrir `http://localhost:8080` — recordando que `/api/*` no estará disponible en ese modo; el frontend usará el backend remoto de productos (`https://minifarmacia.onrender.com/api/products`).
+2. Abrir el navegador en `http://localhost:3090`.
+3. Revisar la consola del navegador y del terminal — sin errores.
 
-Con el servidor Node en localhost (p. ej. `3000`), `app.js` resuelve la API de productos a `/api/products` (mismo origen). En `localhost:8080` (python estático) usa el backend remoto.
+El servidor Node sirve frontend y APIs desde el mismo origen. No usar `python3 -m http.server 8080` para el trabajo normal, porque ese modo no incluye backend local ni APIs.
 
 ---
 
