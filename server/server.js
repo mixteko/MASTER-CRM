@@ -195,6 +195,11 @@ async function handleCreateProduct(request, response) {
 
   try {
     const product = await readJSONBody(request);
+    const validationError = validateProductPayload(product);
+    if (validationError) {
+      sendJSON(response, 400, { error: validationError });
+      return;
+    }
     const created = await createSupabaseProduct(product);
     sendJSON(response, 200, { ok: true, product: created });
   } catch (error) {
@@ -216,7 +221,16 @@ async function handleUpdateProduct(request, response) {
     }
 
     const product = await readJSONBody(request);
+    const validationError = validateProductPayload(product, { partial: true });
+    if (validationError) {
+      sendJSON(response, 400, { error: validationError });
+      return;
+    }
     const updated = await updateSupabaseProduct(id, product);
+    if (!updated) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
     sendJSON(response, 200, { ok: true, product: updated });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudo actualizar producto", details: error.message });
@@ -244,7 +258,12 @@ async function handleDeactivateProduct(request, response) {
       },
       prefer: "return=representation",
     });
-    sendJSON(response, 200, { ok: true, product: mapDbProduct(updated[0]) });
+    if (!updated[0]) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+    const product = await getSupabaseProductById(id);
+    sendJSON(response, 200, { ok: true, product });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudo desactivar producto", details: error.message });
   }
@@ -541,13 +560,14 @@ function rankProductMatches(products, terms, query) {
 
 async function getProductsFromSupabase() {
   const products = await supabaseRequest(
-    "/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,fecha_caducidad,costo)&order=nombre.asc",
+    "/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&order=nombre.asc",
   );
   return products.map(mapDbProduct);
 }
 
 async function createSupabaseProduct(product) {
-  const categoriaId = await findOrCreateCategoriaId(product.category);
+  const categoryField = readProductField(product, ["category", "categoria"]);
+  const categoriaId = await findOrCreateCategoriaId(categoryField.value);
   const created = await supabaseRequest("/rest/v1/productos", {
     method: "POST",
     body: mapProductToDb(product, categoriaId),
@@ -559,21 +579,36 @@ async function createSupabaseProduct(product) {
 }
 
 async function updateSupabaseProduct(id, product) {
-  const categoriaId = await findOrCreateCategoriaId(product.category);
-  const updated = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: mapProductToDb(product, categoriaId),
-    prefer: "return=representation",
-  });
-  await upsertProductInventory(id, product);
-  return (await getSupabaseProductById(id)) || mapDbProduct(updated[0]);
+  const existing = await getSupabaseProductRecordById(id);
+  if (!existing) return null;
+
+  const categoryField = readProductField(product, ["category", "categoria"]);
+  const categoriaId = categoryField.provided ? await findOrCreateCategoriaId(categoryField.value) : undefined;
+  const productBody = mapProductToDb(product, categoriaId, { partial: true });
+
+  if (Object.keys(productBody).length) {
+    productBody.updated_at = new Date().toISOString();
+    await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: productBody,
+      prefer: "return=representation",
+    });
+  }
+
+  await upsertProductInventory(id, product, { partial: true, fallbackStock: existing.stock });
+  return await getSupabaseProductById(id);
 }
 
 async function getSupabaseProductById(id) {
+  const product = await getSupabaseProductRecordById(id);
+  return product ? mapDbProduct(product) : null;
+}
+
+async function getSupabaseProductRecordById(id) {
   const products = await supabaseRequest(
-    `/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`,
+    `/rest/v1/productos?select=*,categorias(nombre),inventario(id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`,
   );
-  return products[0] ? mapDbProduct(products[0]) : null;
+  return products[0] || null;
 }
 
 async function findOrCreateCategoriaId(categoryName) {
@@ -594,17 +629,13 @@ async function findOrCreateCategoriaId(categoryName) {
   return created[0]?.id || null;
 }
 
-async function upsertProductInventory(productId, product) {
+async function upsertProductInventory(productId, product, options = {}) {
+  const partial = Boolean(options.partial);
+  const inventoryBody = mapProductInventoryToDb(product, { partial });
+  if (partial && !Object.keys(inventoryBody).length) return;
+
   const inventory = await supabaseRequest(`/rest/v1/inventario?select=id&producto_id=eq.${encodeURIComponent(productId)}&limit=1`);
-  const body = {
-    producto_id: productId,
-    stock: toInteger(product.stock),
-    stock_minimo: toInteger(product.minStock),
-    stock_maximo: toNullableInteger(product.maxStock),
-    fecha_caducidad: product.expiresAt || null,
-    costo: toNumber(product.cost),
-    updated_at: new Date().toISOString(),
-  };
+  const body = { ...inventoryBody, updated_at: new Date().toISOString() };
 
   if (inventory[0]) {
     await supabaseRequest(`/rest/v1/inventario?id=eq.${inventory[0].id}`, {
@@ -615,6 +646,9 @@ async function upsertProductInventory(productId, product) {
     return;
   }
 
+  body.producto_id = productId;
+  if (body.stock === undefined) body.stock = toInteger(options.fallbackStock);
+  if (body.stock_minimo === undefined) body.stock_minimo = 0;
   await supabaseRequest("/rest/v1/inventario", {
     method: "POST",
     body,
@@ -634,6 +668,12 @@ function mapDbProduct(product) {
     description: product.descripcion || "",
     substance: product.descripcion || "",
     expiresAt: inventory?.fecha_caducidad || "",
+    laboratory: product.laboratorio || "",
+    laboratorio: product.laboratorio || "",
+    presentation: product.presentacion || "",
+    presentacion: product.presentacion || "",
+    lot: inventory?.lote || "",
+    lote: inventory?.lote || "",
     stock: toInteger(product.stock),
     minStock: toInteger(inventory?.stock_minimo),
     maxStock: toInteger(inventory?.stock_maximo),
@@ -649,21 +689,80 @@ function mapDbProduct(product) {
   };
 }
 
-function mapProductToDb(product, categoriaId) {
-  return {
-    categoria_id: categoriaId,
-    nombre: String(product.name || "").trim(),
-    descripcion: String(product.description || product.substance || "").trim(),
-    precio: toNumber(product.price),
-    stock: toInteger(product.stock),
-    codigo_barras: String(product.sku || "").trim() || null,
-    imagen_url: String(product.imageUrl || "").trim() || null,
-    presentacion: null,
-    laboratorio: null,
-    activo: product.status !== "Pausado",
-    requiere_receta: product.requiresRecipe || product.type === "Receta medica",
-    updated_at: new Date().toISOString(),
-  };
+function mapProductToDb(product, categoriaId, options = {}) {
+  const partial = Boolean(options.partial);
+  const body = {};
+  assignProductField(body, "nombre", product, ["name", "nombre"], (value) => String(value || "").trim(), partial);
+  assignProductField(body, "descripcion", product, ["description", "descripcion", "substance"], (value) => String(value || "").trim(), partial);
+  assignProductField(body, "precio", product, ["price", "precio"], toNumber, partial);
+  assignProductField(body, "stock", product, ["stock"], toInteger, partial);
+  assignProductField(body, "codigo_barras", product, ["sku", "codigo_barras"], (value) => String(value || "").trim() || null, partial);
+  assignProductField(body, "imagen_url", product, ["imageUrl", "imagen_url"], (value) => String(value || "").trim() || null, partial);
+  assignProductField(body, "presentacion", product, ["presentation", "presentacion"], (value) => String(value || "").trim() || null, partial);
+  assignProductField(body, "laboratorio", product, ["laboratory", "laboratorio"], (value) => String(value || "").trim() || null, partial);
+
+  const categoryField = readProductField(product, ["category", "categoria"]);
+  if (!partial || categoryField.provided) body.categoria_id = categoriaId ?? null;
+
+  const statusField = readProductField(product, ["status", "activo"]);
+  if (!partial || statusField.provided) {
+    body.activo = statusField.key === "activo" ? Boolean(statusField.value) : statusField.value !== "Pausado";
+  }
+
+  const recipeField = readProductField(product, ["requiresRecipe", "requiere_receta", "type"]);
+  if (!partial || recipeField.provided) {
+    body.requiere_receta = recipeField.key === "type" ? recipeField.value === "Receta medica" : Boolean(recipeField.value);
+  }
+
+  if (!partial) body.updated_at = new Date().toISOString();
+  return body;
+}
+
+function mapProductInventoryToDb(product, options = {}) {
+  const partial = Boolean(options.partial);
+  const body = {};
+  assignProductField(body, "stock", product, ["stock"], toInteger, partial);
+  assignProductField(body, "stock_minimo", product, ["minStock", "stock_minimo"], toInteger, partial);
+  assignProductField(body, "stock_maximo", product, ["maxStock", "stock_maximo"], toNullableInteger, partial);
+  assignProductField(body, "lote", product, ["lot", "lote"], (value) => String(value || "").trim() || null, partial);
+  assignProductField(body, "fecha_caducidad", product, ["expiresAt", "fecha_caducidad"], (value) => String(value || "").trim() || null, partial);
+  assignProductField(body, "costo", product, ["cost", "costo"], toNumber, partial);
+  return body;
+}
+
+function assignProductField(body, target, product, aliases, transform, partial) {
+  const field = readProductField(product, aliases);
+  if (!partial || field.provided) body[target] = transform(field.value);
+}
+
+function readProductField(product, aliases) {
+  if (!product || typeof product !== "object") return { provided: false, key: "", value: undefined };
+  for (const key of aliases) {
+    if (Object.prototype.hasOwnProperty.call(product, key)) return { provided: true, key, value: product[key] };
+  }
+  return { provided: false, key: "", value: undefined };
+}
+
+function validateProductPayload(product, options = {}) {
+  if (!product || typeof product !== "object" || Array.isArray(product)) return "El producto debe ser un objeto JSON";
+  const partial = Boolean(options.partial);
+  const nameField = readProductField(product, ["name", "nombre"]);
+  const priceField = readProductField(product, ["price", "precio"]);
+  const stockField = readProductField(product, ["stock"]);
+
+  if (!partial && (!nameField.provided || !String(nameField.value || "").trim())) return "nombre/name es requerido";
+  if (!partial && !priceField.provided) return "precio/price es requerido";
+  if (!partial && !stockField.provided) return "stock es requerido";
+  if (nameField.provided && !String(nameField.value || "").trim()) return "nombre/name no puede estar vacío";
+  if (priceField.provided && !isNonNegativeNumber(priceField.value)) return "precio/price debe ser un número mayor o igual a 0";
+  if (stockField.provided && !isNonNegativeNumber(stockField.value)) return "stock debe ser un número mayor o igual a 0";
+  return "";
+}
+
+function isNonNegativeNumber(value) {
+  if (value === "" || value === null || value === undefined) return false;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0;
 }
 
 function getProductIdFromUrl(url) {
