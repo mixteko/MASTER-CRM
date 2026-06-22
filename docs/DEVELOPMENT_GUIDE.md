@@ -101,7 +101,9 @@ Para cambios solo de frontend estático (sin API):
 python3 -m http.server 8080
 ```
 
-Abrir `http://localhost:8080` — recordando que `/api/*` no estará disponible en ese modo.
+Abrir `http://localhost:8080` — recordando que `/api/*` no estará disponible en ese modo; el frontend usará el backend remoto de productos (`https://minifarmacia.onrender.com/api/products`).
+
+Con el servidor Node en localhost (p. ej. `3000`), `app.js` resuelve la API de productos a `/api/products` (mismo origen). En `localhost:8080` (python estático) usa el backend remoto.
 
 ---
 

@@ -4278,7 +4278,18 @@ const state = {
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
-const productsApiUrl = "https://minifarmacia.onrender.com/api/products";
+const REMOTE_PRODUCTS_API_URL = "https://minifarmacia.onrender.com/api/products";
+
+// Backend local (Node en localhost, p. ej. :3000): /api/products. Frontend estático (GitHub Pages, python :8080): backend remoto.
+function resolveProductsApiUrl() {
+  const host = window.location.hostname;
+  const isLocalhost = host === "localhost" || host === "127.0.0.1";
+  const isStaticLocalServer = window.location.port === "8080";
+  const usesLocalNodeBackend = isLocalhost && !isStaticLocalServer;
+  return usesLocalNodeBackend ? "/api/products" : REMOTE_PRODUCTS_API_URL;
+}
+
+const productsApiUrl = resolveProductsApiUrl();
 
 const viewTitles = {
   dashboard: "Dashboard",
