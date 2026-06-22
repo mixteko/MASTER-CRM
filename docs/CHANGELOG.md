@@ -1,0 +1,28 @@
+# Changelog
+
+Los cambios relevantes de MASTER CRM Commerce se documentan en este archivo.
+
+## Hardening inicial
+
+- Se definieron exclusiones para archivos locales, variables de entorno, dependencias y artefactos de compilación.
+- Se preparó un ejemplo seguro de variables de entorno.
+- Se documentaron los modos de ejecución del frontend y backend.
+- Se redujo la exposición de datos sensibles en logs.
+- Se estableció una lista explícita de orígenes CORS permitidos.
+
+## v0.1.0 — Rebranding MASTER CRM Commerce
+
+- Se adoptó el nombre MASTER CRM Commerce.
+- Se incorporó el subtítulo “CRM comercial para negocios locales”.
+- Se reorganizó la navegación alrededor de módulos comerciales.
+- Se añadieron al Dashboard el tipo de negocio y los canales activos.
+- Se añadió la interfaz inicial de plantillas de negocio.
+- Se conservaron las pantallas y flujos existentes.
+
+## v0.2.0 — Documentación núcleo
+
+- Se creó el roadmap oficial del producto.
+- Se documentó la arquitectura actual y objetivo.
+- Se definieron propósito, estado y futuro de cada módulo.
+- Se creó el changelog inicial del proyecto.
+- Se estableció la documentación núcleo como fuente de verdad para los siguientes sprints.

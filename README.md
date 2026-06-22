@@ -39,3 +39,7 @@ Este modo usa el servidor Node.js y permite acceder a las rutas locales de API, 
 
 * AGENTS.md
 * docs/PROJECT_CONTEXT.md
+* [Roadmap](docs/ROADMAP.md)
+* [Arquitectura](docs/ARCHITECTURE.md)
+* [Módulos](docs/MODULES.md)
+* [Changelog](docs/CHANGELOG.md)
