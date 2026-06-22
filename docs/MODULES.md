@@ -18,27 +18,35 @@
 
 ## Productos
 
-**Propósito:** administrar el catálogo comercial y sus datos de venta.
+**Propósito:** administrar el catálogo de productos farmacéuticos y sus condiciones de venta.
 
-**Estado actual:** ofrece búsqueda, alta, edición, activación y desactivación mediante la API de productos.
+**Estado actual:** ofrece búsqueda, alta, edición, activación y desactivación mediante la API de productos; ya maneja datos básicos como sustancia, caducidad, stock y condición de receta.
 
-**Futuro esperado:** variantes, listas de precios, impuestos, imágenes gestionadas, categorías avanzadas y validaciones por plantilla.
+**Futuro esperado:** nombre comercial, sustancia activa, laboratorio, presentación, concentración, forma farmacéutica, receta, clasificación de controlado, refrigeración e imágenes gestionadas.
 
 ## Inventario
 
-**Propósito:** controlar existencias, mínimos, máximos, costos, lotes y movimientos.
+**Propósito:** controlar existencias farmacéuticas por lote, caducidad, costo y condición de almacenamiento.
 
 **Estado actual:** reutiliza la vista de Productos y muestra stock y alertas básicas.
 
-**Futuro esperado:** movimientos auditables, almacenes, ajustes, reservas, lotes, caducidades y actualización transaccional.
+**Futuro esperado:** entradas y salidas auditables, lotes, FEFO, alertas de stock bajo y caducidad próxima, cadena fría, ajustes, reservas y actualización transaccional.
+
+## Recetas
+
+**Propósito:** registrar y validar la autorización necesaria para dispensar productos que requieren receta, especialmente medicamentos controlados.
+
+**Estado actual:** los productos pueden indicar que requieren receta, pero no existe un módulo independiente ni validación documental persistente.
+
+**Futuro esperado:** carga segura, vigencia, validación manual, responsable de aprobación, trazabilidad y acceso restringido. Ningún medicamento controlado debe procesarse automáticamente.
 
 ## Pedidos
 
-**Propósito:** coordinar solicitudes desde su creación hasta su entrega o cierre.
+**Propósito:** coordinar solicitudes desde su creación, validando stock, lotes, receta y productos controlados antes de preparación y entrega.
 
 **Estado actual:** presenta un tablero por estados y permite avanzar pedidos creados desde la tienda; se persiste localmente.
 
-**Futuro esperado:** persistencia central, historial de estados, asignación, notas, cancelaciones y operación multicanal.
+**Futuro esperado:** persistencia central, estado `pendiente_validacion`, revisión de receta, aprobación manual de controlados, asignación FEFO, descuento atómico de inventario, historial y cancelaciones auditables.
 
 ## Ventas
 
@@ -58,11 +66,11 @@
 
 ## Envíos
 
-**Propósito:** controlar preparación, despacho, tránsito y entrega de pedidos.
+**Propósito:** controlar preparación, despacho, tránsito y entrega local de pedidos farmacéuticos.
 
-**Estado actual:** muestra envíos locales o nacionales y permite avanzar manualmente su estado.
+**Estado actual:** muestra envíos locales o nacionales y permite avanzar manualmente su estado; la primera prioridad de producto será la entrega local.
 
-**Futuro esperado:** paqueterías, generación de guías, rastreo, costos, incidencias y confirmación de entrega.
+**Futuro esperado:** zonas y tarifas locales, asignación de repartidor, rastreo, incidencias, confirmación de entrega y controles para productos refrigerados. La paquetería nacional queda en una fase posterior.
 
 ## Canales
 
@@ -86,4 +94,4 @@
 
 **Estado actual:** presenta visualmente las plantillas disponibles, con Farmacia como plantilla activa.
 
-**Futuro esperado:** selección persistente de plantilla, usuarios, roles, sucursales, canales, pagos, envíos y automatizaciones.
+**Futuro esperado:** configuración persistente de Farmacia, usuarios, roles, sucursales, canales, pagos, envíos y reglas farmacéuticas. Otros tipos de negocio quedan como idea posterior al MVP.

@@ -26,3 +26,12 @@ Los cambios relevantes de MASTER CRM Commerce se documentan en este archivo.
 - Se definieron propósito, estado y futuro de cada módulo.
 - Se creó el changelog inicial del proyecto.
 - Se estableció la documentación núcleo como fuente de verdad para los siguientes sprints.
+
+## v0.3.0 — Modelo de datos Farmacia
+
+- Se estableció Farmacia como plantilla activa principal y prioridad del producto.
+- Se documentaron contratos para producto farmacéutico, lote, cliente, pedido, detalle, pago y envío.
+- Se definieron reglas de stock, caducidad, receta, medicamentos controlados y salida FEFO.
+- Se incorporó Recetas como módulo esperado con validación manual y acceso restringido.
+- Se priorizaron lotes, caducidades, pedidos validados y envíos locales.
+- Los demás giros comerciales quedaron como ideas posteriores al MVP de farmacia.
