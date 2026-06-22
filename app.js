@@ -4257,7 +4257,7 @@ const state = {
     storeLink: "https://mixteko.github.io/Minifarmacia/",
     businessPhone: "5218112345678",
     welcomeMessage:
-      "Gracias por visitar Mini Farmacia. Puedes comprar en esta liga: {{liga}}. Registrate para guardar tus datos de entrega y dar seguimiento a tu pedido.",
+      "Gracias por visitar MASTER CRM Commerce. Puedes comprar en esta liga: {{liga}}. Registrate para guardar tus datos de entrega y dar seguimiento a tu pedido.",
   }),
   storeCart: [],
   productQuery: "",
@@ -4277,15 +4277,27 @@ const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations
 const productsApiUrl = "https://minifarmacia.onrender.com/api/products";
 
 const viewTitles = {
-  dashboard: "Inicio",
+  dashboard: "Dashboard",
   whatsapp: "WhatsApp",
   tienda: "Tienda online",
   clientes: "Clientes",
   pedidos: "Pedidos",
   productos: "Productos",
   ventas: "Ventas",
-  envios: "Envios",
+  envios: "Envíos",
   cobros: "Cobros",
+  inventario: "Inventario",
+  pagos: "Pagos",
+  canales: "Canales",
+  "whatsapp-manager": "WhatsApp Manager",
+  configuracion: "Configuración",
+};
+
+const viewAliases = {
+  inventario: "productos",
+  pagos: "cobros",
+  canales: "tienda",
+  "whatsapp-manager": "whatsapp",
 };
 
 const orderColumns = ["Nuevo", "Por cobrar", "Por enviar", "Enviado", "Completado"];
@@ -4482,7 +4494,8 @@ function handleDocumentAction(event) {
 
 function showView(viewId) {
   if (!viewId || !viewTitles[viewId]) return;
-  $$(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
+  const targetViewId = viewAliases[viewId] || viewId;
+  $$(".view").forEach((view) => view.classList.toggle("active", view.id === targetViewId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   elements.viewTitle.textContent = viewTitles[viewId];
 }
@@ -5505,7 +5518,7 @@ function stockStatus(product) {
 }
 
 function resetDemoData() {
-  if (!window.confirm("Reiniciar demo de Mini Farmacia?")) return;
+  if (!window.confirm("Reiniciar demo de MASTER CRM Commerce?")) return;
   state.products = [];
   state.customers = initialCustomers.map((item) => ({ ...item }));
   state.orders = [];

@@ -3,44 +3,44 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Mini Farmacia | CRM y tienda online</title>
+    <title>MASTER CRM Commerce | CRM comercial</title>
     <meta
       name="description"
-      content="CRM y tienda online para Mini Farmacia con flujo de WhatsApp, pedidos, envios y cobros."
+      content="MASTER CRM Commerce, CRM comercial para negocios locales con ventas, pedidos, envios y canales digitales."
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <a class="brand" href="#dashboard" aria-label="Mini Farmacia">
-          <img src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
-          <span>Commerce OS</span>
+        <a class="brand" href="#dashboard" aria-label="MASTER CRM Commerce">
+          <img src="assets/mini-farmacia-logo.svg" alt="" />
+          <span class="brand-copy">
+            <strong>MASTER CRM Commerce</strong>
+            <small>CRM comercial para negocios locales</small>
+          </span>
         </a>
 
         <nav class="side-nav" aria-label="Modulos principales">
-          <button class="nav-item active" type="button" data-view="dashboard"><span>⌂</span>Inicio</button>
-          <button class="nav-item" type="button" data-view="ventas"><span>▥</span>Estadisticas</button>
-
-          <p class="nav-section-title">Gestion</p>
-          <button class="nav-item" type="button" data-view="pedidos"><span>▣</span>Pedidos <strong class="nav-badge" id="navOrdersBadge">0</strong></button>
-          <button class="nav-item" type="button" data-view="ventas"><span>$</span>Ventas</button>
-          <button class="nav-item" type="button" data-view="productos"><span>◇</span>Productos</button>
-          <button class="nav-item" type="button" data-view="cobros"><span>₿</span>Cobros</button>
-          <button class="nav-item" type="button" data-view="envios"><span>▤</span>Envios</button>
-          <button class="nav-item" type="button" data-view="clientes"><span>☷</span>Clientes</button>
-
-          <p class="nav-section-title">Canales de venta</p>
-          <button class="nav-item" type="button" data-view="tienda"><span>▦</span>Tienda en linea <em class="nav-external">↗</em></button>
-          <button class="nav-item" type="button" data-view="whatsapp"><span>☏</span>Chat WhatsApp</button>
+          <button class="nav-item active" type="button" data-view="dashboard"><span>🏠</span>Dashboard</button>
+          <button class="nav-item" type="button" data-view="clientes"><span>👥</span>Clientes</button>
+          <button class="nav-item" type="button" data-view="productos"><span>📦</span>Productos</button>
+          <button class="nav-item" type="button" data-view="inventario"><span>📊</span>Inventario</button>
+          <button class="nav-item" type="button" data-view="pedidos"><span>🛒</span>Pedidos <strong class="nav-badge" id="navOrdersBadge">0</strong></button>
+          <button class="nav-item" type="button" data-view="ventas"><span>💰</span>Ventas</button>
+          <button class="nav-item" type="button" data-view="pagos"><span>💳</span>Pagos</button>
+          <button class="nav-item" type="button" data-view="envios"><span>🚚</span>Envíos</button>
+          <button class="nav-item" type="button" data-view="canales"><span>🌐</span>Canales</button>
+          <button class="nav-item" type="button" data-view="whatsapp-manager"><span>💬</span>WhatsApp Manager</button>
+          <button class="nav-item" type="button" data-view="configuracion"><span>⚙️</span>Configuración</button>
         </nav>
       </aside>
 
       <main class="workspace">
         <header class="workspace-header">
           <div>
-            <p class="eyebrow">Mini Farmacia OS</p>
-            <h1 id="viewTitle">Inicio</h1>
+            <p class="eyebrow">MASTER CRM Commerce</p>
+            <h1 id="viewTitle">Dashboard</h1>
           </div>
           <div class="header-actions">
             <span class="status-pill" id="todayLabel">Live commerce</span>
@@ -69,6 +69,16 @@
               <span>Productos activos</span>
               <strong id="metricProducts">0</strong>
               <small id="metricLowStock">0 con stock bajo</small>
+            </article>
+            <article class="metric-card">
+              <span>Tipo de negocio</span>
+              <strong>Farmacia</strong>
+              <small>Plantilla activa</small>
+            </article>
+            <article class="metric-card">
+              <span>Canales activos</span>
+              <strong>3</strong>
+              <small>Web · WhatsApp · Mostrador</small>
             </article>
           </div>
 
@@ -128,7 +138,7 @@
               <div class="phone-header">
                 <img src="assets/mini-farmacia-logo.svg" alt="" />
                 <div>
-                  <strong>Mini Farmacia</strong>
+                  <strong>MASTER CRM Commerce</strong>
                   <small>Canal WhatsApp Business</small>
                 </div>
               </div>
@@ -195,7 +205,7 @@
             </div>
 
             <header class="storefront-header">
-              <img class="storefront-logo" src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
+              <img class="storefront-logo" src="assets/mini-farmacia-logo.svg" alt="MASTER CRM Commerce" />
               <div class="store-search-bar">
                 <input id="storeSearch" type="search" placeholder="Busca tu Medicamento" />
                 <button type="button" aria-label="Buscar">⌕</button>
@@ -220,7 +230,7 @@
               <div>
                 <span>Promocion online</span>
                 <h2>Medicamentos con entrega local y nacional</h2>
-                <p>Compra desde WhatsApp, registra tu cuenta y da seguimiento a tus pedidos en Mini Farmacia.</p>
+                <p>Compra desde WhatsApp, registra tu cuenta y da seguimiento a tus pedidos en MASTER CRM Commerce.</p>
               </div>
               <strong>Productos originales</strong>
             </section>
@@ -510,6 +520,26 @@
             </div>
           </div>
         </section>
+
+        <section class="view" id="configuracion">
+          <div class="panel-card">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Personalización</p>
+                <h2>Plantillas de negocio</h2>
+              </div>
+            </div>
+            <p class="section-description">Selecciona la estructura comercial que mejor representa al negocio.</p>
+            <div class="business-template-grid" aria-label="Plantillas de negocio disponibles">
+              <article class="business-template active"><span>💊</span><strong>Farmacia</strong><small>Plantilla activa</small></article>
+              <article class="business-template"><span>🔨</span><strong>Ferretería</strong><small>Disponible</small></article>
+              <article class="business-template"><span>🚘</span><strong>Refaccionaria</strong><small>Disponible</small></article>
+              <article class="business-template"><span>🛍️</span><strong>Abarrotes</strong><small>Disponible</small></article>
+              <article class="business-template"><span>🩺</span><strong>Consultorio</strong><small>Disponible</small></article>
+              <article class="business-template"><span>🏋️</span><strong>Tienda de suplementos</strong><small>Disponible</small></article>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -519,7 +549,7 @@
       </form>
       <form class="account-form" id="storeLoginForm">
         <div class="account-intro">
-          <img src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
+          <img src="assets/mini-farmacia-logo.svg" alt="MASTER CRM Commerce" />
           <p class="account-breadcrumb">Inicio · Mi cuenta · Iniciar sesion</p>
           <h2>Iniciar sesion</h2>
           <p>Entra con tu correo para continuar tu pedido y revisar tus datos de entrega.</p>
@@ -532,7 +562,7 @@
 
       <form class="account-form is-hidden" id="storeCustomerForm">
         <div class="account-intro">
-          <img src="assets/mini-farmacia-logo.svg" alt="Mini Farmacia" />
+          <img src="assets/mini-farmacia-logo.svg" alt="MASTER CRM Commerce" />
           <p class="account-breadcrumb">Inicio · Mi cuenta · Crear cuenta</p>
           <h2>Crear una cuenta</h2>
           <p>Compra mas rapido y lleva el control de tus pedidos en un solo lugar.</p>

@@ -79,8 +79,8 @@ button:disabled {
 .brand {
   display: grid;
   justify-items: center;
-  gap: 0;
-  padding: 0 28px 52px;
+  gap: 10px;
+  padding: 0 20px 30px;
   color: var(--blue);
   font-weight: 700;
   text-decoration: none;
@@ -96,8 +96,22 @@ button:disabled {
   box-shadow: none;
 }
 
-.brand span {
-  display: none;
+.brand-copy {
+  display: grid;
+  gap: 3px;
+  text-align: center;
+}
+
+.brand-copy strong {
+  color: var(--blue);
+  font-size: 0.96rem;
+}
+
+.brand-copy small {
+  color: var(--sidebar-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.3;
 }
 
 .side-nav {
@@ -339,7 +353,7 @@ h3 {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -956,6 +970,45 @@ td span {
 .settings-card h3 {
   margin: 0;
   font-size: 0.98rem;
+}
+
+.section-description {
+  margin: -4px 0 20px;
+  color: var(--muted);
+}
+
+.business-template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.business-template {
+  display: grid;
+  gap: 8px;
+  min-height: 130px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.business-template.active {
+  border-color: var(--blue);
+  background: var(--sidebar-soft);
+}
+
+.business-template span {
+  font-size: 1.5rem;
+}
+
+.business-template strong,
+.business-template small {
+  display: block;
+}
+
+.business-template small {
+  color: var(--muted);
 }
 
 .phone-header {
@@ -1738,6 +1791,10 @@ td span {
     grid-template-columns: 1fr;
   }
 
+  .business-template-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .whatsapp-status-bar,
   .whatsapp-crm {
     grid-template-columns: 1fr;
@@ -1804,7 +1861,8 @@ td span {
   .metric-grid,
   .side-nav,
   .product-grid,
-  .flow-line {
+  .flow-line,
+  .business-template-grid {
     grid-template-columns: 1fr;
   }
 
