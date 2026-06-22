@@ -15,11 +15,19 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const AI_ENABLED = process.env.AI_ENABLED === "true";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const ALLOWED_ORIGINS = new Set([
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:8080",
+  "http://127.0.0.1:8080",
+  "https://mixteko.github.io",
+  "https://minifarmacia.onrender.com",
+]);
 const productSearchContexts = new Map();
 
 const server = createServer(async (request, response) => {
-  console.log("REQUEST:", request.method, request.url);
-  setCorsHeaders(response);
+  console.log("REQUEST:", request.method, getRequestPath(request));
+  setCorsHeaders(request, response);
 
   if (request.method === "OPTIONS") {
     response.writeHead(204);
@@ -126,7 +134,7 @@ async function handleIncomingWebhook(request, response) {
     const messages = extractIncomingMessages(body);
 
     for (const message of messages) {
-      console.log("WEBHOOK NUMERO RECIBIDO:", message.from);
+      console.log("Webhook de WhatsApp recibido");
       const record = await saveIncomingMessage(message);
       const reply = await buildChatbotReply(message.text, message.from, record);
       if (reply) {
@@ -445,7 +453,7 @@ async function sendAdminAlerts(botConfig, from, text) {
     try {
       await sendWhatsAppMessage(admin, alertMessage);
     } catch (error) {
-      console.error("No se pudo alertar al administrador:", admin, error.message);
+      console.error("No se pudo alertar a un administrador:", error.message);
     }
   }
 }
@@ -748,8 +756,6 @@ function toNullableInteger(value) {
 }
 
 async function saveIncomingMessage(message) {
-  console.log("SUPABASE_URL configurado:", SUPABASE_URL ? "SI" : "NO");
-  console.log("SUPABASE_SERVICE_ROLE_KEY configurado:", SUPABASE_SERVICE_ROLE_KEY ? "SI" : "NO");
   if (!isSupabaseEnabled()) return null;
 
   try {
@@ -773,8 +779,6 @@ async function saveIncomingMessage(message) {
 }
 
 async function saveOutgoingMessage(record, reply, conversationStatus) {
-  console.log("SUPABASE_URL configurado:", SUPABASE_URL ? "SI" : "NO");
-  console.log("SUPABASE_SERVICE_ROLE_KEY configurado:", SUPABASE_SERVICE_ROLE_KEY ? "SI" : "NO");
   if (!record || !isSupabaseEnabled()) return;
 
   try {
@@ -894,7 +898,7 @@ async function getDeepSeekReply(text) {
   }
 
   try {
-    console.log("CONSULTA IA", text);
+    console.log("Consulta enviada al servicio de IA");
     const deepSeekResponse = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       headers: {
@@ -922,12 +926,12 @@ async function getDeepSeekReply(text) {
     const data = await deepSeekResponse.json();
 
     if (!deepSeekResponse.ok) {
-      console.error("DEEPSEEK ERROR:", JSON.stringify(data, null, 2));
+      console.error("DeepSeek respondio con estado:", deepSeekResponse.status);
       return "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
     }
 
     const reply = data.choices?.[0]?.message?.content?.trim() || "Gracias por escribir a Mini Farmacia. Un asesor revisara tu mensaje lo antes posible.";
-    console.log("RESPUESTA IA", reply);
+    console.log("Respuesta recibida del servicio de IA");
     return reply;
   } catch (error) {
     console.error("DEEPSEEK REQUEST ERROR:", error.message);
@@ -1003,12 +1007,11 @@ async function supabaseRequest(path, options = {}) {
 
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
-  console.log("SUPABASE REQUEST:", options.method || "GET", requestUrl);
+  console.log("SUPABASE REQUEST:", options.method || "GET", new URL(requestUrl).pathname);
   console.log("STATUS HTTP de Supabase:", response.status);
-  console.log("RESPUESTA COMPLETA de Supabase:", text || "");
 
   if (!response.ok) {
-    throw new Error(JSON.stringify(data || { status: response.status }));
+    throw new Error(`Supabase respondio con estado ${response.status}`);
   }
 
   return data || [];
@@ -1036,10 +1039,7 @@ async function sendWhatsAppMessage(telefono, mensaje) {
 
   const destination = cleanPhone(telefono);
   const graphUrl = `https://graph.facebook.com/v25.0/${PHONE_NUMBER_ID}/messages`;
-  console.log("WHATSAPP NUMERO RECIBIDO:", telefono);
-  console.log("WHATSAPP DESTINO:", destination);
-  console.log("WHATSAPP MENSAJE:", mensaje);
-  console.log("WHATSAPP GRAPH URL:", graphUrl);
+  console.log("Enviando mensaje de WhatsApp");
 
   const whatsappResponse = await fetch(graphUrl, {
     method: "POST",
@@ -1062,7 +1062,7 @@ async function sendWhatsAppMessage(telefono, mensaje) {
   console.log("WHATSAPP STATUS:", whatsappResponse.status);
 
   if (!whatsappResponse.ok) {
-    console.error("WHATSAPP META ERROR:", JSON.stringify(data, null, 2));
+    console.error("WhatsApp API respondio con estado:", whatsappResponse.status, "codigo:", data.error?.code || "desconocido");
     throw new Error(data.error?.message || "No se pudo enviar el mensaje de WhatsApp");
   }
 
@@ -1103,12 +1103,7 @@ async function sendWhatsAppInteractiveButtons(telefono, mensaje, buttons) {
     },
   };
 
-  console.log("ENVIANDO MENU INTERACTIVO");
-  console.log("WHATSAPP NUMERO RECIBIDO:", telefono);
-  console.log("WHATSAPP DESTINO:", destination);
-  console.log("WHATSAPP MENSAJE:", mensaje);
-  console.log("WHATSAPP GRAPH URL:", graphUrl);
-  console.log("INTERACTIVE PAYLOAD:", payload);
+  console.log("Enviando menu interactivo de WhatsApp");
 
   const whatsappResponse = await fetch(graphUrl, {
     method: "POST",
@@ -1121,10 +1116,9 @@ async function sendWhatsAppInteractiveButtons(telefono, mensaje, buttons) {
 
   const data = await whatsappResponse.json();
   console.log("INTERACTIVE STATUS:", whatsappResponse.status);
-  console.log("INTERACTIVE RESPONSE:", data);
 
   if (!whatsappResponse.ok) {
-    console.error("INTERACTIVE ERROR:", JSON.stringify(data, null, 2));
+    console.error("WhatsApp interactivo respondio con codigo:", data.error?.code || "desconocido");
     return await sendWhatsAppMessage(telefono, mensaje);
   }
 
@@ -1184,8 +1178,20 @@ function cleanPhone(phone) {
   return digits;
 }
 
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", "*");
+function getRequestPath(request) {
+  try {
+    return new URL(request.url, `http://${request.headers.host || "localhost"}`).pathname;
+  } catch {
+    return "/";
+  }
+}
+
+function setCorsHeaders(request, response) {
+  const origin = request.headers.origin;
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Vary", "Origin");
+  }
   response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
