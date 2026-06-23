@@ -27,6 +27,8 @@
           <button class="nav-item active" type="button" data-view="dashboard"><span>🏠</span>Dashboard</button>
           <button class="nav-item" type="button" data-view="clientes"><span>👥</span>Clientes</button>
           <button class="nav-item" type="button" data-view="productos"><span>📦</span>Productos</button>
+          <button class="nav-item" type="button" data-view="categorias"><span>🏷️</span>Categorías</button>
+          <button class="nav-item" type="button" data-view="clasificaciones"><span>🧭</span>Clasificaciones</button>
           <button class="nav-item" type="button" data-view="inventario"><span>📊</span>Inventario</button>
           <button class="nav-item" type="button" data-view="pedidos"><span>🛒</span>Pedidos <strong class="nav-badge" id="navOrdersBadge">0</strong></button>
           <button class="nav-item" type="button" data-view="ventas"><span>💰</span>Ventas</button>
@@ -443,7 +445,12 @@
                   <label>Nombre <input id="productName" type="text" required /></label>
                 </div>
                 <div class="product-form-grid product-form-grid--2">
-                  <label>Categoria <input id="productCategory" type="text" required /></label>
+                  <label>
+                    Categoria
+                    <select id="productCategory" required>
+                      <option value="">Selecciona categoria</option>
+                    </select>
+                  </label>
                   <label>Sustancia / slug <input id="productSubstance" type="text" /></label>
                 </div>
                 <label class="product-form-full">Descripcion <textarea id="productDescription" rows="2"></textarea></label>
@@ -503,10 +510,9 @@
                 <p class="product-form-section-title">Clasificacion</p>
                 <div class="product-form-grid product-form-grid--3">
                   <label>
-                    Tipo
-                    <select id="productType">
-                      <option value="Venta libre">Venta libre</option>
-                      <option value="Receta medica">Receta medica</option>
+                    Clasificacion
+                    <select id="productType" required>
+                      <option value="">Selecciona clasificacion</option>
                     </select>
                   </label>
                   <label>
@@ -558,6 +564,95 @@
                     </tr>
                   </thead>
                   <tbody id="productTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="categorias">
+          <div class="module-grid">
+            <form class="panel-card form-panel" id="categoryForm">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Catalogo</p>
+                  <h2 id="categoryFormTitle">Nueva categoria</h2>
+                </div>
+                <button class="ghost-button" type="button" id="clearCategoryForm">Limpiar</button>
+              </div>
+              <input id="categoryId" type="hidden" />
+              <label>Nombre <input id="categoryName" type="text" required /></label>
+              <label>Descripcion <textarea id="categoryDescription" rows="2"></textarea></label>
+              <button class="primary-button" type="submit">Guardar categoria</button>
+            </form>
+
+            <section class="panel-card table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Administracion</p>
+                  <h2>Categorias</h2>
+                </div>
+                <input class="inline-search" id="categorySearch" type="search" placeholder="Buscar categoria" />
+              </div>
+              <div class="table-scroll">
+                <table class="catalog-admin-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Descripcion</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="categoryTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="clasificaciones">
+          <div class="module-grid">
+            <form class="panel-card form-panel" id="classificationForm">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Catalogo</p>
+                  <h2 id="classificationFormTitle">Nueva clasificacion</h2>
+                </div>
+                <button class="ghost-button" type="button" id="clearClassificationForm">Limpiar</button>
+              </div>
+              <input id="classificationId" type="hidden" />
+              <label>Nombre <input id="classificationName" type="text" required /></label>
+              <label>Descripcion <textarea id="classificationDescription" rows="2"></textarea></label>
+              <label>
+                Estado
+                <select id="classificationStatus">
+                  <option value="Activo">Activo</option>
+                  <option value="Pausado">Pausado</option>
+                </select>
+              </label>
+              <button class="primary-button" type="submit">Guardar clasificacion</button>
+            </form>
+
+            <section class="panel-card table-panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Administracion</p>
+                  <h2>Clasificaciones</h2>
+                </div>
+                <input class="inline-search" id="classificationSearch" type="search" placeholder="Buscar clasificacion" />
+              </div>
+              <div class="table-scroll">
+                <table class="catalog-admin-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Descripcion</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="classificationTable"></tbody>
                 </table>
               </div>
             </section>

@@ -4278,6 +4278,12 @@ const state = {
   inventoryCategory: "",
   inventoryLaboratory: "",
   inventoryStatus: "",
+  categories: [],
+  classifications: [],
+  categoryQuery: "",
+  classificationQuery: "",
+  categoryLoadError: "",
+  classificationLoadError: "",
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
@@ -4295,6 +4301,8 @@ function resolveLocalApiPath(path) {
 
 const productsApiUrl = resolveLocalApiPath("/api/products");
 const productImageUploadUrl = resolveLocalApiPath("/api/uploads/product-image");
+const categoriesApiUrl = resolveLocalApiPath("/api/categories");
+const classificationsApiUrl = resolveLocalApiPath("/api/classifications");
 
 const viewTitles = {
   dashboard: "Dashboard",
@@ -4303,6 +4311,8 @@ const viewTitles = {
   clientes: "Clientes",
   pedidos: "Pedidos",
   productos: "Productos",
+  categorias: "Categorías",
+  clasificaciones: "Clasificaciones",
   ventas: "Ventas",
   envios: "Envíos",
   cobros: "Cobros",
@@ -4424,6 +4434,23 @@ const elements = {
   productSearch: $("#productSearch"),
   productTable: $("#productTable"),
   clearProductForm: $("#clearProductForm"),
+  categoryForm: $("#categoryForm"),
+  categoryFormTitle: $("#categoryFormTitle"),
+  categoryId: $("#categoryId"),
+  categoryName: $("#categoryName"),
+  categoryDescription: $("#categoryDescription"),
+  categorySearch: $("#categorySearch"),
+  categoryTable: $("#categoryTable"),
+  clearCategoryForm: $("#clearCategoryForm"),
+  classificationForm: $("#classificationForm"),
+  classificationFormTitle: $("#classificationFormTitle"),
+  classificationId: $("#classificationId"),
+  classificationName: $("#classificationName"),
+  classificationDescription: $("#classificationDescription"),
+  classificationStatus: $("#classificationStatus"),
+  classificationSearch: $("#classificationSearch"),
+  classificationTable: $("#classificationTable"),
+  clearClassificationForm: $("#clearClassificationForm"),
   inventoryActiveProducts: $("#inventoryActiveProducts"),
   inventoryLowStock: $("#inventoryLowStock"),
   inventoryExpiringSoon: $("#inventoryExpiringSoon"),
@@ -4467,6 +4494,8 @@ function init() {
   bindEvents();
   renderAll();
   loadProducts();
+  loadCategories();
+  loadClassifications();
   loadRealConversations();
   window.setInterval(loadRealConversations, 5000);
 }
@@ -4534,6 +4563,20 @@ function bindEvents() {
     renderProducts();
   });
 
+  elements.categoryForm.addEventListener("submit", saveCategory);
+  elements.clearCategoryForm.addEventListener("click", clearCategoryForm);
+  elements.categorySearch.addEventListener("input", (event) => {
+    state.categoryQuery = event.target.value.trim().toLowerCase();
+    renderCategories();
+  });
+
+  elements.classificationForm.addEventListener("submit", saveClassification);
+  elements.clearClassificationForm.addEventListener("click", clearClassificationForm);
+  elements.classificationSearch.addEventListener("input", (event) => {
+    state.classificationQuery = event.target.value.trim().toLowerCase();
+    renderClassifications();
+  });
+
   elements.inventorySearch.addEventListener("input", (event) => {
     state.inventoryQuery = event.target.value.trim().toLowerCase();
     renderInventory();
@@ -4566,6 +4609,10 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "edit-customer") editCustomer(id);
   if (action.dataset.action === "edit-product") editProduct(id);
   if (action.dataset.action === "toggle-product") toggleProduct(id);
+  if (action.dataset.action === "edit-category") editCategory(id);
+  if (action.dataset.action === "deactivate-category") deactivateCategory(id);
+  if (action.dataset.action === "edit-classification") editClassification(id);
+  if (action.dataset.action === "deactivate-classification") deactivateClassification(id);
   if (action.dataset.action === "order-next") moveOrderNext(id);
   if (action.dataset.action === "mark-paid") markPaymentPaid(id);
   if (action.dataset.action === "mark-shipped") markShipmentSent(id);
@@ -4602,6 +4649,9 @@ function renderAll() {
   renderCustomers();
   renderOrders();
   renderProducts();
+  renderCategories();
+  renderClassifications();
+  renderProductCatalogSelects();
   renderInventory();
   renderSales();
   renderShipments();
@@ -5368,6 +5418,318 @@ async function deactivateProductInApi(id) {
   return data.product;
 }
 
+function classificationRequiresRecipe(name) {
+  return /receta/i.test(String(name || ""));
+}
+
+async function loadCategories(options = {}) {
+  try {
+    const response = await fetch(categoriesApiUrl);
+    if (!response.ok) throw new Error("Backend no disponible");
+
+    const data = await response.json();
+    if (!Array.isArray(data.categories)) throw new Error("Respuesta invalida");
+
+    state.categories = data.categories;
+    state.categoryLoadError = "";
+    renderCategories();
+    renderProductCatalogSelects();
+    if (options.manual) showToast("Categorias actualizadas");
+  } catch {
+    state.categories = [];
+    state.categoryLoadError = "No se pudieron cargar categorias desde Supabase.";
+    renderCategories();
+    renderProductCatalogSelects();
+    if (options.manual) showToast(state.categoryLoadError);
+  }
+}
+
+async function loadClassifications(options = {}) {
+  try {
+    const response = await fetch(classificationsApiUrl);
+    if (!response.ok) throw new Error("Backend no disponible");
+
+    const data = await response.json();
+    if (!Array.isArray(data.classifications)) throw new Error("Respuesta invalida");
+
+    state.classifications = data.classifications;
+    state.classificationLoadError = "";
+    renderClassifications();
+    renderProductCatalogSelects();
+    if (options.manual) showToast("Clasificaciones actualizadas");
+  } catch {
+    state.classifications = [];
+    state.classificationLoadError = "No se pudieron cargar clasificaciones. Revisa el SQL en docs/DEVELOPMENT_GUIDE.md.";
+    renderClassifications();
+    renderProductCatalogSelects();
+    if (options.manual) showToast(state.classificationLoadError);
+  }
+}
+
+async function saveCategoryToApi(category) {
+  const isUpdate = Boolean(category.id);
+  const url = isUpdate ? `${categoriesApiUrl}/${encodeURIComponent(category.id)}` : categoriesApiUrl;
+  const response = await fetch(url, {
+    method: isUpdate ? "PATCH" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(category),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo guardar categoria");
+  return data.category;
+}
+
+async function deactivateCategoryInApi(id) {
+  const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo desactivar categoria");
+  return data.category;
+}
+
+async function saveClassificationToApi(classification) {
+  const isUpdate = Boolean(classification.id);
+  const url = isUpdate ? `${classificationsApiUrl}/${encodeURIComponent(classification.id)}` : classificationsApiUrl;
+  const response = await fetch(url, {
+    method: isUpdate ? "PATCH" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(classification),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo guardar clasificacion");
+  return data.classification;
+}
+
+async function deactivateClassificationInApi(id) {
+  const response = await fetch(`${classificationsApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo desactivar clasificacion");
+  return data.classification;
+}
+
+function renderCategories() {
+  if (!elements.categoryTable) return;
+
+  const categories = state.categories.filter((category) => {
+    if (!category.active) return false;
+    const text = `${category.name} ${category.description || ""}`.toLowerCase();
+    return text.includes(state.categoryQuery);
+  });
+
+  if (state.categoryLoadError) {
+    elements.categoryTable.innerHTML = tableEmpty(4, state.categoryLoadError);
+    return;
+  }
+
+  elements.categoryTable.innerHTML = categories.length
+    ? categories
+        .map((category) => {
+          const statusClass = category.active ? "status-pill is-active" : "status-pill is-paused";
+          return `
+            <tr>
+              <td><strong>${escapeHTML(category.name)}</strong></td>
+              <td>${escapeHTML(category.description || "—")}</td>
+              <td><span class="${statusClass}">${escapeHTML(category.status)}</span></td>
+              <td class="table-actions">
+                <button class="ghost-button small" type="button" data-action="edit-category" data-id="${category.id}">Editar</button>
+                ${
+                  category.active
+                    ? `<button class="ghost-button small is-danger" type="button" data-action="deactivate-category" data-id="${category.id}">Desactivar</button>`
+                    : ""
+                }
+              </td>
+            </tr>
+          `;
+        })
+        .join("")
+    : tableEmpty(4, "No hay categorias activas. Crea la primera desde el formulario.");
+}
+
+function renderClassifications() {
+  if (!elements.classificationTable) return;
+
+  const classifications = state.classifications.filter((classification) => {
+    const text = `${classification.name} ${classification.description || ""} ${classification.status}`.toLowerCase();
+    return text.includes(state.classificationQuery);
+  });
+
+  if (state.classificationLoadError) {
+    elements.classificationTable.innerHTML = tableEmpty(4, state.classificationLoadError);
+    return;
+  }
+
+  elements.classificationTable.innerHTML = classifications.length
+    ? classifications
+        .map((classification) => {
+          const statusClass = classification.active ? "status-pill is-active" : "status-pill is-paused";
+          return `
+            <tr>
+              <td><strong>${escapeHTML(classification.name)}</strong></td>
+              <td>${escapeHTML(classification.description || "—")}</td>
+              <td><span class="${statusClass}">${escapeHTML(classification.status)}</span></td>
+              <td class="table-actions">
+                <button class="ghost-button small" type="button" data-action="edit-classification" data-id="${classification.id}">Editar</button>
+                ${
+                  classification.active
+                    ? `<button class="ghost-button small is-danger" type="button" data-action="deactivate-classification" data-id="${classification.id}">Desactivar</button>`
+                    : ""
+                }
+              </td>
+            </tr>
+          `;
+        })
+        .join("")
+    : tableEmpty(4, "No hay clasificaciones registradas. Agrega Venta libre, Receta medica, Controlado u otras.");
+}
+
+function renderProductCatalogSelects() {
+  const activeCategories = state.categories.filter((category) => category.active);
+  const activeClassifications = state.classifications.filter((classification) => classification.active);
+  const currentCategory = elements.productCategory?.value || "";
+  const currentType = elements.productType?.value || "";
+
+  if (elements.productCategory) {
+    elements.productCategory.innerHTML =
+      `<option value="">Selecciona categoria</option>` +
+      activeCategories
+        .map((category) => `<option value="${escapeHTML(category.name)}">${escapeHTML(category.name)}</option>`)
+        .join("");
+    if (currentCategory) ensureSelectOption(elements.productCategory, currentCategory);
+  }
+
+  if (elements.productType) {
+    if (activeClassifications.length) {
+      elements.productType.innerHTML =
+        `<option value="">Selecciona clasificacion</option>` +
+        activeClassifications
+          .map(
+            (classification) =>
+              `<option value="${escapeHTML(classification.name)}" data-id="${classification.id}">${escapeHTML(classification.name)}</option>`,
+          )
+          .join("");
+    } else {
+      elements.productType.innerHTML = `
+        <option value="">Selecciona clasificacion</option>
+        <option value="Venta libre">Venta libre</option>
+        <option value="Receta medica">Receta medica</option>
+      `;
+    }
+    if (currentType) ensureSelectOption(elements.productType, currentType);
+  }
+}
+
+function ensureSelectOption(select, value) {
+  if (!select || !value) return;
+  const exists = Array.from(select.options).some((option) => option.value === value);
+  if (!exists) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  }
+  select.value = value;
+}
+
+async function saveCategory(event) {
+  event.preventDefault();
+  const category = {
+    id: elements.categoryId.value,
+    name: elements.categoryName.value.trim(),
+    description: elements.categoryDescription.value.trim(),
+  };
+  if (!category.name) return showToast("El nombre es obligatorio");
+
+  try {
+    await saveCategoryToApi(category);
+    await loadCategories();
+    clearCategoryForm();
+    showToast("Categoria guardada");
+  } catch (error) {
+    showToast(error.message || "No se pudo guardar categoria");
+  }
+}
+
+function editCategory(id) {
+  const category = state.categories.find((item) => item.id === id);
+  if (!category) return;
+  elements.categoryFormTitle.textContent = "Editar categoria";
+  elements.categoryId.value = category.id;
+  elements.categoryName.value = category.name;
+  elements.categoryDescription.value = category.description || "";
+  showView("categorias");
+}
+
+function clearCategoryForm() {
+  elements.categoryForm.reset();
+  elements.categoryId.value = "";
+  elements.categoryFormTitle.textContent = "Nueva categoria";
+}
+
+async function deactivateCategory(id) {
+  const category = state.categories.find((item) => item.id === id);
+  if (!category || !category.active) return;
+  if (!window.confirm(`Desactivar la categoria "${category.name}"?`)) return;
+
+  try {
+    await deactivateCategoryInApi(id);
+    await loadCategories();
+    showToast("Categoria desactivada");
+  } catch (error) {
+    showToast(error.message || "No se pudo desactivar categoria");
+  }
+}
+
+async function saveClassification(event) {
+  event.preventDefault();
+  const classification = {
+    id: elements.classificationId.value,
+    name: elements.classificationName.value.trim(),
+    description: elements.classificationDescription.value.trim(),
+    status: elements.classificationStatus.value,
+  };
+  if (!classification.name) return showToast("El nombre es obligatorio");
+
+  try {
+    await saveClassificationToApi(classification);
+    await loadClassifications();
+    clearClassificationForm();
+    showToast("Clasificacion guardada");
+  } catch (error) {
+    showToast(error.message || "No se pudo guardar clasificacion");
+  }
+}
+
+function editClassification(id) {
+  const classification = state.classifications.find((item) => item.id === id);
+  if (!classification) return;
+  elements.classificationFormTitle.textContent = "Editar clasificacion";
+  elements.classificationId.value = classification.id;
+  elements.classificationName.value = classification.name;
+  elements.classificationDescription.value = classification.description || "";
+  elements.classificationStatus.value = classification.status;
+  showView("clasificaciones");
+}
+
+function clearClassificationForm() {
+  elements.classificationForm.reset();
+  elements.classificationId.value = "";
+  elements.classificationFormTitle.textContent = "Nueva clasificacion";
+  elements.classificationStatus.value = "Activo";
+}
+
+async function deactivateClassification(id) {
+  const classification = state.classifications.find((item) => item.id === id);
+  if (!classification || !classification.active) return;
+  if (!window.confirm(`Desactivar la clasificacion "${classification.name}"?`)) return;
+
+  try {
+    await deactivateClassificationInApi(id);
+    await loadClassifications();
+    showToast("Clasificacion desactivada");
+  } catch (error) {
+    showToast(error.message || "No se pudo desactivar clasificacion");
+  }
+}
+
 function renderProducts() {
   const products = state.products.filter((product) => {
     const text = `${product.sku || ""} ${product.name} ${product.category} ${product.type} ${product.status} ${product.substance || ""}`.toLowerCase();
@@ -5622,10 +5984,14 @@ async function saveProduct(event) {
     discountPrice: price,
     imageUrl: elements.productImageUrl.value.trim(),
     type: elements.productType.value,
-    requiresRecipe: elements.productType.value === "Receta medica",
+    classificationId: elements.productType.selectedOptions[0]?.dataset?.id || "",
+    requiresRecipe: classificationRequiresRecipe(elements.productType.value),
     iva: elements.productIva.value === "Si",
     status: elements.productStatus.value,
   };
+
+  if (!product.category) return showToast("Selecciona una categoria");
+  if (!product.type) return showToast("Selecciona una clasificacion");
 
   try {
     await saveProductToApi(product);
@@ -5640,10 +6006,12 @@ async function saveProduct(event) {
 function editProduct(id) {
   const product = getProduct(id);
   if (!product) return;
+  renderProductCatalogSelects();
   elements.productFormTitle.textContent = "Editar producto";
   elements.productId.value = product.id;
   elements.productSku.value = product.sku || "";
   elements.productName.value = product.name;
+  ensureSelectOption(elements.productCategory, product.category);
   elements.productCategory.value = product.category;
   elements.productSubstance.value = product.substance || "";
   elements.productImageUrl.value = product.imageUrl || "";
@@ -5657,6 +6025,7 @@ function editProduct(id) {
   elements.productMinStock.value = product.minStock;
   elements.productMaxStock.value = product.maxStock;
   elements.productExpiresAt.value = product.expiresAt || "";
+  ensureSelectOption(elements.productType, product.type);
   elements.productType.value = product.type;
   elements.productIva.value = product.iva ? "Si" : "No";
   elements.productStatus.value = product.status;

@@ -2522,3 +2522,43 @@ td span {
     width: 100%;
   }
 }
+
+.catalog-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.catalog-admin-table th,
+.catalog-admin-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.catalog-admin-table th {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.status-pill.is-active {
+  min-height: auto;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  color: #166534;
+  background: #dcfce7;
+}
+
+.status-pill.is-paused {
+  min-height: auto;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.ghost-button.small.is-danger {
+  color: #b91c1c;
+}

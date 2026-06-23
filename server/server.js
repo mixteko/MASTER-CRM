@@ -68,6 +68,46 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && request.url.startsWith("/api/categories")) {
+    await handleGetCategories(response);
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/api/categories") {
+    await handleCreateCategory(request, response);
+    return;
+  }
+
+  if (request.method === "PATCH" && request.url.startsWith("/api/categories/")) {
+    await handleUpdateCategory(request, response);
+    return;
+  }
+
+  if (request.method === "DELETE" && request.url.startsWith("/api/categories/")) {
+    await handleDeactivateCategory(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && request.url.startsWith("/api/classifications")) {
+    await handleGetClassifications(response);
+    return;
+  }
+
+  if (request.method === "POST" && request.url === "/api/classifications") {
+    await handleCreateClassification(request, response);
+    return;
+  }
+
+  if (request.method === "PATCH" && request.url.startsWith("/api/classifications/")) {
+    await handleUpdateClassification(request, response);
+    return;
+  }
+
+  if (request.method === "DELETE" && request.url.startsWith("/api/classifications/")) {
+    await handleDeactivateClassification(request, response);
+    return;
+  }
+
   if (request.method === "GET" && request.url.startsWith("/api/conversations")) {
     await handleGetConversations(response);
     return;
@@ -264,6 +304,232 @@ async function handleDeactivateProduct(request, response) {
     sendJSON(response, 200, { ok: true, product });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudo desactivar producto", details: error.message });
+  }
+}
+
+async function handleGetCategories(response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const rows = await supabaseRequest(
+      "/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&order=nombre.asc",
+    );
+    sendJSON(response, 200, { ok: true, categories: rows.map(mapDbCategory) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudieron cargar categorias", details: error.message });
+  }
+}
+
+async function handleCreateCategory(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const body = await readJSONBody(request);
+    const name = String(body.name || body.nombre || "").trim();
+    if (!name) {
+      sendJSON(response, 400, { error: "nombre es requerido" });
+      return;
+    }
+
+    const created = await supabaseRequest("/rest/v1/categorias", {
+      method: "POST",
+      body: {
+        nombre: name,
+        descripcion: String(body.description || body.descripcion || "").trim() || null,
+        activo: true,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    sendJSON(response, 200, { ok: true, category: mapDbCategory(created[0]) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo crear categoria", details: error.message });
+  }
+}
+
+async function handleUpdateCategory(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const id = getResourceIdFromUrl(request.url, "/api/categories/");
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de categoria requerido" });
+      return;
+    }
+
+    const body = await readJSONBody(request);
+    const patch = buildCatalogPatch(body);
+    if (!Object.keys(patch).length) {
+      sendJSON(response, 400, { error: "No hay campos para actualizar" });
+      return;
+    }
+
+    patch.updated_at = new Date().toISOString();
+    await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: patch,
+    });
+    const category = await getSupabaseCategoryById(id);
+    if (!category) {
+      sendJSON(response, 404, { error: "Categoria no encontrada" });
+      return;
+    }
+    sendJSON(response, 200, { ok: true, category: mapDbCategory(category) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo actualizar categoria", details: error.message });
+  }
+}
+
+async function handleDeactivateCategory(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const id = getResourceIdFromUrl(request.url, "/api/categories/");
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de categoria requerido" });
+      return;
+    }
+
+    const updated = await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: {
+        activo: false,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    if (!updated[0]) {
+      sendJSON(response, 404, { error: "Categoria no encontrada" });
+      return;
+    }
+    sendJSON(response, 200, { ok: true, category: mapDbCategory(updated[0]) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo desactivar categoria", details: error.message });
+  }
+}
+
+async function handleGetClassifications(response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const rows = await supabaseRequest(
+      "/rest/v1/clasificaciones?select=id,nombre,descripcion,activo,created_at,updated_at&order=nombre.asc",
+    );
+    sendJSON(response, 200, { ok: true, classifications: rows.map(mapDbClassification) });
+  } catch (error) {
+    sendJSON(response, 500, {
+      error: "No se pudieron cargar clasificaciones",
+      details: error.message,
+      hint: "Ejecuta el SQL de clasificaciones documentado en docs/DEVELOPMENT_GUIDE.md",
+    });
+  }
+}
+
+async function handleCreateClassification(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const body = await readJSONBody(request);
+    const name = String(body.name || body.nombre || "").trim();
+    if (!name) {
+      sendJSON(response, 400, { error: "nombre es requerido" });
+      return;
+    }
+
+    const created = await supabaseRequest("/rest/v1/clasificaciones", {
+      method: "POST",
+      body: {
+        nombre: name,
+        descripcion: String(body.description || body.descripcion || "").trim() || null,
+        activo: body.active !== undefined || body.activo !== undefined ? readActiveFlag(body) : true,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    sendJSON(response, 200, { ok: true, classification: mapDbClassification(created[0]) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo crear clasificacion", details: error.message });
+  }
+}
+
+async function handleUpdateClassification(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const id = getResourceIdFromUrl(request.url, "/api/classifications/");
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de clasificacion requerido" });
+      return;
+    }
+
+    const body = await readJSONBody(request);
+    const patch = buildCatalogPatch(body);
+    if (!Object.keys(patch).length) {
+      sendJSON(response, 400, { error: "No hay campos para actualizar" });
+      return;
+    }
+
+    patch.updated_at = new Date().toISOString();
+    await supabaseRequest(`/rest/v1/clasificaciones?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: patch,
+    });
+    const classification = await getSupabaseClassificationById(id);
+    if (!classification) {
+      sendJSON(response, 404, { error: "Clasificacion no encontrada" });
+      return;
+    }
+    sendJSON(response, 200, { ok: true, classification: mapDbClassification(classification) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo actualizar clasificacion", details: error.message });
+  }
+}
+
+async function handleDeactivateClassification(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const id = getResourceIdFromUrl(request.url, "/api/classifications/");
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de clasificacion requerido" });
+      return;
+    }
+
+    const updated = await supabaseRequest(`/rest/v1/clasificaciones?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: {
+        activo: false,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    if (!updated[0]) {
+      sendJSON(response, 404, { error: "Clasificacion no encontrada" });
+      return;
+    }
+    sendJSON(response, 200, { ok: true, classification: mapDbClassification(updated[0]) });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo desactivar clasificacion", details: error.message });
   }
 }
 
@@ -557,20 +823,43 @@ function rankProductMatches(products, terms, query) {
 }
 
 async function getProductsFromSupabase() {
-  const products = await supabaseRequest(
-    "/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&order=nombre.asc",
-  );
-  return products.map(mapDbProduct);
+  const selectWithClassification =
+    "/rest/v1/productos?select=*,categorias(nombre),clasificaciones(nombre),inventario(stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&order=nombre.asc";
+  const selectWithoutClassification =
+    "/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&order=nombre.asc";
+
+  try {
+    const products = await supabaseRequest(selectWithClassification);
+    return products.map(mapDbProduct);
+  } catch {
+    const products = await supabaseRequest(selectWithoutClassification);
+    return products.map(mapDbProduct);
+  }
 }
 
 async function createSupabaseProduct(product) {
   const categoryField = readProductField(product, ["category", "categoria"]);
   const categoriaId = await findOrCreateCategoriaId(categoryField.value);
-  const created = await supabaseRequest("/rest/v1/productos", {
-    method: "POST",
-    body: mapProductToDb(product, categoriaId),
-    prefer: "return=representation",
-  });
+  const body = mapProductToDb(product, categoriaId);
+  const clasificacionId = await resolveClasificacionId(product);
+  if (clasificacionId !== undefined) body.clasificacion_id = clasificacionId;
+
+  let created;
+  try {
+    created = await supabaseRequest("/rest/v1/productos", {
+      method: "POST",
+      body,
+      prefer: "return=representation",
+    });
+  } catch (error) {
+    if (body.clasificacion_id === undefined) throw error;
+    delete body.clasificacion_id;
+    created = await supabaseRequest("/rest/v1/productos", {
+      method: "POST",
+      body,
+      prefer: "return=representation",
+    });
+  }
   const dbProduct = created[0];
   await upsertProductInventory(dbProduct.id, product);
   return (await getSupabaseProductById(dbProduct.id)) || mapDbProduct(dbProduct);
@@ -583,14 +872,26 @@ async function updateSupabaseProduct(id, product) {
   const categoryField = readProductField(product, ["category", "categoria"]);
   const categoriaId = categoryField.provided ? await findOrCreateCategoriaId(categoryField.value) : undefined;
   const productBody = mapProductToDb(product, categoriaId, { partial: true });
+  const clasificacionId = await resolveClasificacionId(product);
+  if (clasificacionId !== undefined) productBody.clasificacion_id = clasificacionId;
 
   if (Object.keys(productBody).length) {
     productBody.updated_at = new Date().toISOString();
-    await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: productBody,
-      prefer: "return=representation",
-    });
+    try {
+      await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: productBody,
+        prefer: "return=representation",
+      });
+    } catch (error) {
+      if (productBody.clasificacion_id === undefined) throw error;
+      delete productBody.clasificacion_id;
+      await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: productBody,
+        prefer: "return=representation",
+      });
+    }
   }
 
   await upsertProductInventory(id, product, { partial: true, fallbackStock: existing.stock });
@@ -603,10 +904,16 @@ async function getSupabaseProductById(id) {
 }
 
 async function getSupabaseProductRecordById(id) {
-  const products = await supabaseRequest(
-    `/rest/v1/productos?select=*,categorias(nombre),inventario(id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`,
-  );
-  return products[0] || null;
+  const selectWithClassification = `/rest/v1/productos?select=*,categorias(nombre),clasificaciones(nombre),inventario(id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`;
+  const selectWithoutClassification = `/rest/v1/productos?select=*,categorias(nombre),inventario(id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`;
+
+  try {
+    const products = await supabaseRequest(selectWithClassification);
+    return products[0] || null;
+  } catch {
+    const products = await supabaseRequest(selectWithoutClassification);
+    return products[0] || null;
+  }
 }
 
 async function findOrCreateCategoriaId(categoryName) {
@@ -656,6 +963,8 @@ async function upsertProductInventory(productId, product, options = {}) {
 function mapDbProduct(product) {
   const inventory = Array.isArray(product?.inventario) ? product.inventario[0] : null;
   const category = product?.categorias?.nombre || "";
+  const classificationName = product?.clasificaciones?.nombre || "";
+  const type = classificationName || (product.requiere_receta ? "Receta medica" : "Venta libre");
 
   return {
     id: product.id,
@@ -679,8 +988,9 @@ function mapDbProduct(product) {
     price: toNumber(product.precio),
     discountPrice: toNumber(product.precio),
     imageUrl: product.imagen_url || "",
-    type: product.requiere_receta ? "Receta medica" : "Venta libre",
-    requiresRecipe: Boolean(product.requiere_receta),
+    type,
+    classificationId: product.clasificacion_id || "",
+    requiresRecipe: classificationRequiresRecipe(type),
     iva: false,
     status: product.activo ? "Activo" : "Pausado",
   };
@@ -708,7 +1018,7 @@ function mapProductToDb(product, categoriaId, options = {}) {
 
   const recipeField = readProductField(product, ["requiresRecipe", "requiere_receta", "type"]);
   if (!partial || recipeField.provided) {
-    body.requiere_receta = recipeField.key === "type" ? recipeField.value === "Receta medica" : Boolean(recipeField.value);
+    body.requiere_receta = resolveRequiresRecipe(product, recipeField);
   }
 
   if (!partial) body.updated_at = new Date().toISOString();
@@ -764,6 +1074,94 @@ function isNonNegativeNumber(value) {
 
 function getProductIdFromUrl(url) {
   return decodeURIComponent(url.split("?")[0].replace("/api/products/", "").trim());
+}
+
+function getResourceIdFromUrl(url, prefix) {
+  return decodeURIComponent(url.split("?")[0].replace(prefix, "").trim());
+}
+
+function mapDbCategory(row) {
+  return {
+    id: row.id,
+    name: row.nombre || "",
+    description: row.descripcion || "",
+    active: Boolean(row.activo),
+    status: row.activo ? "Activo" : "Pausado",
+  };
+}
+
+function mapDbClassification(row) {
+  return {
+    id: row.id,
+    name: row.nombre || "",
+    description: row.descripcion || "",
+    active: Boolean(row.activo),
+    status: row.activo ? "Activo" : "Pausado",
+  };
+}
+
+function buildCatalogPatch(body) {
+  const patch = {};
+  if (body.name !== undefined || body.nombre !== undefined) {
+    patch.nombre = String(body.name || body.nombre || "").trim();
+  }
+  if (body.description !== undefined || body.descripcion !== undefined) {
+    patch.descripcion = String(body.description || body.descripcion || "").trim() || null;
+  }
+  if (body.active !== undefined || body.activo !== undefined || body.status !== undefined) {
+    patch.activo = readActiveFlag(body);
+  }
+  return patch;
+}
+
+function readActiveFlag(body) {
+  if (body.status === "Activo") return true;
+  if (body.status === "Pausado") return false;
+  if (body.activo !== undefined) return Boolean(body.activo);
+  return Boolean(body.active);
+}
+
+function classificationRequiresRecipe(value) {
+  return /receta/i.test(String(value || ""));
+}
+
+function resolveRequiresRecipe(product, recipeField) {
+  if (recipeField.provided && recipeField.key !== "type") return Boolean(recipeField.value);
+  const typeField = readProductField(product, ["type"]);
+  if (typeField.provided) return classificationRequiresRecipe(typeField.value);
+  if (recipeField.provided) return classificationRequiresRecipe(recipeField.value);
+  return false;
+}
+
+async function getSupabaseCategoryById(id) {
+  const rows = await supabaseRequest(
+    `/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+  );
+  return rows[0] || null;
+}
+
+async function getSupabaseClassificationById(id) {
+  const rows = await supabaseRequest(
+    `/rest/v1/clasificaciones?select=id,nombre,descripcion,activo,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+  );
+  return rows[0] || null;
+}
+
+async function resolveClasificacionId(product) {
+  const idField = readProductField(product, ["classificationId", "clasificacion_id"]);
+  if (idField.provided) return idField.value || null;
+
+  const typeField = readProductField(product, ["type"]);
+  if (!typeField.provided || !typeField.value) return undefined;
+
+  try {
+    const rows = await supabaseRequest(
+      `/rest/v1/clasificaciones?select=id&nombre=eq.${encodeURIComponent(String(typeField.value).trim())}&limit=1`,
+    );
+    return rows[0]?.id || null;
+  } catch {
+    return undefined;
+  }
 }
 
 function getProductSearchTerms(text) {

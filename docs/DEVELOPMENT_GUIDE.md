@@ -109,6 +109,40 @@ Subida de imagenes de producto:
 * `SUPABASE_SERVICE_ROLE_KEY` solo en `server/.env`
 * La tabla `productos` guarda solo `imagen_url` (URL publica); no base64
 
+Categorias y clasificaciones (US-008):
+
+* Endpoints: `GET/POST/PATCH/DELETE /api/categories` y `/api/classifications`
+* `DELETE` desactiva (`activo=false`); no hay borrado fisico
+* Tabla `categorias` ya existe en Supabase (`server/sql/schema.sql`)
+* Tabla `clasificaciones` debe crearse en Supabase antes de usar la seccion administrativa
+
+SQL recomendado (ejecutar en el SQL Editor de Supabase):
+
+```sql
+create table if not exists clasificaciones (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null unique,
+  descripcion text,
+  activo boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table productos
+  add column if not exists clasificacion_id uuid references clasificaciones(id) on delete set null;
+
+create index if not exists idx_productos_clasificacion_id on productos(clasificacion_id);
+```
+
+Archivo completo con datos de ejemplo: `server/sql/clasificaciones.sql`
+
+Prueba rapida de APIs:
+
+```bash
+curl -s http://localhost:3090/api/categories | python3 -m json.tool | head -40
+curl -s http://localhost:3090/api/classifications | python3 -m json.tool | head -40
+```
+
 ---
 
 ## 9. Flujo de cierre
