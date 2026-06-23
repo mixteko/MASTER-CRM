@@ -800,6 +800,14 @@ label {
   white-space: nowrap;
 }
 
+.product-image-status {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+  line-height: 1.35;
+}
+
 .product-image-preview {
   position: relative;
   display: grid;

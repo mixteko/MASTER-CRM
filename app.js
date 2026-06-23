@@ -4281,18 +4281,20 @@ const state = {
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
-const REMOTE_PRODUCTS_API_URL = "https://minifarmacia.onrender.com/api/products";
 
-// Backend local (Node en localhost, p. ej. :3000): /api/products. Frontend estático (GitHub Pages, python :8080): backend remoto.
-function resolveProductsApiUrl() {
+// Backend local (Node en localhost:3090): /api/*. Otros dominios: backend remoto.
+function usesLocalNodeBackend() {
   const host = window.location.hostname;
   const isLocalhost = host === "localhost" || host === "127.0.0.1";
-  const isStaticLocalServer = window.location.port === "8080";
-  const usesLocalNodeBackend = isLocalhost && !isStaticLocalServer;
-  return usesLocalNodeBackend ? "/api/products" : REMOTE_PRODUCTS_API_URL;
+  return isLocalhost && window.location.port === "3090";
 }
 
-const productsApiUrl = resolveProductsApiUrl();
+function resolveLocalApiPath(path) {
+  return usesLocalNodeBackend() ? path : `https://minifarmacia.onrender.com${path}`;
+}
+
+const productsApiUrl = resolveLocalApiPath("/api/products");
+const productImageUploadUrl = resolveLocalApiPath("/api/uploads/product-image");
 
 const viewTitles = {
   dashboard: "Dashboard",
@@ -4403,6 +4405,7 @@ const elements = {
   productImageUploadButton: $("#productImageUploadButton"),
   productImagePreview: $("#productImagePreview"),
   productImagePreviewImg: $("#productImagePreviewImg"),
+  productImageStatus: $("#productImageStatus"),
   productCost: $("#productCost"),
   productRegularPrice: $("#productRegularPrice"),
   productPrice: $("#productPrice"),
@@ -5327,6 +5330,20 @@ async function loadProducts(options = {}) {
   }
 }
 
+async function uploadProductImageToApi(file) {
+  const formData = new FormData();
+  formData.append("image", file, file.name || "product-image");
+
+  const response = await fetch(productImageUploadUrl, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo subir imagen");
+  if (!data.imageUrl) throw new Error("Respuesta invalida al subir imagen");
+  return data.imageUrl;
+}
+
 async function saveProductToApi(product) {
   const isUpdate = Boolean(product.id);
   const url = isUpdate ? `${productsApiUrl}/${encodeURIComponent(product.id)}` : productsApiUrl;
@@ -5577,7 +5594,15 @@ async function saveProduct(event) {
 
   const imageUrl = elements.productImageUrl.value.trim();
   if (productImagePendingFile && !imageUrl) {
-    return showToast("La imagen seleccionada se previsualiza localmente. La subida a Supabase Storage se activará en la siguiente fase.");
+    try {
+      const uploadedImageUrl = await uploadProductImageToApi(productImagePendingFile);
+      elements.productImageUrl.value = uploadedImageUrl;
+      clearProductImagePendingFile();
+      updateProductImagePreview();
+      updateProductImageStatus("");
+    } catch (error) {
+      return showToast(error.message || "No se pudo subir imagen a Supabase Storage");
+    }
   }
 
   const product = {
@@ -5595,7 +5620,7 @@ async function saveProduct(event) {
     regularPrice: regularPrice || price,
     price,
     discountPrice: price,
-    imageUrl,
+    imageUrl: elements.productImageUrl.value.trim(),
     type: elements.productType.value,
     requiresRecipe: elements.productType.value === "Receta medica",
     iva: elements.productIva.value === "Si",
@@ -5624,6 +5649,7 @@ function editProduct(id) {
   elements.productImageUrl.value = product.imageUrl || "";
   clearProductImagePendingFile();
   updateProductImagePreview();
+  updateProductImageStatus("");
   elements.productCost.value = product.cost || 0;
   elements.productRegularPrice.value = product.regularPrice || product.price;
   elements.productPrice.value = product.price;
@@ -5663,6 +5689,7 @@ function clearProductForm() {
   clearProductImagePendingFile();
   updateProductProfitSummary();
   updateProductImagePreview();
+  updateProductImageStatus("");
 }
 
 function clearProductImagePendingFile(options = {}) {
@@ -5697,10 +5724,19 @@ function handleProductImageFileChange(event) {
   productImagePendingFile = file;
   productImageObjectUrl = URL.createObjectURL(file);
   updateProductImagePreview();
+  updateProductImageStatus(`Imagen lista: ${file.name}. Se subira al guardar el producto.`);
+}
+
+function updateProductImageStatus(message) {
+  if (!elements.productImageStatus) return;
+  elements.productImageStatus.textContent = message || "";
 }
 
 function handleProductImageUrlInput() {
-  if (elements.productImageUrl.value.trim()) clearProductImagePendingFile();
+  if (elements.productImageUrl.value.trim()) {
+    clearProductImagePendingFile();
+    updateProductImageStatus("");
+  }
   updateProductImagePreview();
 }
 

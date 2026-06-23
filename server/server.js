@@ -73,6 +73,11 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && request.url === "/api/uploads/product-image") {
+    await handleUploadProductImage(request, response);
+    return;
+  }
+
   if (request.method === "GET" || request.method === "HEAD") {
     sendStaticFile(request, response);
     return;
@@ -617,7 +622,6 @@ async function findOrCreateCategoriaId(categoryName) {
       nombre,
       activo: true,
     },
-    prefer: "return=representation",
   });
   return created[0]?.id || null;
 }
@@ -1238,6 +1242,177 @@ function loadEnv() {
     const value = trimmed.slice(separator + 1).trim().replace(/^["']|["']$/g, "");
     if (key && process.env[key] === undefined) process.env[key] = value;
   });
+}
+
+const PRODUCT_IMAGE_BUCKET = "product-images";
+const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_PRODUCT_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const PRODUCT_IMAGE_FIELD_NAMES = new Set(["image", "file", "productImage"]);
+
+async function handleUploadProductImage(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  const contentType = String(request.headers["content-type"] || "");
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    sendJSON(response, 400, { error: "Content-Type debe ser multipart/form-data" });
+    return;
+  }
+
+  try {
+    const body = await readBinaryBody(request, MAX_PRODUCT_IMAGE_BYTES + 256 * 1024);
+    const parsed = parseMultipartFile(body, contentType);
+
+    if (parsed.error) {
+      sendJSON(response, 400, { error: parsed.error });
+      return;
+    }
+
+    const { mime, data } = parsed;
+    if (!ALLOWED_PRODUCT_IMAGE_MIMES.has(mime)) {
+      sendJSON(response, 400, { error: "Tipo de imagen no permitido. Usa PNG, JPEG o WebP." });
+      return;
+    }
+
+    if (data.length > MAX_PRODUCT_IMAGE_BYTES) {
+      sendJSON(response, 400, { error: "La imagen supera el maximo de 5 MB" });
+      return;
+    }
+
+    const uploaded = await uploadProductImageToStorage(data, mime);
+    sendJSON(response, 200, { ok: true, imageUrl: uploaded.imageUrl, path: uploaded.path });
+  } catch (error) {
+    const message = error.message || "No se pudo subir imagen";
+    const statusCode = message.includes("Payload demasiado grande") ? 413 : 500;
+    sendJSON(response, statusCode, { error: "No se pudo subir imagen", details: message });
+  }
+}
+
+async function uploadProductImageToStorage(buffer, mime) {
+  const supabaseUrl = normalizeSupabaseUrl(SUPABASE_URL);
+  const extension = mimeToImageExtension(mime);
+  const path = buildProductImageStoragePath(extension);
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${PRODUCT_IMAGE_BUCKET}/${path}`;
+
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      "Content-Type": mime,
+      "x-upsert": "true",
+    },
+    body: buffer,
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(text || `Supabase Storage respondio con estado ${response.status}`);
+  }
+
+  return {
+    imageUrl: `${supabaseUrl}/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET}/${path}`,
+    path,
+  };
+}
+
+function buildProductImageStoragePath(extension) {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const random = Math.random().toString(36).slice(2, 10);
+  return `${year}/${month}/${Date.now()}-${random}.${extension}`;
+}
+
+function mimeToImageExtension(mime) {
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  return "jpg";
+}
+
+function readBinaryBody(request, maxSize) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maxSize) {
+        request.destroy();
+        reject(new Error("Payload demasiado grande"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("error", reject);
+  });
+}
+
+function parseMultipartFile(body, contentTypeHeader) {
+  const match = /boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(String(contentTypeHeader || ""));
+  if (!match) return { error: "Boundary multipart no encontrado" };
+
+  const boundary = match[1] || match[2];
+  const openingDelimiter = Buffer.from(`--${boundary}`);
+  const innerDelimiter = Buffer.from(`\r\n--${boundary}`);
+  const parts = [];
+
+  let offset = 0;
+  if (body.subarray(0, openingDelimiter.length).equals(openingDelimiter)) {
+    offset = openingDelimiter.length;
+  } else {
+    offset = body.indexOf(innerDelimiter);
+    if (offset === -1) return { error: "Archivo requerido" };
+    offset += innerDelimiter.length;
+  }
+
+  if (body[offset] === 0x0d && body[offset + 1] === 0x0a) offset += 2;
+
+  while (offset < body.length) {
+    if (body[offset] === 0x2d && body[offset + 1] === 0x2d) break;
+
+    const next = body.indexOf(innerDelimiter, offset);
+    const end = next === -1 ? body.length : next;
+    if (end > offset) parts.push(body.subarray(offset, end));
+    if (next === -1) break;
+    offset = next + innerDelimiter.length;
+  }
+
+  for (const part of parts) {
+    const parsedPart = parseMultipartPart(part);
+    if (!parsedPart || !PRODUCT_IMAGE_FIELD_NAMES.has(parsedPart.name)) continue;
+    if (!parsedPart.data.length) continue;
+
+    const mime = parsedPart.mime || "application/octet-stream";
+    return { mime, data: parsedPart.data, fieldName: parsedPart.name };
+  }
+
+  return { error: "Archivo requerido" };
+}
+
+function parseMultipartPart(part) {
+  const headerEnd = part.indexOf("\r\n\r\n");
+  if (headerEnd === -1) return null;
+
+  const headersRaw = part.subarray(0, headerEnd).toString("utf8");
+  let data = part.subarray(headerEnd + 4);
+  if (data.length >= 2 && data[data.length - 2] === 0x0d && data[data.length - 1] === 0x0a) {
+    data = data.subarray(0, data.length - 2);
+  }
+
+  const disposition = /content-disposition:[^\r\n]+/i.exec(headersRaw)?.[0] || "";
+  const nameMatch = /name="([^"]+)"/i.exec(disposition);
+  const contentTypeMatch = /content-type:\s*([^\r\n]+)/i.exec(headersRaw);
+
+  return {
+    name: nameMatch?.[1] || "",
+    mime: contentTypeMatch?.[1]?.trim().toLowerCase() || "",
+    data,
+  };
 }
 
 function readJSONBody(request) {

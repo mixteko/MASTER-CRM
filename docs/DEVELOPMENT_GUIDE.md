@@ -100,7 +100,14 @@ npm --prefix server start
 2. Abrir el navegador en `http://localhost:3090`.
 3. Revisar la consola del navegador y del terminal — sin errores.
 
-El servidor Node sirve frontend y APIs desde el mismo origen. No usar `python3 -m http.server 8080` para el trabajo normal, porque ese modo no incluye backend local ni APIs.
+El servidor Node sirve frontend y APIs desde el mismo origen en `http://localhost:3090`. No usar `python3 -m http.server 8080` para el trabajo normal, porque ese modo no incluye backend local ni APIs.
+
+Subida de imagenes de producto:
+
+* Endpoint: `POST /api/uploads/product-image`
+* Bucket Supabase: `product-images`
+* `SUPABASE_SERVICE_ROLE_KEY` solo en `server/.env`
+* La tabla `productos` guarda solo `imagen_url` (URL publica); no base64
 
 ---
 
