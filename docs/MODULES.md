@@ -16,6 +16,8 @@
 
 **Futuro esperado:** perfiles persistentes, historial de compras y conversaciones, segmentación, consentimiento y deduplicación.
 
+**Planificado (US-012, tras cerrar Productos):** tipos de cliente con descuento general, reglas de excepción por categoría/clasificación, regla de mejor precio (promoción vs descuento). Ver `docs/DEVELOPMENT_GUIDE.md` § US-012. No aplicar a ventas en fase 1.
+
 ## Productos
 
 **Propósito:** administrar el catálogo de productos farmacéuticos y sus condiciones de venta.

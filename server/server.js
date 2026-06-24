@@ -58,13 +58,28 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (request.method === "PATCH" && request.url.startsWith("/api/products/")) {
+  if (request.method === "PATCH" && getRequestPath(request).match(/^\/api\/products\/[^/]+$/)) {
     await handleUpdateProduct(request, response);
     return;
   }
 
-  if (request.method === "DELETE" && request.url.startsWith("/api/products/")) {
-    await handleDeactivateProduct(request, response);
+  if (request.method === "DELETE" && getRequestPath(request).match(/^\/api\/products\/[^/]+\/permanent$/)) {
+    await handlePermanentDeleteProduct(request, response);
+    return;
+  }
+
+  if (request.method === "DELETE" && getRequestPath(request).match(/^\/api\/products\/[^/]+$/)) {
+    await handleAdministrativeDeleteProduct(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && getRequestPath(request).match(/^\/api\/product-lots\/?$/)) {
+    await handleCreateProductLot(request, response);
+    return;
+  }
+
+  if (request.method === "PATCH" && getRequestPath(request).startsWith("/api/product-lots/")) {
+    await handleUpdateProductLot(request, response);
     return;
   }
 
@@ -252,7 +267,7 @@ async function handleUpdateProduct(request, response) {
   }
 
   try {
-    const id = getProductIdFromUrl(request.url);
+    const id = getProductIdFromPath(getRequestPath(request));
     if (!id) {
       sendJSON(response, 400, { error: "ID de producto requerido" });
       return;
@@ -275,35 +290,112 @@ async function handleUpdateProduct(request, response) {
   }
 }
 
-async function handleDeactivateProduct(request, response) {
+async function handleAdministrativeDeleteProduct(request, response) {
   if (!isSupabaseEnabled()) {
     sendJSON(response, 500, { error: "Supabase no configurado" });
     return;
   }
 
   try {
-    const id = getProductIdFromUrl(request.url);
+    const id = getProductIdFromPath(getRequestPath(request));
     if (!id) {
       sendJSON(response, 400, { error: "ID de producto requerido" });
       return;
     }
 
-    const updated = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: {
-        activo: false,
-        updated_at: new Date().toISOString(),
-      },
-      prefer: "return=representation",
-    });
+    const now = new Date().toISOString();
+    const patchBody = {
+      activo: false,
+      updated_at: now,
+      eliminado: true,
+      eliminado_at: now,
+    };
+
+    let updated;
+    try {
+      updated = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: patchBody,
+        prefer: "return=representation",
+      });
+    } catch (error) {
+      updated = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: { activo: false, updated_at: now },
+        prefer: "return=representation",
+      });
+    }
+
     if (!updated[0]) {
       sendJSON(response, 404, { error: "Producto no encontrado" });
       return;
     }
-    const product = await getSupabaseProductById(id);
-    sendJSON(response, 200, { ok: true, product });
+    sendJSON(response, 200, { ok: true, id, archived: true });
   } catch (error) {
-    sendJSON(response, 500, { error: "No se pudo desactivar producto", details: error.message });
+    sendJSON(response, 500, { error: "No se pudo dar de baja el producto", details: error.message });
+  }
+}
+
+async function handlePermanentDeleteProduct(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const match = getRequestPath(request).match(/^\/api\/products\/([^/]+)\/permanent$/);
+    const id = match ? decodeURIComponent(match[1]) : "";
+    if (!id) {
+      sendJSON(response, 400, { error: "ID de producto requerido" });
+      return;
+    }
+
+    const existing = await getSupabaseProductRecordById(id);
+    if (!existing) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+
+    const orderItems = await supabaseRequest(
+      `/rest/v1/pedido_items?select=id&producto_id=eq.${encodeURIComponent(id)}&limit=1`,
+    );
+    if (Array.isArray(orderItems) && orderItems.length) {
+      sendJSON(response, 409, {
+        error: "No se puede eliminar definitivamente porque el producto tiene historial asociado. Usa baja administrativa.",
+      });
+      return;
+    }
+
+    try {
+      await supabaseRequest(`/rest/v1/inventario?producto_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    } catch (inventoryError) {
+      console.warn("No se pudo limpiar inventario antes de borrar producto:", inventoryError.message);
+    }
+
+    try {
+      const deleted = await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        prefer: "return=representation",
+      });
+      if (!deleted.length) {
+        sendJSON(response, 404, { error: "Producto no encontrado" });
+        return;
+      }
+    } catch (deleteError) {
+      const message = String(deleteError.message || "");
+      if (/foreign key|violates|restrict|23503/i.test(message)) {
+        sendJSON(response, 409, {
+          error: "No se puede eliminar definitivamente porque el producto tiene historial asociado. Usa baja administrativa.",
+          details: message,
+        });
+        return;
+      }
+      throw deleteError;
+    }
+
+    sendJSON(response, 200, { ok: true, id, deleted: true });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo eliminar definitivamente el producto", details: error.message });
   }
 }
 
@@ -823,17 +915,31 @@ function rankProductMatches(products, terms, query) {
 }
 
 async function getProductsFromSupabase() {
+  const inventorySelect = "id,producto_id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo";
   const selectWithClassification =
-    "/rest/v1/productos?select=*,categorias(nombre),clasificaciones(nombre),inventario(stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&order=nombre.asc";
+    `/rest/v1/productos?select=*,categorias(nombre),clasificaciones(nombre),inventario(${inventorySelect})&order=nombre.asc`;
   const selectWithoutClassification =
-    "/rest/v1/productos?select=*,categorias(nombre),inventario(stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&order=nombre.asc";
+    `/rest/v1/productos?select=*,categorias(nombre),inventario(${inventorySelect})&order=nombre.asc`;
+  const deletedFilter = "&eliminado=eq.false";
+
+  async function fetchAndMap(selectUrl) {
+    const products = await supabaseRequest(selectUrl);
+    return products.filter((product) => !product.eliminado).map(mapDbProduct);
+  }
 
   try {
-    const products = await supabaseRequest(selectWithClassification);
-    return products.map(mapDbProduct);
+    return await fetchAndMap(selectWithClassification + deletedFilter);
   } catch {
-    const products = await supabaseRequest(selectWithoutClassification);
-    return products.map(mapDbProduct);
+    try {
+      return await fetchAndMap(selectWithClassification);
+    } catch {
+      try {
+        return await fetchAndMap(selectWithoutClassification + deletedFilter);
+      } catch {
+        const products = await supabaseRequest(selectWithoutClassification);
+        return products.filter((product) => !product.eliminado).map(mapDbProduct);
+      }
+    }
   }
 }
 
@@ -852,11 +958,13 @@ async function createSupabaseProduct(product) {
       prefer: "return=representation",
     });
   } catch (error) {
-    if (body.clasificacion_id === undefined) throw error;
-    delete body.clasificacion_id;
+    const retryBody = { ...body };
+    if (retryBody.precio_promocional !== undefined) delete retryBody.precio_promocional;
+    if (retryBody.clasificacion_id !== undefined) delete retryBody.clasificacion_id;
+    if (retryBody.precio_promocional === body.precio_promocional && retryBody.clasificacion_id === body.clasificacion_id) throw error;
     created = await supabaseRequest("/rest/v1/productos", {
       method: "POST",
-      body,
+      body: retryBody,
       prefer: "return=representation",
     });
   }
@@ -884,11 +992,22 @@ async function updateSupabaseProduct(id, product) {
         prefer: "return=representation",
       });
     } catch (error) {
-      if (productBody.clasificacion_id === undefined) throw error;
-      delete productBody.clasificacion_id;
+      const retryBody = { ...productBody };
+      if (retryBody.precio_promocional !== undefined) delete retryBody.precio_promocional;
+      if (retryBody.clasificacion_id !== undefined) delete retryBody.clasificacion_id;
+      if (retryBody.eliminado !== undefined) delete retryBody.eliminado;
+      if (retryBody.eliminado_at !== undefined) delete retryBody.eliminado_at;
+      if (
+        retryBody.precio_promocional === productBody.precio_promocional &&
+        retryBody.clasificacion_id === productBody.clasificacion_id &&
+        retryBody.eliminado === productBody.eliminado &&
+        retryBody.eliminado_at === productBody.eliminado_at
+      ) {
+        throw error;
+      }
       await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(id)}`, {
         method: "PATCH",
-        body: productBody,
+        body: retryBody,
         prefer: "return=representation",
       });
     }
@@ -904,8 +1023,9 @@ async function getSupabaseProductById(id) {
 }
 
 async function getSupabaseProductRecordById(id) {
-  const selectWithClassification = `/rest/v1/productos?select=*,categorias(nombre),clasificaciones(nombre),inventario(id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`;
-  const selectWithoutClassification = `/rest/v1/productos?select=*,categorias(nombre),inventario(id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo)&id=eq.${encodeURIComponent(id)}&limit=1`;
+  const inventorySelect = "id,producto_id,stock,stock_minimo,stock_maximo,lote,fecha_caducidad,costo";
+  const selectWithClassification = `/rest/v1/productos?select=*,categorias(nombre),clasificaciones(nombre),inventario(${inventorySelect})&id=eq.${encodeURIComponent(id)}&limit=1`;
+  const selectWithoutClassification = `/rest/v1/productos?select=*,categorias(nombre),inventario(${inventorySelect})&id=eq.${encodeURIComponent(id)}&limit=1`;
 
   try {
     const products = await supabaseRequest(selectWithClassification);
@@ -914,6 +1034,231 @@ async function getSupabaseProductRecordById(id) {
     const products = await supabaseRequest(selectWithoutClassification);
     return products[0] || null;
   }
+}
+
+const INACTIVE_LOT_PREFIX = "[INACTIVO] ";
+
+function parseInventoryLote(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { active: true, lot: "" };
+  if (raw.startsWith(INACTIVE_LOT_PREFIX)) {
+    return { active: false, lot: raw.slice(INACTIVE_LOT_PREFIX.length).trim() };
+  }
+  return { active: true, lot: raw };
+}
+
+function formatInventoryLote(lot, active = true) {
+  const code = String(lot || "").trim();
+  if (!active) return code ? `${INACTIVE_LOT_PREFIX}${code}` : INACTIVE_LOT_PREFIX.trim();
+  return code || null;
+}
+
+function mapInventarioRow(row) {
+  const parsed = parseInventoryLote(row?.lote);
+  return {
+    id: row.id,
+    productId: row.producto_id,
+    lot: parsed.lot,
+    lote: parsed.lot,
+    stock: toInteger(row.stock),
+    expiresAt: row.fecha_caducidad || "",
+    cost: toNumber(row.costo),
+    minStock: toInteger(row.stock_minimo),
+    maxStock: toNullableInteger(row.stock_maximo),
+    active: parsed.active,
+    supplier: "",
+    location: "",
+  };
+}
+
+function compareExpirationDays(left, right) {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left - right;
+}
+
+function getDaysUntilExpirationValue(expiresAt) {
+  if (!expiresAt) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = new Date(`${expiresAt}T00:00:00`);
+  if (Number.isNaN(expiry.getTime())) return null;
+  return Math.round((expiry.getTime() - today.getTime()) / 86400000);
+}
+
+function aggregateInventoryLots(lots, fallbackStock = 0) {
+  const rows = Array.isArray(lots) ? lots : [];
+  const activeLots = rows.filter((lot) => lot.active);
+  const activeWithStock = activeLots.filter((lot) => lot.stock > 0);
+  const stock = activeLots.reduce((total, lot) => total + lot.stock, 0);
+  const minStock = activeLots.length ? Math.min(...activeLots.map((lot) => lot.minStock)) : 0;
+  const maxStock = activeLots.reduce((total, lot) => total + (lot.maxStock || 0), 0);
+  const sortedByExpiry = [...activeWithStock].sort((left, right) =>
+    compareExpirationDays(getDaysUntilExpirationValue(left.expiresAt), getDaysUntilExpirationValue(right.expiresAt)),
+  );
+  const urgentLot = sortedByExpiry.find((lot) => lot.expiresAt) || null;
+  return {
+    stock: rows.length ? stock : fallbackStock,
+    minStock,
+    maxStock,
+    expiresAt: urgentLot?.expiresAt || "",
+    lot: urgentLot?.lot || "",
+    cost: urgentLot?.cost || 0,
+    activeLotCount: activeWithStock.length,
+  };
+}
+
+async function syncProductStockFromLots(productId) {
+  const rows = await supabaseRequest(
+    `/rest/v1/inventario?select=stock,lote&producto_id=eq.${encodeURIComponent(productId)}`,
+  );
+  const total = rows
+    .filter((row) => parseInventoryLote(row.lote).active)
+    .reduce((sum, row) => sum + toInteger(row.stock), 0);
+  await supabaseRequest(`/rest/v1/productos?id=eq.${encodeURIComponent(productId)}`, {
+    method: "PATCH",
+    body: { stock: total, updated_at: new Date().toISOString() },
+    prefer: "return=representation",
+  });
+  return total;
+}
+
+async function handleCreateProductLot(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const body = await readJSONBody(request);
+    const productId = String(body.productId || body.producto_id || "").trim();
+    const validationError = validateProductLotPayload(body, { requireProductId: true });
+    if (validationError) {
+      sendJSON(response, 400, { error: validationError });
+      return;
+    }
+    const existing = await getSupabaseProductRecordById(productId);
+    if (!existing) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+
+    const lotBody = mapProductLotToDb(body);
+    lotBody.producto_id = productId;
+    const created = await supabaseRequest("/rest/v1/inventario", {
+      method: "POST",
+      body: lotBody,
+      prefer: "return=representation",
+    });
+    await syncProductStockFromLots(productId);
+    const product = await getSupabaseProductById(productId);
+    sendJSON(response, 200, { ok: true, lot: mapInventarioRow(created[0]), product });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo crear lote", details: error.message });
+  }
+}
+
+async function handleUpdateProductLot(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const lotId = getResourceIdFromUrl(getRequestPath(request), "/api/product-lots/");
+    if (!lotId) {
+      sendJSON(response, 400, { error: "ID de lote requerido" });
+      return;
+    }
+
+    const rows = await supabaseRequest(
+      `/rest/v1/inventario?select=id,producto_id,lote&id=eq.${encodeURIComponent(lotId)}&limit=1`,
+    );
+    const existing = rows[0];
+    if (!existing) {
+      sendJSON(response, 404, { error: "Lote no encontrado" });
+      return;
+    }
+
+    const body = await readJSONBody(request);
+    const validationError = validateProductLotPayload(body, { partial: true });
+    if (validationError) {
+      sendJSON(response, 400, { error: validationError });
+      return;
+    }
+
+    const patch = mapProductLotToDb(body, { partial: true, existingLote: existing.lote });
+    if (!Object.keys(patch).length) {
+      sendJSON(response, 400, { error: "No hay cambios para guardar" });
+      return;
+    }
+    patch.updated_at = new Date().toISOString();
+    const updated = await supabaseRequest(`/rest/v1/inventario?id=eq.${encodeURIComponent(lotId)}`, {
+      method: "PATCH",
+      body: patch,
+      prefer: "return=representation",
+    });
+    await syncProductStockFromLots(existing.producto_id);
+    const product = await getSupabaseProductById(existing.producto_id);
+    sendJSON(response, 200, { ok: true, lot: mapInventarioRow(updated[0]), product });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo actualizar lote", details: error.message });
+  }
+}
+
+function mapProductLotToDb(body, options = {}) {
+  const partial = Boolean(options.partial);
+  const patch = {};
+  const stockField = readProductField(body, ["stock"]);
+  const lotField = readProductField(body, ["lot", "lote"]);
+  const expiresField = readProductField(body, ["expiresAt", "fecha_caducidad"]);
+  const costField = readProductField(body, ["cost", "costo"]);
+  const minStockField = readProductField(body, ["minStock", "stock_minimo"]);
+  const maxStockField = readProductField(body, ["maxStock", "stock_maximo"]);
+  const activeField = readProductField(body, ["active", "activo"]);
+
+  if (!partial || stockField.provided) patch.stock = toInteger(stockField.value);
+  if (!partial || costField.provided) patch.costo = toNumber(costField.value);
+  if (!partial || minStockField.provided) patch.stock_minimo = toInteger(minStockField.value);
+  if (!partial || maxStockField.provided) patch.stock_maximo = toNullableInteger(maxStockField.value);
+  if (!partial || expiresField.provided) {
+    patch.fecha_caducidad = String(expiresField.value || "").trim() || null;
+  }
+
+  if (!partial || lotField.provided || activeField.provided) {
+    const parsedExisting = parseInventoryLote(options.existingLote);
+    const nextLot = lotField.provided ? String(lotField.value || "").trim() : parsedExisting.lot;
+    const nextActive = activeField.provided ? Boolean(activeField.value) : parsedExisting.active;
+    patch.lote = formatInventoryLote(nextLot, nextActive);
+  }
+
+  if (!partial) {
+    if (patch.stock === undefined) patch.stock = 0;
+    if (patch.stock_minimo === undefined) patch.stock_minimo = 0;
+    if (patch.costo === undefined) patch.costo = 0;
+  }
+
+  return patch;
+}
+
+function validateProductLotPayload(body, options = {}) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "El lote debe ser un objeto JSON";
+  const partial = Boolean(options.partial);
+  const productId = String(body.productId || body.producto_id || "").trim();
+  if (options.requireProductId && !productId) return "productId es requerido";
+  const lotField = readProductField(body, ["lot", "lote"]);
+  const stockField = readProductField(body, ["stock"]);
+  const expiresField = readProductField(body, ["expiresAt", "fecha_caducidad"]);
+  const costField = readProductField(body, ["cost", "costo"]);
+
+  if (!partial && !lotField.provided) return "lot/lote es requerido";
+  if (!partial && !String(lotField.value || "").trim()) return "lot/lote no puede estar vacío";
+  if (!partial && !expiresField.provided) return "expiresAt/fecha_caducidad es requerida";
+  if (!partial && !stockField.provided) return "stock es requerido";
+  if (stockField.provided && !isNonNegativeNumber(stockField.value)) return "stock debe ser un número mayor o igual a 0";
+  if (costField.provided && !isNonNegativeNumber(costField.value)) return "cost/costo debe ser un número mayor o igual a 0";
+  return "";
 }
 
 async function findOrCreateCategoriaId(categoryName) {
@@ -935,18 +1280,38 @@ async function findOrCreateCategoriaId(categoryName) {
 
 async function upsertProductInventory(productId, product, options = {}) {
   const partial = Boolean(options.partial);
+  const inventoryFieldProvided =
+    readProductField(product, ["stock"]).provided ||
+    readProductField(product, ["minStock", "stock_minimo"]).provided ||
+    readProductField(product, ["maxStock", "stock_maximo"]).provided ||
+    readProductField(product, ["lot", "lote"]).provided ||
+    readProductField(product, ["expiresAt", "fecha_caducidad"]).provided ||
+    readProductField(product, ["cost", "costo"]).provided;
+
+  if (partial && !inventoryFieldProvided) return;
+
+  const inventoryRows = await supabaseRequest(
+    `/rest/v1/inventario?select=id,lote&producto_id=eq.${encodeURIComponent(productId)}`,
+  );
+  const activeRows = inventoryRows.filter((row) => parseInventoryLote(row.lote).active);
+
+  if (inventoryRows.length > 1) {
+    if (inventoryFieldProvided) await syncProductStockFromLots(productId);
+    return;
+  }
+
   const inventoryBody = mapProductInventoryToDb(product, { partial });
   if (partial && !Object.keys(inventoryBody).length) return;
 
-  const inventory = await supabaseRequest(`/rest/v1/inventario?select=id&producto_id=eq.${encodeURIComponent(productId)}&limit=1`);
   const body = { ...inventoryBody, updated_at: new Date().toISOString() };
 
-  if (inventory[0]) {
-    await supabaseRequest(`/rest/v1/inventario?id=eq.${inventory[0].id}`, {
+  if (inventoryRows[0]) {
+    await supabaseRequest(`/rest/v1/inventario?id=eq.${inventoryRows[0].id}`, {
       method: "PATCH",
       body,
       prefer: "return=representation",
     });
+    await syncProductStockFromLots(productId);
     return;
   }
 
@@ -958,10 +1323,14 @@ async function upsertProductInventory(productId, product, options = {}) {
     body,
     prefer: "return=representation",
   });
+  await syncProductStockFromLots(productId);
 }
 
 function mapDbProduct(product) {
-  const inventory = Array.isArray(product?.inventario) ? product.inventario[0] : null;
+  const lots = Array.isArray(product?.inventario)
+    ? product.inventario.map((row) => mapInventarioRow({ ...row, producto_id: product.id }))
+    : [];
+  const aggregated = aggregateInventoryLots(lots, toInteger(product.stock));
   const category = product?.categorias?.nombre || "";
   const classificationName = product?.clasificaciones?.nombre || "";
   const type = classificationName || (product.requiere_receta ? "Receta medica" : "Venta libre");
@@ -973,27 +1342,48 @@ function mapDbProduct(product) {
     category,
     description: product.descripcion || "",
     substance: product.descripcion || "",
-    expiresAt: inventory?.fecha_caducidad || "",
+    expiresAt: aggregated.expiresAt,
     laboratory: product.laboratorio || "",
     laboratorio: product.laboratorio || "",
     presentation: product.presentacion || "",
     presentacion: product.presentacion || "",
-    lot: inventory?.lote || "",
-    lote: inventory?.lote || "",
-    stock: toInteger(product.stock),
-    minStock: toInteger(inventory?.stock_minimo),
-    maxStock: toInteger(inventory?.stock_maximo),
-    cost: toNumber(inventory?.costo),
+    lot: aggregated.lot,
+    lote: aggregated.lot,
+    stock: aggregated.stock,
+    minStock: aggregated.minStock,
+    maxStock: aggregated.maxStock,
+    cost: aggregated.cost,
+    lots,
+    activeLotCount: aggregated.activeLotCount,
     regularPrice: toNumber(product.precio),
     price: toNumber(product.precio),
-    discountPrice: toNumber(product.precio),
+    discountPrice: readPromotionalPrice(product) ?? toNumber(product.precio),
+    promotionalPrice: readPromotionalPrice(product),
+    promotionalPriceSupported: productSupportsPromotionalPrice(product),
     imageUrl: product.imagen_url || "",
     type,
     classificationId: product.clasificacion_id || "",
     requiresRecipe: classificationRequiresRecipe(type),
     iva: false,
     status: product.activo ? "Activo" : "Pausado",
+    deleted: Boolean(product.eliminado),
+    eliminado: Boolean(product.eliminado),
+    deletedAt: product.eliminado_at || "",
   };
+}
+
+function productSupportsDeletionFlags(product) {
+  return Object.prototype.hasOwnProperty.call(product, "eliminado");
+}
+
+function productSupportsPromotionalPrice(product) {
+  return Object.prototype.hasOwnProperty.call(product, "precio_promocional");
+}
+
+function readPromotionalPrice(product) {
+  if (!productSupportsPromotionalPrice(product)) return null;
+  if (product.precio_promocional === null || product.precio_promocional === "") return null;
+  return toNumber(product.precio_promocional);
 }
 
 function mapProductToDb(product, categoriaId, options = {}) {
@@ -1001,7 +1391,15 @@ function mapProductToDb(product, categoriaId, options = {}) {
   const body = {};
   assignProductField(body, "nombre", product, ["name", "nombre"], (value) => String(value || "").trim(), partial);
   assignProductField(body, "descripcion", product, ["description", "descripcion", "substance"], (value) => String(value || "").trim(), partial);
-  assignProductField(body, "precio", product, ["price", "precio"], toNumber, partial);
+  const regularPriceField = readProductField(product, ["regularPrice", "price", "precio"]);
+  if (!partial || regularPriceField.provided) body.precio = toNumber(regularPriceField.value);
+  const promoPriceField = readProductField(product, ["discountPrice", "promotionalPrice", "precio_promocional"]);
+  if (!partial || promoPriceField.provided) {
+    body.precio_promocional =
+      promoPriceField.value === "" || promoPriceField.value === null || promoPriceField.value === undefined
+        ? null
+        : toNumber(promoPriceField.value);
+  }
   assignProductField(body, "stock", product, ["stock"], toInteger, partial);
   assignProductField(body, "codigo_barras", product, ["sku", "codigo_barras"], (value) => String(value || "").trim() || null, partial);
   assignProductField(body, "imagen_url", product, ["imageUrl", "imagen_url"], (value) => String(value || "").trim() || null, partial);
@@ -1014,6 +1412,10 @@ function mapProductToDb(product, categoriaId, options = {}) {
   const statusField = readProductField(product, ["status", "activo"]);
   if (!partial || statusField.provided) {
     body.activo = statusField.key === "activo" ? Boolean(statusField.value) : statusField.value !== "Pausado";
+    if (statusField.value === "Pausado" || statusField.value === "Activo") {
+      body.eliminado = false;
+      body.eliminado_at = null;
+    }
   }
 
   const recipeField = readProductField(product, ["requiresRecipe", "requiere_receta", "type"]);
@@ -1054,7 +1456,7 @@ function validateProductPayload(product, options = {}) {
   if (!product || typeof product !== "object" || Array.isArray(product)) return "El producto debe ser un objeto JSON";
   const partial = Boolean(options.partial);
   const nameField = readProductField(product, ["name", "nombre"]);
-  const priceField = readProductField(product, ["price", "precio"]);
+  const priceField = readProductField(product, ["price", "precio", "regularPrice"]);
   const stockField = readProductField(product, ["stock"]);
 
   if (!partial && (!nameField.provided || !String(nameField.value || "").trim())) return "nombre/name es requerido";
@@ -1073,7 +1475,12 @@ function isNonNegativeNumber(value) {
 }
 
 function getProductIdFromUrl(url) {
-  return decodeURIComponent(url.split("?")[0].replace("/api/products/", "").trim());
+  return getProductIdFromPath(url.split("?")[0]);
+}
+
+function getProductIdFromPath(path) {
+  const match = String(path || "").match(/^\/api\/products\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : "";
 }
 
 function getResourceIdFromUrl(url, prefix) {

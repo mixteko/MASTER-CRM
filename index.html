@@ -26,10 +26,16 @@
         <nav class="side-nav" aria-label="Modulos principales">
           <button class="nav-item active" type="button" data-view="dashboard"><span>🏠</span>Dashboard</button>
           <button class="nav-item" type="button" data-view="clientes"><span>👥</span>Clientes</button>
-          <button class="nav-item" type="button" data-view="productos"><span>📦</span>Productos</button>
-          <button class="nav-item" type="button" data-view="categorias"><span>🏷️</span>Categorías</button>
-          <button class="nav-item" type="button" data-view="clasificaciones"><span>🧭</span>Clasificaciones</button>
-          <button class="nav-item" type="button" data-view="inventario"><span>📊</span>Inventario</button>
+          <div class="nav-group" id="productsNavGroup">
+            <button class="nav-item" type="button" data-view="productos" data-products-section="products-list"><span>📦</span>Productos</button>
+            <div class="nav-subgroup" id="productsSubnav" aria-label="Submenú de productos">
+              <button class="nav-subitem active" type="button" data-view="productos" data-products-section="products-list">Lista de productos</button>
+              <button class="nav-subitem" type="button" data-view="productos" data-products-section="products-inventory">Inventario</button>
+              <button class="nav-subitem" type="button" data-view="productos" data-products-section="products-categories">Categorías</button>
+              <button class="nav-subitem" type="button" data-view="productos" data-products-section="products-classifications">Clasificaciones</button>
+              <button class="nav-subitem" type="button" data-view="productos" data-products-section="products-import-export">Importar / Exportar</button>
+            </div>
+          </div>
           <button class="nav-item" type="button" data-view="pedidos"><span>🛒</span>Pedidos <strong class="nav-badge" id="navOrdersBadge">0</strong></button>
           <button class="nav-item" type="button" data-view="ventas"><span>💰</span>Ventas</button>
           <button class="nav-item" type="button" data-view="pagos"><span>💳</span>Pagos</button>
@@ -101,6 +107,17 @@
             </article>
           </div>
 
+          <section class="panel-card expiration-alerts-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Inventario</p>
+                <h2>Alertas de caducidad</h2>
+              </div>
+              <button class="ghost-button" type="button" data-view="productos" data-products-section="products-inventory">Inventario</button>
+            </div>
+            <div class="expiration-summary-grid" id="dashboardExpirationAlerts"></div>
+          </section>
+
           <div class="dashboard-grid">
             <section class="panel-card">
               <div class="panel-heading">
@@ -126,7 +143,7 @@
                   <p class="eyebrow">Smart ops</p>
                   <h2>Alertas operativas</h2>
                 </div>
-                <button class="ghost-button" type="button" data-view="productos">Productos</button>
+                <button class="ghost-button" type="button" data-view="productos" data-products-section="products-list">Productos</button>
               </div>
               <div class="list-stack" id="dashboardAlerts"></div>
             </section>
@@ -379,86 +396,295 @@
           <div class="kanban-grid" id="ordersBoard"></div>
         </section>
 
-        <section class="view" id="inventario">
-          <div class="inventory-heading">
-            <div>
-              <p class="eyebrow">Control farmacéutico</p>
-              <h2>Inventario profesional</h2>
-              <p>Consulta existencias, lotes, caducidades y valor del inventario.</p>
+        <section class="view" id="productos">
+          <div class="products-panel active" data-products-panel="products-list">
+            <div class="products-page-heading product-list-page-heading">
+              <div>
+                <p class="eyebrow">Catálogo</p>
+                <h2>Lista de productos</h2>
+              </div>
+              <button class="primary-button" type="button" id="openProductFormButton">Agregar producto</button>
             </div>
-            <button class="primary-button" type="button" id="openInventoryProductModal">+ Nuevo producto</button>
+
+            <section class="panel-card expiration-alerts-panel inventory-expiration-panel product-list-alerts">
+              <div class="panel-heading expiration-alerts-heading">
+                <div>
+                  <p class="eyebrow">Caducidad</p>
+                  <h3>Alertas de caducidad</h3>
+                </div>
+                <div class="expiration-alerts-filter-actions" id="expirationAlertsFilterActions" hidden>
+                  <span class="product-list-filter-chip" id="productListFilterChip"></span>
+                  <button type="button" class="ghost-button small" id="clearExpirationFilter" data-action="clear-expiration-filter">Ver lista completa</button>
+                </div>
+              </div>
+              <div class="expiration-summary-grid" id="inventoryExpirationAlerts"></div>
+            </section>
+
+            <section class="panel-card table-panel product-list-panel">
+              <div class="product-list-toolbar">
+                <input class="inline-search product-list-search" id="productSearch" type="search" placeholder="Buscar por nombre, SKU o categoría" />
+                <span class="product-list-count" id="productListCount">0 productos</span>
+              </div>
+              <div class="table-scroll product-list-scroll">
+                <table class="product-list-table">
+                  <thead>
+                    <tr>
+                      <th class="col-check"><input type="checkbox" id="productSelectAll" aria-label="Seleccionar todos" /></th>
+                      <th>Producto</th>
+                      <th class="col-stock">Stock</th>
+                      <th class="col-expiry">Caducidad</th>
+                      <th class="col-lots">Lotes</th>
+                      <th class="col-price">Precio venta</th>
+                      <th class="col-price">Precio promocional</th>
+                      <th class="col-actions">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="productTable"></tbody>
+                </table>
+              </div>
+            </section>
           </div>
 
-          <div class="inventory-kpi-grid">
-            <article class="metric-card"><span>Productos activos</span><strong id="inventoryActiveProducts">0</strong><small>Disponibles en catálogo</small></article>
-            <article class="metric-card"><span>Stock bajo</span><strong id="inventoryLowStock">0</strong><small>Requieren reposición</small></article>
-            <article class="metric-card"><span>Próximos a caducar</span><strong id="inventoryExpiringSoon">0</strong><small>Dentro de 90 días</small></article>
-            <article class="metric-card"><span>Valor total del inventario</span><strong id="inventoryTotalValue">$0</strong><small>Calculado a costo de compra</small></article>
+          <div class="products-panel" data-products-panel="products-inventory">
+            <div class="products-page-heading">
+              <div>
+                <p class="eyebrow">Control de stock</p>
+                <h2>Inventario</h2>
+                <p>Consulta existencias, lotes, caducidades y valor del inventario.</p>
+              </div>
+            </div>
+
+            <div class="inventory-kpi-grid">
+              <article class="metric-card"><span>Productos activos</span><strong id="inventoryActiveProducts">0</strong><small>Disponibles en catálogo</small></article>
+              <article class="metric-card"><span>Stock bajo</span><strong id="inventoryLowStock">0</strong><small>Requieren reposición</small></article>
+              <article class="metric-card"><span>Próximos a caducar</span><strong id="inventoryExpiringSoon">0</strong><small>Dentro de 60 días</small></article>
+              <article class="metric-card"><span>Valor del inventario</span><strong id="inventoryTotalValue">$0</strong><small>Calculado a costo de compra</small></article>
+            </div>
+
+            <section class="panel-card inventory-panel">
+              <div class="inventory-toolbar" aria-label="Filtros de inventario">
+                <label class="inventory-search">Buscar producto<input id="inventorySearch" type="search" placeholder="Nombre, SKU o sustancia" /></label>
+                <label>Filtrar categoría<select id="inventoryCategoryFilter"><option value="">Todas</option></select></label>
+                <label>Filtrar laboratorio<select id="inventoryLaboratoryFilter"><option value="">Todos</option></select></label>
+                <label>Filtrar estado<select id="inventoryStatusFilter"><option value="">Todos</option><option value="Disponible">Disponible</option><option value="Stock bajo">Stock bajo</option><option value="Agotado">Agotado</option><option value="Próximo a caducar">Próximo a caducar</option></select></label>
+              </div>
+              <div class="table-scroll inventory-table-scroll">
+                <table class="inventory-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>SKU</th>
+                      <th>Laboratorio</th>
+                      <th>Categoría</th>
+                      <th>Stock</th>
+                      <th>Lotes</th>
+                      <th>Caducidad</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="inventoryTable"></tbody>
+                </table>
+              </div>
+            </section>
           </div>
 
-          <section class="panel-card inventory-panel">
-            <div class="inventory-toolbar" aria-label="Filtros de inventario">
-              <label class="inventory-search">Buscar producto<input id="inventorySearch" type="search" placeholder="Nombre, SKU o sustancia" /></label>
-              <label>Filtrar categoría<select id="inventoryCategoryFilter"><option value="">Todas</option></select></label>
-              <label>Filtrar laboratorio<select id="inventoryLaboratoryFilter"><option value="">Todos</option></select></label>
-              <label>Filtrar estado<select id="inventoryStatusFilter"><option value="">Todos</option><option value="Disponible">Disponible</option><option value="Stock bajo">Stock bajo</option><option value="Agotado">Agotado</option><option value="Próximo a caducar">Próximo a caducar</option></select></label>
+          <div class="products-panel" data-products-panel="products-categories">
+            <div class="products-page-heading">
+              <div>
+                <p class="eyebrow">Tipos de producto</p>
+                <h2>Categorías</h2>
+                <p>Define qué tipo de producto es: Medicamentos, Material de curación, Suplementos, Higiene, Bebé, Dermocosmética…</p>
+              </div>
             </div>
-            <div class="table-scroll inventory-table-scroll">
-              <table class="inventory-table">
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th>Laboratorio</th>
-                    <th>Categoría</th>
-                    <th>Presentación</th>
-                    <th>Lote</th>
-                    <th>Caducidad</th>
-                    <th>Stock actual</th>
-                    <th>Stock mínimo</th>
-                    <th>Estado</th>
-                    <th>Precio venta</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="inventoryTable"></tbody>
-              </table>
+            <div class="module-grid">
+              <form class="panel-card form-panel" id="categoryForm">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Catálogo</p>
+                    <h2 id="categoryFormTitle">Nueva categoría</h2>
+                  </div>
+                  <button class="ghost-button" type="button" id="clearCategoryForm">Limpiar</button>
+                </div>
+                <input id="categoryId" type="hidden" />
+                <label>Nombre <input id="categoryName" type="text" required /></label>
+                <label>Descripción <textarea id="categoryDescription" rows="2"></textarea></label>
+                <button class="primary-button" type="submit">Guardar categoría</button>
+              </form>
+
+              <section class="panel-card table-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Administración</p>
+                    <h2>Categorías activas</h2>
+                  </div>
+                  <input class="inline-search" id="categorySearch" type="search" placeholder="Buscar categoría" />
+                </div>
+                <div class="table-scroll">
+                  <table class="catalog-admin-table catalog-admin-table--categories">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody id="categoryTable"></tbody>
+                  </table>
+                </div>
+              </section>
             </div>
-          </section>
+          </div>
+
+          <div class="products-panel" data-products-panel="products-classifications">
+            <div class="products-page-heading">
+              <div>
+                <p class="eyebrow">Reglas de manejo</p>
+                <h2>Clasificaciones</h2>
+                <p>Define cómo debe manejarse: Venta libre, Receta médica, Controlado, Refrigerado, Alto costo, Caducidad corta…</p>
+              </div>
+            </div>
+            <div class="module-grid">
+              <form class="panel-card form-panel" id="classificationForm">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Reglas de manejo</p>
+                    <h2 id="classificationFormTitle">Nueva clasificación</h2>
+                  </div>
+                  <button class="ghost-button" type="button" id="clearClassificationForm">Limpiar</button>
+                </div>
+                <input id="classificationId" type="hidden" />
+                <label>Nombre <input id="classificationName" type="text" required /></label>
+                <label>Descripción <textarea id="classificationDescription" rows="2"></textarea></label>
+                <label>
+                  Estado
+                  <select id="classificationStatus">
+                    <option value="Activo">Activo</option>
+                    <option value="Pausado">Pausado</option>
+                  </select>
+                </label>
+                <button class="primary-button" type="submit">Guardar clasificación</button>
+              </form>
+
+              <section class="panel-card table-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Administración</p>
+                    <h2>Clasificaciones activas</h2>
+                  </div>
+                  <input class="inline-search" id="classificationSearch" type="search" placeholder="Buscar clasificación" />
+                </div>
+                <div class="table-scroll">
+                  <table class="catalog-admin-table catalog-admin-table--classifications">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody id="classificationTable"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="products-panel" data-products-panel="products-import-export">
+            <div class="products-page-heading product-io-page-heading">
+              <div>
+                <p class="eyebrow">Catálogo</p>
+                <h2>Importar / Exportar productos</h2>
+                <p class="product-io-lead">Respaldá o actualizá tu catálogo en lote mediante archivos CSV.</p>
+              </div>
+            </div>
+
+            <div class="product-io-grid">
+              <section class="panel-card product-io-card">
+                <p class="product-io-card-title">Exportar productos</p>
+                <p class="product-io-card-text">Descarga tu catálogo actual en formato CSV para respaldarlo o editarlo en Excel, Numbers o Google Sheets.</p>
+                <button class="primary-button small" type="button" id="exportProductsCsvButton">Exportar CSV</button>
+              </section>
+
+              <section class="panel-card product-io-card">
+                <p class="product-io-card-title">Importar productos</p>
+                <p class="product-io-card-text">Sube un archivo CSV para agregar o actualizar productos en lote.</p>
+                <input id="importProductsCsvFile" type="file" accept=".csv,text/csv" hidden />
+                <div class="product-io-actions">
+                  <button class="ghost-button small" type="button" id="importProductsCsvSelectButton">Seleccionar CSV</button>
+                  <label class="product-io-option">
+                    <input id="importProductsOverwriteImage" type="checkbox" />
+                    Sobrescribir imagen si imageUrl viene vacío
+                  </label>
+                </div>
+                <p class="product-io-file-name" id="importProductsFileName">Ningún archivo seleccionado</p>
+              </section>
+            </div>
+
+            <section class="panel-card product-io-preview-panel" id="importProductsPreviewPanel" hidden>
+              <div class="panel-heading product-io-preview-heading">
+                <div>
+                  <p class="eyebrow">Vista previa</p>
+                  <h3>Revisión antes de importar</h3>
+                </div>
+                <button class="primary-button small" type="button" id="confirmProductsImportButton" disabled>Confirmar importación</button>
+              </div>
+              <div class="product-io-stats" id="importProductsStats"></div>
+              <div class="table-scroll product-import-preview-scroll">
+                <table class="product-import-preview-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>SKU</th>
+                      <th>Nombre</th>
+                      <th>Categoría</th>
+                      <th>Stock</th>
+                      <th>Precio</th>
+                      <th>Estado</th>
+                      <th>Validación</th>
+                    </tr>
+                  </thead>
+                  <tbody id="importProductsPreviewTable"></tbody>
+                </table>
+              </div>
+              <div class="product-io-errors" id="importProductsErrors" hidden></div>
+              <div class="product-io-result" id="importProductsResult" hidden></div>
+            </section>
+          </div>
         </section>
 
-        <section class="view" id="productos">
-          <div class="module-grid">
-            <form class="panel-card form-panel product-form-panel" id="productForm">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Catalogo</p>
-                  <h2 id="productFormTitle">Nuevo producto</h2>
-                </div>
-                <button class="ghost-button" type="button" id="clearProductForm">Limpiar</button>
+        <section class="view" id="product-form">
+          <div class="product-form-page">
+            <div class="product-form-page-header">
+              <button class="ghost-button product-form-back" type="button" id="backToProductList">← Volver a productos</button>
+              <div class="product-form-page-title">
+                <p class="eyebrow">Productos</p>
+                <h2 id="productFormTitle">Nuevo producto</h2>
               </div>
+            </div>
+
+            <form class="product-form-page-body" id="productForm">
               <input id="productId" type="hidden" />
 
-              <section class="product-form-section">
-                <p class="product-form-section-title">Datos del producto</p>
+              <section class="panel-card product-form-section-card">
+                <p class="product-form-section-title">1. Nombre y descripción</p>
                 <div class="product-form-grid product-form-grid--2">
                   <label>SKU <input id="productSku" type="text" required /></label>
                   <label>Nombre <input id="productName" type="text" required /></label>
                 </div>
                 <div class="product-form-grid product-form-grid--2">
-                  <label>
-                    Categoria
-                    <select id="productCategory" required>
-                      <option value="">Selecciona categoria</option>
-                    </select>
-                  </label>
+                  <label>Laboratorio <input id="productLaboratory" type="text" placeholder="Opcional" /></label>
                   <label>Sustancia / slug <input id="productSubstance" type="text" /></label>
                 </div>
-                <label class="product-form-full">Descripcion <textarea id="productDescription" rows="2"></textarea></label>
-                <div class="product-form-full product-image-field">
-                  <div class="product-image-field-header">
-                    <span class="product-image-label">Imagen del producto</span>
-                    <p class="product-image-help">Puedes pegar una URL o subir una imagen del producto.</p>
-                  </div>
+                <label class="product-form-full">Descripción <textarea id="productDescription" rows="2"></textarea></label>
+              </section>
+
+              <section class="panel-card product-form-section-card">
+                <p class="product-form-section-title">2. Imagen del producto</p>
+                <div class="product-image-field">
+                  <p class="product-image-help">Puedes pegar una URL o subir una imagen del producto.</p>
                   <div class="product-image-controls">
                     <label class="product-image-url-label">
                       URL de imagen
@@ -466,6 +692,7 @@
                     </label>
                     <input id="productImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
                     <button class="ghost-button product-image-upload-button" type="button" id="productImageUploadButton">Buscar imagen</button>
+                    <button class="ghost-button product-image-clear-button" type="button" id="productImageClearButton" hidden>Quitar imagen</button>
                   </div>
                   <p class="product-image-status" id="productImageStatus"></p>
                   <div class="product-image-preview is-empty" id="productImagePreview" aria-live="polite">
@@ -475,51 +702,28 @@
                 </div>
               </section>
 
-              <section class="product-form-section">
-                <p class="product-form-section-title">Precios e inventario</p>
+              <section class="panel-card product-form-section-card">
+                <p class="product-form-section-title">3. Clasificación comercial</p>
+                <label class="product-form-full">
+                  Categoría
+                  <span class="product-form-section-help">Qué tipo de producto es.</span>
+                  <select id="productCategory" required>
+                    <option value="">Selecciona categoría</option>
+                  </select>
+                </label>
+                <label class="product-form-full">
+                  Clasificación
+                  <span class="product-form-section-help">Cómo debe manejarse en farmacia.</span>
+                  <select id="productType" required>
+                    <option value="">Selecciona clasificación</option>
+                  </select>
+                </label>
                 <div class="product-form-grid product-form-grid--2">
-                  <label>Costo <input id="productCost" type="number" min="0" step="0.01" /></label>
-                  <label>Precio lista <input id="productRegularPrice" type="number" min="0" step="0.01" /></label>
-                </div>
-                <div class="product-form-grid product-form-grid--2">
-                  <label>Precio con descuento <input id="productPrice" type="number" min="0" step="0.01" required /></label>
-                  <label>Stock <input id="productStock" type="number" min="0" step="1" required /></label>
-                </div>
-                <div id="productProfitSummary" class="product-profit-summary is-neutral" aria-live="polite">
-                  <p class="product-profit-heading">Resumen comercial</p>
-                  <div class="product-profit-metrics">
-                    <div class="product-profit-metric">
-                      <span>Ganancia estimada</span>
-                      <strong id="productProfitAmount">—</strong>
-                    </div>
-                    <div class="product-profit-metric">
-                      <span>Margen sobre costo</span>
-                      <strong id="productProfitPercent">—</strong>
-                    </div>
-                  </div>
-                  <p id="productProfitNote" class="product-profit-note"></p>
-                </div>
-                <div class="product-form-grid product-form-grid--2">
-                  <label>Stock minimo <input id="productMinStock" type="number" min="0" step="1" required /></label>
-                  <label>Stock maximo <input id="productMaxStock" type="number" min="0" step="1" required /></label>
-                </div>
-                <label class="product-form-full">Caducidad <input id="productExpiresAt" type="date" /></label>
-              </section>
-
-              <section class="product-form-section">
-                <p class="product-form-section-title">Clasificacion</p>
-                <div class="product-form-grid product-form-grid--3">
-                  <label>
-                    Clasificacion
-                    <select id="productType" required>
-                      <option value="">Selecciona clasificacion</option>
-                    </select>
-                  </label>
                   <label>
                     IVA
                     <select id="productIva">
                       <option value="No">No</option>
-                      <option value="Si">Si</option>
+                      <option value="Si">Sí</option>
                     </select>
                   </label>
                   <label>
@@ -532,133 +736,105 @@
                 </div>
               </section>
 
-              <button class="primary-button product-form-submit" type="submit">Guardar producto</button>
+              <section class="panel-card product-form-section-card">
+                <p class="product-form-section-title">4. Inventario por lote</p>
+                <div class="product-lot-summary" id="productLotSummary">
+                  <div class="product-lot-summary-item">
+                    <span>Stock total</span>
+                    <strong id="productLotStockTotal">0</strong>
+                  </div>
+                  <div class="product-lot-summary-item">
+                    <span>Próxima caducidad</span>
+                    <strong id="productLotNextExpiry">—</strong>
+                  </div>
+                  <div class="product-lot-summary-item">
+                    <span>Lotes activos</span>
+                    <strong id="productLotActiveCount">0</strong>
+                  </div>
+                </div>
+                <p class="product-expiration-status" id="productExpirationStatus" aria-live="polite"></p>
+
+                <div id="productLotCreateFields">
+                  <p class="product-form-section-help">Al crear el producto, registra el primer lote. Luego podrás agregar más sin duplicar el producto.</p>
+                  <div class="product-form-grid product-form-grid--2">
+                    <label>Lote inicial <input id="productFirstLotCode" type="text" placeholder="Ej. LOTE-A" /></label>
+                    <label>Stock inicial <input id="productFirstLotStock" type="number" min="0" step="1" value="0" /></label>
+                  </div>
+                  <label class="product-form-full">Caducidad del lote <input id="productFirstLotExpires" type="date" /></label>
+                </div>
+
+                <div id="productLotsManagePanel" hidden>
+                  <div class="table-scroll product-lots-scroll">
+                    <table class="product-lots-table">
+                      <thead>
+                        <tr>
+                          <th>Lote</th>
+                          <th>Stock</th>
+                          <th>Caducidad</th>
+                          <th>Semáforo</th>
+                          <th>Costo</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="productLotsTable"></tbody>
+                    </table>
+                  </div>
+                  <button class="ghost-button product-lot-add-button" type="button" id="openProductLotFormButton">Agregar Lote</button>
+                </div>
+
+                <div class="product-form-grid product-form-grid--2">
+                  <label>Stock mínimo alerta <input id="productMinStock" type="number" min="0" step="1" required /></label>
+                  <label>Stock máximo referencia <input id="productMaxStock" type="number" min="0" step="1" required /></label>
+                </div>
+              </section>
+
+              <section class="panel-card product-form-section-card">
+                <p class="product-form-section-title">5. Precios y ganancia</p>
+                <div class="product-form-grid product-form-grid--2">
+                  <label>Costo <input id="productCost" type="number" min="0" step="0.01" /></label>
+                  <label>Precio lista <input id="productRegularPrice" type="number" min="0" step="0.01" /></label>
+                </div>
+                <label class="product-form-full">Precio promocional <input id="productPrice" type="number" min="0" step="0.01" /></label>
+                <p class="product-form-section-help" id="productPromoPriceNotice" hidden>El precio promocional se guarda solo si la columna <code>precio_promocional</code> existe en Supabase.</p>
+                <div id="productProfitSummary" class="product-profit-summary is-neutral" aria-live="polite">
+                  <p class="product-profit-heading">Resumen comercial</p>
+                  <div class="product-profit-metrics">
+                    <div class="product-profit-metric">
+                      <span>Stock total</span>
+                      <strong id="productProfitStockTotal">—</strong>
+                    </div>
+                    <div class="product-profit-metric">
+                      <span>Costo prom. ponderado</span>
+                      <strong id="productProfitWeightedCost">—</strong>
+                    </div>
+                    <div class="product-profit-metric">
+                      <span>Valor inventario al costo</span>
+                      <strong id="productProfitInventoryValue">—</strong>
+                    </div>
+                    <div class="product-profit-metric">
+                      <span>Ganancia con precio lista</span>
+                      <strong id="productProfitAmount">—</strong>
+                    </div>
+                    <div class="product-profit-metric" id="productProfitPromoBlock" hidden>
+                      <span>Ganancia promocional</span>
+                      <strong id="productProfitPromoAmount">—</strong>
+                    </div>
+                    <div class="product-profit-metric">
+                      <span>Margen sobre costo</span>
+                      <strong id="productProfitPercent">—</strong>
+                    </div>
+                  </div>
+                  <p id="productProfitNote" class="product-profit-note"></p>
+                </div>
+              </section>
             </form>
 
-            <section class="panel-card table-panel product-table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Inventario comercial</p>
-                  <h2>Productos</h2>
-                </div>
-                <input class="inline-search" id="productSearch" type="search" placeholder="Buscar producto" />
-              </div>
-              <div class="table-scroll product-table-scroll">
-                <table class="product-admin-table">
-                  <colgroup>
-                    <col class="product-col-product" />
-                    <col class="product-col-category" />
-                    <col class="product-col-price" />
-                    <col class="product-col-stock" />
-                    <col class="product-col-type" />
-                    <col class="product-col-actions" />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>Producto</th>
-                      <th>Categoria</th>
-                      <th>Precio</th>
-                      <th>Stock</th>
-                      <th>Tipo</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="productTable"></tbody>
-                </table>
-              </div>
-            </section>
+            <div class="product-form-page-footer">
+              <button class="ghost-button" type="button" id="cancelProductForm">Cancelar</button>
+              <button class="primary-button" type="submit" form="productForm" id="saveProductFormButton">Guardar producto</button>
+            </div>
           </div>
         </section>
-
-        <section class="view" id="categorias">
-          <div class="module-grid">
-            <form class="panel-card form-panel" id="categoryForm">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Catalogo</p>
-                  <h2 id="categoryFormTitle">Nueva categoria</h2>
-                </div>
-                <button class="ghost-button" type="button" id="clearCategoryForm">Limpiar</button>
-              </div>
-              <input id="categoryId" type="hidden" />
-              <label>Nombre <input id="categoryName" type="text" required /></label>
-              <label>Descripcion <textarea id="categoryDescription" rows="2"></textarea></label>
-              <button class="primary-button" type="submit">Guardar categoria</button>
-            </form>
-
-            <section class="panel-card table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Administracion</p>
-                  <h2>Categorias</h2>
-                </div>
-                <input class="inline-search" id="categorySearch" type="search" placeholder="Buscar categoria" />
-              </div>
-              <div class="table-scroll">
-                <table class="catalog-admin-table">
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Descripcion</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="categoryTable"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        </section>
-
-        <section class="view" id="clasificaciones">
-          <div class="module-grid">
-            <form class="panel-card form-panel" id="classificationForm">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Catalogo</p>
-                  <h2 id="classificationFormTitle">Nueva clasificacion</h2>
-                </div>
-                <button class="ghost-button" type="button" id="clearClassificationForm">Limpiar</button>
-              </div>
-              <input id="classificationId" type="hidden" />
-              <label>Nombre <input id="classificationName" type="text" required /></label>
-              <label>Descripcion <textarea id="classificationDescription" rows="2"></textarea></label>
-              <label>
-                Estado
-                <select id="classificationStatus">
-                  <option value="Activo">Activo</option>
-                  <option value="Pausado">Pausado</option>
-                </select>
-              </label>
-              <button class="primary-button" type="submit">Guardar clasificacion</button>
-            </form>
-
-            <section class="panel-card table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Administracion</p>
-                  <h2>Clasificaciones</h2>
-                </div>
-                <input class="inline-search" id="classificationSearch" type="search" placeholder="Buscar clasificacion" />
-              </div>
-              <div class="table-scroll">
-                <table class="catalog-admin-table">
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Descripcion</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="classificationTable"></tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-        </section>
-
         <section class="view" id="ventas">
           <div class="panel-card">
             <div class="panel-heading">
@@ -828,12 +1004,62 @@
       </form>
     </dialog>
 
+    <dialog class="inventory-dialog product-lot-dialog" id="productLotDialog">
+      <div class="inventory-dialog-header">
+        <div><p class="eyebrow">Inventario</p><h2 id="productLotDialogTitle">Nuevo lote</h2></div>
+        <button class="ghost-button" type="button" data-action="close-product-lot-dialog">Cerrar</button>
+      </div>
+      <form class="inventory-product-form product-lot-form" id="productLotForm">
+        <input id="productLotId" type="hidden" />
+        <input id="productLotProductId" type="hidden" />
+        <label>Número de lote <input id="productLotCode" type="text" required /></label>
+        <label>Stock <input id="productLotStock" type="number" min="0" step="1" required /></label>
+        <label>Caducidad <input id="productLotExpiresAt" type="date" required /></label>
+        <label>Costo de compra <input id="productLotCost" type="number" min="0" step="0.01" /></label>
+        <div class="product-lot-form-actions">
+          <button class="ghost-button" type="button" data-action="close-product-lot-dialog">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar lote</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="inventory-dialog inventory-detail-dialog" id="inventoryDetailDialog">
       <div class="inventory-dialog-header">
         <div><p class="eyebrow">Ficha farmacéutica</p><h2 id="inventoryDetailTitle">Detalle del producto</h2></div>
         <button class="ghost-button small" type="button" data-action="close-inventory-detail">Cerrar</button>
       </div>
       <div id="inventoryDetailContent"></div>
+    </dialog>
+
+    <dialog class="product-action-dialog" id="productActionDialog">
+      <form method="dialog" class="product-action-dialog-form" id="productActionDialogForm">
+        <div class="product-action-dialog-header">
+          <h2 id="productActionDialogTitle">Confirmar acción</h2>
+        </div>
+        <p class="product-action-dialog-message" id="productActionDialogMessage"></p>
+        <div class="product-action-dialog-actions">
+          <button class="ghost-button" type="submit" value="cancel">Cancelar</button>
+          <button class="primary-button" type="submit" value="confirm" id="productActionDialogConfirm">Confirmar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="product-action-dialog product-action-dialog--danger" id="productPermanentDeleteDialog">
+      <form class="product-action-dialog-form" id="productPermanentDeleteForm">
+        <div class="product-action-dialog-header">
+          <h2 id="productPermanentDeleteTitle">Eliminar definitivamente</h2>
+        </div>
+        <p class="product-action-dialog-message" id="productPermanentDeleteMessage"></p>
+        <label class="product-action-dialog-field">
+          Para confirmar, escribe <strong>ELIMINAR</strong>
+          <input id="productPermanentDeleteConfirmInput" type="text" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="product-action-dialog-error" id="productPermanentDeleteError" hidden></p>
+        <div class="product-action-dialog-actions">
+          <button class="ghost-button" type="button" data-action="close-permanent-delete-dialog">Cancelar</button>
+          <button class="primary-button is-critical" type="submit" id="productPermanentDeleteConfirm">Eliminar definitivamente</button>
+        </div>
+      </form>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

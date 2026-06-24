@@ -14,6 +14,8 @@ const PRODUCT_CATALOG_VERSION = "pdv-2026-06-11";
 
 let productImagePendingFile = null;
 let productImageObjectUrl = "";
+let productActionDialogResolver = null;
+let productPermanentDeleteResolver = null;
 
 const initialProducts = [
   {
@@ -4284,6 +4286,18 @@ const state = {
   classificationQuery: "",
   categoryLoadError: "",
   classificationLoadError: "",
+  productsSection: "products-list",
+  expirationFilter: null,
+  csvImportSession: null,
+};
+
+const EXPIRATION_FILTER_LABELS = {
+  red: "Rojo / 0 días / vencidos",
+  orange: "Naranja / 15 días",
+  yellow: "Amarillo / 1 mes",
+  green: "Verde / 2 meses",
+  blue: "Azul / 3 meses",
+  noAlert: "Sin alerta",
 };
 
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
@@ -4300,6 +4314,7 @@ function resolveLocalApiPath(path) {
 }
 
 const productsApiUrl = resolveLocalApiPath("/api/products");
+const productLotsApiUrl = resolveLocalApiPath("/api/product-lots");
 const productImageUploadUrl = resolveLocalApiPath("/api/uploads/product-image");
 const categoriesApiUrl = resolveLocalApiPath("/api/categories");
 const classificationsApiUrl = resolveLocalApiPath("/api/classifications");
@@ -4317,17 +4332,52 @@ const viewTitles = {
   envios: "Envíos",
   cobros: "Cobros",
   inventario: "Inventario",
+  "product-form": "Producto",
   pagos: "Pagos",
   canales: "Canales",
   "whatsapp-manager": "WhatsApp Manager",
   configuracion: "Configuración",
 };
 
+const productsSectionTitles = {
+  "products-list": "Lista de productos",
+  "products-inventory": "Inventario",
+  "products-categories": "Categorías",
+  "products-classifications": "Clasificaciones",
+  "products-import-export": "Importar / Exportar",
+};
+
 const viewAliases = {
   pagos: "cobros",
   canales: "tienda",
   "whatsapp-manager": "whatsapp",
+  inventario: { view: "productos", productsSection: "products-inventory" },
+  productos: { view: "productos", productsSection: "products-list" },
+  categorias: { view: "productos", productsSection: "products-categories" },
+  clasificaciones: { view: "productos", productsSection: "products-classifications" },
+  "importar-exportar": { view: "productos", productsSection: "products-import-export" },
 };
+
+const PRODUCT_CSV_COLUMNS = [
+  "sku",
+  "name",
+  "description",
+  "category",
+  "classification",
+  "laboratory",
+  "stock",
+  "minStock",
+  "maxStock",
+  "lot",
+  "expiresAt",
+  "cost",
+  "regularPrice",
+  "price",
+  "promotionalPrice",
+  "discountPrice",
+  "imageUrl",
+  "status",
+];
 
 const orderColumns = ["Nuevo", "Por cobrar", "Por enviar", "Enviado", "Completado"];
 const currency = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -4349,6 +4399,7 @@ const elements = {
   navOrdersBadge: $("#navOrdersBadge"),
   dashboardOrders: $("#dashboardOrders"),
   dashboardAlerts: $("#dashboardAlerts"),
+  dashboardExpirationAlerts: $("#dashboardExpirationAlerts"),
   chatLog: $("#chatLog"),
   chatForm: $("#chatForm"),
   incomingMessage: $("#incomingMessage"),
@@ -4405,35 +4456,69 @@ const elements = {
   ordersBoard: $("#ordersBoard"),
   productForm: $("#productForm"),
   productFormTitle: $("#productFormTitle"),
+  cancelProductForm: $("#cancelProductForm"),
+  backToProductList: $("#backToProductList"),
+  saveProductFormButton: $("#saveProductFormButton"),
   productId: $("#productId"),
   productSku: $("#productSku"),
   productName: $("#productName"),
+  productLaboratory: $("#productLaboratory"),
   productCategory: $("#productCategory"),
   productSubstance: $("#productSubstance"),
   productImageUrl: $("#productImageUrl"),
   productImageFile: $("#productImageFile"),
   productImageUploadButton: $("#productImageUploadButton"),
+  productImageClearButton: $("#productImageClearButton"),
   productImagePreview: $("#productImagePreview"),
   productImagePreviewImg: $("#productImagePreviewImg"),
   productImageStatus: $("#productImageStatus"),
   productCost: $("#productCost"),
   productRegularPrice: $("#productRegularPrice"),
   productPrice: $("#productPrice"),
-  productStock: $("#productStock"),
   productMinStock: $("#productMinStock"),
   productMaxStock: $("#productMaxStock"),
-  productExpiresAt: $("#productExpiresAt"),
+  productExpirationStatus: $("#productExpirationStatus"),
+  productLotSummary: $("#productLotSummary"),
+  productLotStockTotal: $("#productLotStockTotal"),
+  productLotNextExpiry: $("#productLotNextExpiry"),
+  productLotActiveCount: $("#productLotActiveCount"),
+  productLotCreateFields: $("#productLotCreateFields"),
+  productLotsManagePanel: $("#productLotsManagePanel"),
+  productLotsTable: $("#productLotsTable"),
+  openProductLotFormButton: $("#openProductLotFormButton"),
+  productFirstLotCode: $("#productFirstLotCode"),
+  productFirstLotStock: $("#productFirstLotStock"),
+  productFirstLotExpires: $("#productFirstLotExpires"),
+  productLotDialog: $("#productLotDialog"),
+  productLotDialogTitle: $("#productLotDialogTitle"),
+  productLotForm: $("#productLotForm"),
+  productLotId: $("#productLotId"),
+  productLotProductId: $("#productLotProductId"),
+  productLotCode: $("#productLotCode"),
+  productLotStock: $("#productLotStock"),
+  productLotExpiresAt: $("#productLotExpiresAt"),
+  productLotCost: $("#productLotCost"),
   productType: $("#productType"),
   productIva: $("#productIva"),
   productStatus: $("#productStatus"),
   productDescription: $("#productDescription"),
   productProfitSummary: $("#productProfitSummary"),
+  productProfitStockTotal: $("#productProfitStockTotal"),
+  productProfitWeightedCost: $("#productProfitWeightedCost"),
+  productProfitInventoryValue: $("#productProfitInventoryValue"),
   productProfitAmount: $("#productProfitAmount"),
+  productProfitPromoBlock: $("#productProfitPromoBlock"),
+  productProfitPromoAmount: $("#productProfitPromoAmount"),
   productProfitPercent: $("#productProfitPercent"),
   productProfitNote: $("#productProfitNote"),
+  productPromoPriceNotice: $("#productPromoPriceNotice"),
   productSearch: $("#productSearch"),
+  productListCount: $("#productListCount"),
+  expirationAlertsFilterActions: $("#expirationAlertsFilterActions"),
+  productListFilterChip: $("#productListFilterChip"),
+  clearExpirationFilter: $("#clearExpirationFilter"),
+  productSelectAll: $("#productSelectAll"),
   productTable: $("#productTable"),
-  clearProductForm: $("#clearProductForm"),
   categoryForm: $("#categoryForm"),
   categoryFormTitle: $("#categoryFormTitle"),
   categoryId: $("#categoryId"),
@@ -4455,6 +4540,19 @@ const elements = {
   inventoryLowStock: $("#inventoryLowStock"),
   inventoryExpiringSoon: $("#inventoryExpiringSoon"),
   inventoryTotalValue: $("#inventoryTotalValue"),
+  inventoryExpirationAlerts: $("#inventoryExpirationAlerts"),
+  openProductFormButton: $("#openProductFormButton"),
+  exportProductsCsvButton: $("#exportProductsCsvButton"),
+  importProductsCsvFile: $("#importProductsCsvFile"),
+  importProductsCsvSelectButton: $("#importProductsCsvSelectButton"),
+  importProductsOverwriteImage: $("#importProductsOverwriteImage"),
+  importProductsFileName: $("#importProductsFileName"),
+  importProductsPreviewPanel: $("#importProductsPreviewPanel"),
+  importProductsStats: $("#importProductsStats"),
+  importProductsPreviewTable: $("#importProductsPreviewTable"),
+  importProductsErrors: $("#importProductsErrors"),
+  importProductsResult: $("#importProductsResult"),
+  confirmProductsImportButton: $("#confirmProductsImportButton"),
   inventorySearch: $("#inventorySearch"),
   inventoryCategoryFilter: $("#inventoryCategoryFilter"),
   inventoryLaboratoryFilter: $("#inventoryLaboratoryFilter"),
@@ -4477,6 +4575,18 @@ const elements = {
   inventoryProductRequiresRecipe: $("#inventoryProductRequiresRecipe"),
   inventoryProductImageUrl: $("#inventoryProductImageUrl"),
   inventoryDetailDialog: $("#inventoryDetailDialog"),
+  productActionDialog: $("#productActionDialog"),
+  productActionDialogForm: $("#productActionDialogForm"),
+  productActionDialogTitle: $("#productActionDialogTitle"),
+  productActionDialogMessage: $("#productActionDialogMessage"),
+  productActionDialogConfirm: $("#productActionDialogConfirm"),
+  productPermanentDeleteDialog: $("#productPermanentDeleteDialog"),
+  productPermanentDeleteForm: $("#productPermanentDeleteForm"),
+  productPermanentDeleteTitle: $("#productPermanentDeleteTitle"),
+  productPermanentDeleteMessage: $("#productPermanentDeleteMessage"),
+  productPermanentDeleteConfirmInput: $("#productPermanentDeleteConfirmInput"),
+  productPermanentDeleteError: $("#productPermanentDeleteError"),
+  productPermanentDeleteConfirm: $("#productPermanentDeleteConfirm"),
   inventoryDetailTitle: $("#inventoryDetailTitle"),
   inventoryDetailContent: $("#inventoryDetailContent"),
   salesTable: $("#salesTable"),
@@ -4501,8 +4611,12 @@ function init() {
 }
 
 function bindEvents() {
-  $$(".nav-item, [data-view]").forEach((button) => {
-    button.addEventListener("click", () => showView(button.dataset.view));
+  $$(".nav-item, .nav-subitem, [data-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const viewId = button.dataset.view;
+      if (!viewId) return;
+      showView(viewId, { productsSection: button.dataset.productsSection || null });
+    });
   });
 
   elements.resetDemoButton.addEventListener("click", resetDemoData);
@@ -4546,8 +4660,10 @@ function bindEvents() {
   });
 
   elements.productForm.addEventListener("submit", saveProduct);
-  elements.clearProductForm.addEventListener("click", clearProductForm);
+  elements.cancelProductForm?.addEventListener("click", closeProductForm);
+  elements.backToProductList?.addEventListener("click", closeProductForm);
   elements.productImageUploadButton.addEventListener("click", handleProductImageUploadClick);
+  elements.productImageClearButton?.addEventListener("click", handleProductImageClearClick);
   elements.productImageFile.addEventListener("change", handleProductImageFileChange);
   elements.productImageUrl.addEventListener("input", handleProductImageUrlInput);
   elements.productImageUrl.addEventListener("change", handleProductImageUrlInput);
@@ -4556,11 +4672,45 @@ function bindEvents() {
     input.addEventListener("input", updateProductProfitSummary);
     input.addEventListener("change", updateProductProfitSummary);
   });
+  elements.productFirstLotExpires?.addEventListener("input", updateProductLotFormPreview);
+  elements.productFirstLotExpires?.addEventListener("change", updateProductLotFormPreview);
   updateProductProfitSummary();
+  updateProductLotFormPreview();
   updateProductImagePreview();
   elements.productSearch.addEventListener("input", (event) => {
     state.productQuery = event.target.value.trim().toLowerCase();
     renderProducts();
+  });
+  elements.clearExpirationFilter?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearExpirationFilter();
+  });
+  window.addEventListener("scroll", closeAllProductActionMenus, true);
+  window.addEventListener("resize", closeAllProductActionMenus);
+  elements.productTable?.addEventListener("focusin", (event) => {
+    const input = event.target.closest(".product-price-input");
+    if (input) input.dataset.previousValue = input.value;
+  });
+  elements.productTable?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.matches(".product-price-input")) {
+      event.preventDefault();
+      event.target.blur();
+    }
+  });
+  elements.productTable?.addEventListener(
+    "blur",
+    (event) => {
+      const input = event.target.closest(".product-price-input");
+      if (input) handleProductPriceInputBlur(input);
+    },
+    true,
+  );
+  elements.productSelectAll?.addEventListener("change", (event) => {
+    const checked = event.target.checked;
+    elements.productTable?.querySelectorAll(".product-row-check").forEach((checkbox) => {
+      checkbox.checked = checked;
+    });
   });
 
   elements.categoryForm.addEventListener("submit", saveCategory);
@@ -4577,26 +4727,60 @@ function bindEvents() {
     renderClassifications();
   });
 
-  elements.inventorySearch.addEventListener("input", (event) => {
-    state.inventoryQuery = event.target.value.trim().toLowerCase();
-    renderInventory();
+  elements.openProductFormButton?.addEventListener("click", openProductForm);
+  elements.exportProductsCsvButton?.addEventListener("click", exportProductsToCsv);
+  elements.importProductsCsvSelectButton?.addEventListener("click", () => elements.importProductsCsvFile?.click());
+  elements.importProductsCsvFile?.addEventListener("change", handleImportCsvFileSelect);
+  elements.confirmProductsImportButton?.addEventListener("click", confirmProductsImport);
+
+  document.addEventListener("mouseover", handleProductActionTooltipOver);
+  document.addEventListener("mouseout", handleProductActionTooltipOut);
+  window.addEventListener("scroll", hideProductActionTooltip, true);
+  window.addEventListener("resize", hideProductActionTooltip);
+
+  if (elements.inventorySearch) {
+    elements.inventorySearch.addEventListener("input", (event) => {
+      state.inventoryQuery = event.target.value.trim().toLowerCase();
+      renderInventoryTable();
+    });
+  }
+  if (elements.inventoryCategoryFilter) {
+    elements.inventoryCategoryFilter.addEventListener("change", (event) => {
+      state.inventoryCategory = event.target.value;
+      renderInventoryTable();
+    });
+  }
+  if (elements.inventoryLaboratoryFilter) {
+    elements.inventoryLaboratoryFilter.addEventListener("change", (event) => {
+      state.inventoryLaboratory = event.target.value;
+      renderInventoryTable();
+    });
+  }
+  if (elements.inventoryStatusFilter) {
+    elements.inventoryStatusFilter.addEventListener("change", (event) => {
+      state.inventoryStatus = event.target.value;
+      renderInventoryTable();
+    });
+  }
+  elements.openInventoryProductModal?.addEventListener("click", () => elements.inventoryProductDialog.showModal());
+  elements.inventoryProductVisualForm?.addEventListener("submit", saveInventoryProduct);
+  elements.openProductLotFormButton?.addEventListener("click", () => openProductLotDialog());
+  elements.productLotForm?.addEventListener("submit", saveProductLot);
+  elements.productActionDialogForm?.addEventListener("close", handleProductActionDialogClose);
+  elements.productPermanentDeleteForm?.addEventListener("submit", handleProductPermanentDeleteSubmit);
+  elements.productPermanentDeleteDialog?.addEventListener("close", () => {
+    if (productPermanentDeleteResolver) {
+      productPermanentDeleteResolver(false);
+      productPermanentDeleteResolver = null;
+    }
   });
-  elements.inventoryCategoryFilter.addEventListener("change", (event) => {
-    state.inventoryCategory = event.target.value;
-    renderInventory();
-  });
-  elements.inventoryLaboratoryFilter.addEventListener("change", (event) => {
-    state.inventoryLaboratory = event.target.value;
-    renderInventory();
-  });
-  elements.inventoryStatusFilter.addEventListener("change", (event) => {
-    state.inventoryStatus = event.target.value;
-    renderInventory();
-  });
-  elements.openInventoryProductModal.addEventListener("click", () => elements.inventoryProductDialog.showModal());
-  elements.inventoryProductVisualForm.addEventListener("submit", saveInventoryProduct);
 
   document.addEventListener("click", handleDocumentAction);
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".product-list-action-menu")) {
+      closeAllProductActionMenus();
+    }
+  });
 }
 
 function handleDocumentAction(event) {
@@ -4608,7 +4792,19 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "remove-store-item") removeStoreItem(id);
   if (action.dataset.action === "edit-customer") editCustomer(id);
   if (action.dataset.action === "edit-product") editProduct(id);
-  if (action.dataset.action === "toggle-product") toggleProduct(id);
+  if (action.dataset.action === "duplicate-product") duplicateProduct(id);
+  if (action.dataset.action === "pause-product") pauseProduct(id);
+  if (action.dataset.action === "activate-product") activateProduct(id);
+  if (action.dataset.action === "toggle-product-menu") toggleProductActionMenu(action);
+  if (action.dataset.action === "delete-product") {
+    closeAllProductActionMenus();
+    deleteProduct(id);
+  }
+  if (action.dataset.action === "permanent-delete-product") {
+    closeAllProductActionMenus();
+    permanentDeleteProduct(id);
+  }
+  if (action.dataset.action === "close-permanent-delete-dialog") elements.productPermanentDeleteDialog?.close("cancel");
   if (action.dataset.action === "edit-category") editCategory(id);
   if (action.dataset.action === "deactivate-category") deactivateCategory(id);
   if (action.dataset.action === "edit-classification") editClassification(id);
@@ -4621,19 +4817,518 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "mark-conversation-delivered") updateLatestConversation("Entregado");
   if (action.dataset.action === "send-store-link") sendStoreLinkToConversation();
   if (action.dataset.action === "refresh-conversations") loadRealConversations({ manual: true, forceChatRender: true });
-  if (action.dataset.action === "refresh-products") loadProducts({ manual: true });
+  if (action.dataset.action === "refresh-products") {
+    clearExpirationFilter();
+    loadProducts({ manual: true });
+  }
   if (action.dataset.action === "select-conversation") selectConversation(id);
+  if (action.dataset.action === "filter-expiration") setProductExpirationFilter(action.dataset.level);
+  if (action.dataset.action === "clear-expiration-filter") {
+    event.preventDefault();
+    event.stopPropagation();
+    clearExpirationFilter();
+  }
   if (action.dataset.action === "view-inventory-product") openInventoryDetail(id);
+  if (action.dataset.action === "add-product-lot") openProductLotDialog(id);
+  if (action.dataset.action === "edit-product-lot") openProductLotDialog(action.dataset.productId, id);
+  if (action.dataset.action === "toggle-product-lot") toggleProductLot(action.dataset.productId, id);
+  if (action.dataset.action === "close-product-lot-dialog") elements.productLotDialog?.close();
   if (action.dataset.action === "close-inventory-product-modal") elements.inventoryProductDialog.close();
   if (action.dataset.action === "close-inventory-detail") elements.inventoryDetailDialog.close();
 }
 
-function showView(viewId) {
-  if (!viewId || !viewTitles[viewId]) return;
-  const targetViewId = viewAliases[viewId] || viewId;
+function showView(viewId, options = {}) {
+  if (!viewId) return;
+
+  if (viewId === "product-form") {
+    $$(".view").forEach((view) => view.classList.toggle("active", view.id === "product-form"));
+    $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === "productos"));
+    elements.viewTitle.textContent = elements.productFormTitle.textContent || "Producto";
+    scrollWorkspaceToTop();
+    return;
+  }
+
+  const alias = viewAliases[viewId];
+  const targetViewId = typeof alias === "object" ? alias.view : alias || viewId;
+  const productsSection = options.productsSection || (typeof alias === "object" ? alias.productsSection : null);
+
+  if (!viewTitles[viewId] && !viewTitles[targetViewId]) return;
+
+  if (productsSection) state.productsSection = productsSection;
+
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === targetViewId));
-  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
-  elements.viewTitle.textContent = viewTitles[viewId];
+  $$(".nav-item").forEach((item) => item.classList.toggle("active", targetViewId === "productos" && item.dataset.view === "productos"));
+
+  if (targetViewId === "productos") {
+    showProductsSection(state.productsSection || "products-list");
+    updateProductsModuleTitle();
+    scrollWorkspaceToTop();
+    return;
+  }
+
+  elements.viewTitle.textContent = viewTitles[viewId] || viewTitles[targetViewId];
+}
+
+function showProductsSection(sectionId) {
+  if (!productsSectionTitles[sectionId]) return;
+  state.productsSection = sectionId;
+
+  $$(".nav-subitem").forEach((item) => item.classList.toggle("active", item.dataset.productsSection === sectionId));
+  $$(".products-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.productsPanel === sectionId));
+
+  if ($("#productos")?.classList.contains("active")) updateProductsModuleTitle();
+}
+
+function escapeCsvValue(value) {
+  const text = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function productToCsvRecord(product) {
+  const promo = getProductStoredPromotionalPrice(product);
+  const listPrice = toNumber(product.regularPrice ?? product.price);
+  return {
+    sku: product.sku || "",
+    name: product.name || "",
+    description: product.description || "",
+    category: product.category || "",
+    classification: product.type || "",
+    laboratory: product.laboratory || product.laboratorio || "",
+    stock: toInteger(product.stock),
+    minStock: toInteger(product.minStock),
+    maxStock: toInteger(product.maxStock),
+    lot: product.lot || product.lote || "",
+    expiresAt: product.expiresAt || "",
+    cost: toNumber(product.cost),
+    regularPrice: listPrice,
+    price: toNumber(product.price ?? listPrice),
+    promotionalPrice: promo != null ? promo : "",
+    discountPrice: promo != null ? promo : "",
+    imageUrl: product.imageUrl || "",
+    status: product.status || "Activo",
+  };
+}
+
+function exportProductsToCsv() {
+  if (!state.products.length) return showToast("No hay productos para exportar");
+
+  const header = PRODUCT_CSV_COLUMNS.join(",");
+  const lines = state.products.map((product) => {
+    const record = productToCsvRecord(product);
+    return PRODUCT_CSV_COLUMNS.map((column) => escapeCsvValue(record[column])).join(",");
+  });
+
+  const csv = `\uFEFF${header}\n${lines.join("\n")}`;
+  const date = new Date().toISOString().slice(0, 10);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `master-crm-productos-${date}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("CSV exportado");
+}
+
+function parseCsvText(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (inQuotes) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n" || (char === "\r" && next === "\n")) {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      if (char === "\r") index += 1;
+    } else if (char !== "\r") {
+      cell += char;
+    }
+  }
+
+  if (cell.length || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function normalizeCsvHeaderKey(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\uFEFF/, "")
+    .toLowerCase();
+}
+
+function mapCsvRow(headers, values) {
+  const row = {};
+  headers.forEach((header, index) => {
+    if (!header) return;
+    row[header] = String(values[index] ?? "").trim();
+  });
+  return row;
+}
+
+function isValidImportDate(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
+function isValidNonNegativeNumber(value) {
+  if (value === "" || value === null || value === undefined) return false;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0;
+}
+
+function getImportRowPrice(row) {
+  if (row.regularPrice !== "" && row.regularPrice != null) return row.regularPrice;
+  if (row.price !== "" && row.price != null) return row.price;
+  return "";
+}
+
+function validateImportCsvRow(row) {
+  const errors = [];
+  if (!String(row.name || "").trim()) errors.push("name requerido");
+
+  const priceValue = getImportRowPrice(row);
+  if (priceValue === "" || priceValue == null) errors.push("price requerido");
+  else if (!isValidNonNegativeNumber(priceValue)) errors.push("price debe ser número >= 0");
+
+  if (row.stock === "" || row.stock == null) errors.push("stock requerido");
+  else if (!isValidNonNegativeNumber(row.stock)) errors.push("stock debe ser número >= 0");
+
+  if (row.expiresAt && !isValidImportDate(row.expiresAt)) errors.push("expiresAt inválida (YYYY-MM-DD)");
+
+  return errors;
+}
+
+function normalizeImportCsvRow(rawRow) {
+  const get = (...keys) => {
+    for (const key of keys) {
+      const normalized = normalizeCsvHeaderKey(key);
+      if (rawRow[normalized] !== undefined && rawRow[normalized] !== "") return rawRow[normalized];
+      if (rawRow[key] !== undefined && rawRow[key] !== "") return rawRow[key];
+    }
+    return "";
+  };
+
+  return {
+    sku: get("sku"),
+    name: get("name", "nombre"),
+    description: get("description", "descripcion"),
+    category: get("category", "categoria"),
+    classification: get("classification", "clasificacion", "type"),
+    laboratory: get("laboratory", "laboratorio"),
+    stock: get("stock"),
+    minStock: get("minstock", "minStock"),
+    maxStock: get("maxstock", "maxStock"),
+    lot: get("lot", "lote"),
+    expiresAt: get("expiresat", "expiresAt"),
+    cost: get("cost", "costo"),
+    regularPrice: get("regularprice", "regularPrice", "price", "precio"),
+    price: get("price", "precio", "regularprice", "regularPrice"),
+    promotionalPrice: get("promotionalprice", "promotionalPrice", "precio_promocional"),
+    discountPrice: get("discountprice", "discountPrice"),
+    imageUrl: get("imageurl", "imageUrl", "imagen_url"),
+    status: get("status", "estado", "activo") || "Activo",
+  };
+}
+
+function findProductBySku(sku) {
+  const normalized = String(sku || "").trim().toLowerCase();
+  if (!normalized) return null;
+  return state.products.find((product) => String(product.sku || "").trim().toLowerCase() === normalized) || null;
+}
+
+function buildImportProductPayload(row, existing, options = {}) {
+  const listPrice = toNumber(getImportRowPrice(row));
+  const promoRaw = row.promotionalPrice || row.discountPrice;
+  const promoPrice = promoRaw === "" || promoRaw == null ? null : toNumber(promoRaw);
+  const payload = {
+    sku: String(row.sku || "").trim(),
+    name: String(row.name || "").trim(),
+    description: String(row.description || "").trim(),
+    category: String(row.category || "").trim(),
+    type: String(row.classification || "").trim(),
+    laboratory: String(row.laboratory || "").trim(),
+    stock: toInteger(row.stock),
+    minStock: row.minStock === "" ? 0 : toInteger(row.minStock),
+    maxStock: row.maxStock === "" ? 0 : toInteger(row.maxStock),
+    lot: String(row.lot || "").trim(),
+    lote: String(row.lot || "").trim(),
+    expiresAt: String(row.expiresAt || "").trim(),
+    cost: row.cost === "" ? 0 : toNumber(row.cost),
+    regularPrice: listPrice,
+    price: listPrice,
+    discountPrice: promoPrice,
+    promotionalPrice: promoPrice,
+    status: String(row.status || "Activo").trim() === "Pausado" ? "Pausado" : "Activo",
+    requiresRecipe: classificationRequiresRecipe(row.classification),
+    iva: false,
+  };
+
+  const imageUrl = String(row.imageUrl || "").trim();
+  if (imageUrl) {
+    payload.imageUrl = imageUrl;
+  } else if (!existing && options.overwriteEmptyImage) {
+    payload.imageUrl = "";
+  } else if (!existing) {
+    payload.imageUrl = "";
+  } else if (existing && options.overwriteEmptyImage) {
+    payload.imageUrl = "";
+  }
+
+  if (existing) {
+    payload.id = existing.id;
+    if (!imageUrl && !options.overwriteEmptyImage) {
+      delete payload.imageUrl;
+    }
+  }
+
+  return payload;
+}
+
+function resetImportProductsUi(options = {}) {
+  if (!options.keepFile && elements.importProductsCsvFile) elements.importProductsCsvFile.value = "";
+  if (!options.keepFile && elements.importProductsFileName) {
+    elements.importProductsFileName.textContent = "Ningún archivo seleccionado";
+  }
+  if (elements.importProductsPreviewPanel) elements.importProductsPreviewPanel.hidden = true;
+  if (elements.confirmProductsImportButton) elements.confirmProductsImportButton.disabled = true;
+  if (elements.importProductsErrors) {
+    elements.importProductsErrors.hidden = true;
+    elements.importProductsErrors.innerHTML = "";
+  }
+  if (elements.importProductsResult) {
+    elements.importProductsResult.hidden = true;
+    elements.importProductsResult.innerHTML = "";
+  }
+  if (!options.keepSession) state.csvImportSession = null;
+}
+
+function handleImportCsvFileSelect(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (elements.importProductsFileName) elements.importProductsFileName.textContent = file.name;
+  if (elements.importProductsResult) {
+    elements.importProductsResult.hidden = true;
+    elements.importProductsResult.innerHTML = "";
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsedRows = parseProductsCsv(String(reader.result || ""));
+      state.csvImportSession = parsedRows;
+      renderImportProductsPreview(parsedRows);
+    } catch (error) {
+      resetImportProductsUi({ keepFile: true, keepSession: true });
+      showToast(error.message || "No se pudo leer el CSV");
+    }
+  };
+  reader.onerror = () => showToast("No se pudo leer el archivo CSV");
+  reader.readAsText(file, "UTF-8");
+}
+
+function parseProductsCsv(text) {
+  const matrix = parseCsvText(text);
+  if (!matrix.length) throw new Error("El archivo CSV está vacío");
+
+  const headers = matrix[0].map((header) => normalizeCsvHeaderKey(header));
+  const dataRows = matrix.slice(1).filter((row) => row.some((cell) => String(cell || "").trim()));
+
+  const rows = dataRows.map((values, index) => {
+    const raw = mapCsvRow(headers, values);
+    const data = normalizeImportCsvRow(raw);
+    const errors = validateImportCsvRow(data);
+    const existing = findProductBySku(data.sku);
+    return {
+      rowNumber: index + 2,
+      data,
+      errors,
+      action: existing ? "update" : "create",
+    };
+  });
+
+  const validRows = rows.filter((row) => !row.errors.length);
+  const invalidRows = rows.filter((row) => row.errors.length);
+
+  return {
+    rows,
+    validRows,
+    invalidRows,
+    total: rows.length,
+    validCount: validRows.length,
+    errorCount: invalidRows.length,
+  };
+}
+
+function renderImportProductsPreview(session) {
+  if (!elements.importProductsPreviewPanel) return;
+
+  elements.importProductsPreviewPanel.hidden = false;
+  if (elements.importProductsStats) {
+    elements.importProductsStats.innerHTML = `
+      <span>Total filas: <strong>${session.total}</strong></span>
+      <span>Válidas: <strong>${session.validCount}</strong></span>
+      <span>Con error: <strong>${session.errorCount}</strong></span>
+    `;
+  }
+
+  const previewRows = session.rows.slice(0, 10);
+  if (elements.importProductsPreviewTable) {
+    elements.importProductsPreviewTable.innerHTML = previewRows.length
+      ? previewRows
+          .map((row) => {
+            const price = getImportRowPrice(row.data);
+            const statusLabel = row.errors.length ? "Error" : row.action === "update" ? "Actualizar" : "Crear";
+            const statusClass = row.errors.length ? "is-error" : row.action === "update" ? "is-update" : "is-create";
+            return `
+              <tr>
+                <td>${row.rowNumber}</td>
+                <td>${escapeHTML(row.data.sku || "—")}</td>
+                <td>${escapeHTML(row.data.name || "—")}</td>
+                <td>${escapeHTML(row.data.category || "—")}</td>
+                <td>${escapeHTML(row.data.stock)}</td>
+                <td>${escapeHTML(price)}</td>
+                <td><span class="product-io-badge ${statusClass}">${statusLabel}</span></td>
+                <td>${row.errors.length ? escapeHTML(row.errors.join("; ")) : "OK"}</td>
+              </tr>
+            `;
+          })
+          .join("")
+      : tableEmpty(8, "Sin filas para previsualizar.");
+  }
+
+  if (elements.importProductsErrors) {
+    if (session.errorCount) {
+      elements.importProductsErrors.hidden = false;
+      elements.importProductsErrors.innerHTML = `
+        <p><strong>Corrige los errores antes de importar.</strong></p>
+        <ul>${session.invalidRows
+          .slice(0, 20)
+          .map((row) => `<li>Fila ${row.rowNumber}: ${escapeHTML(row.errors.join("; "))}</li>`)
+          .join("")}</ul>
+        ${session.invalidRows.length > 20 ? `<p>… y ${session.invalidRows.length - 20} filas más con error.</p>` : ""}
+      `;
+    } else {
+      elements.importProductsErrors.hidden = true;
+      elements.importProductsErrors.innerHTML = "";
+    }
+  }
+
+  if (elements.confirmProductsImportButton) {
+    elements.confirmProductsImportButton.disabled = session.errorCount > 0 || session.validCount === 0;
+  }
+}
+
+async function confirmProductsImport() {
+  const session = state.csvImportSession;
+  if (!session) return showToast("Selecciona un archivo CSV primero");
+  if (session.errorCount > 0) return showToast("Corrige los errores del CSV antes de importar");
+  if (!session.validCount) return showToast("No hay filas válidas para importar");
+
+  const overwriteEmptyImage = Boolean(elements.importProductsOverwriteImage?.checked);
+  const summary = { created: 0, updated: 0, errors: [] };
+  const createdInBatch = new Map();
+
+  if (elements.confirmProductsImportButton) elements.confirmProductsImportButton.disabled = true;
+
+  for (const row of session.validRows) {
+    try {
+      const skuKey = String(row.data.sku || "").trim().toLowerCase();
+      let existing = findProductBySku(row.data.sku);
+      if (!existing && skuKey && createdInBatch.has(skuKey)) {
+        existing = createdInBatch.get(skuKey);
+      }
+      const payload = buildImportProductPayload(row.data, existing, { overwriteEmptyImage });
+      if (existing) {
+        const saved = await saveProductToApi({ ...existing, ...payload, id: existing.id });
+        if (skuKey && saved) createdInBatch.set(skuKey, saved);
+        summary.updated += 1;
+      } else {
+        const saved = await saveProductToApi(payload);
+        if (skuKey && saved) createdInBatch.set(skuKey, saved);
+        summary.created += 1;
+      }
+    } catch (error) {
+      summary.errors.push({ rowNumber: row.rowNumber, message: error.message || "Error al guardar" });
+    }
+  }
+
+  await loadProducts();
+
+  if (elements.importProductsResult) {
+    elements.importProductsResult.hidden = false;
+    elements.importProductsResult.innerHTML = `
+      <p><strong>Importación finalizada</strong></p>
+      <p>Creados: ${summary.created} · Actualizados: ${summary.updated} · Errores: ${summary.errors.length}</p>
+      ${
+        summary.errors.length
+          ? `<ul>${summary.errors.map((item) => `<li>Fila ${item.rowNumber}: ${escapeHTML(item.message)}</li>`).join("")}</ul>`
+          : ""
+      }
+    `;
+  }
+
+  if (elements.confirmProductsImportButton) {
+    elements.confirmProductsImportButton.disabled = session.errorCount > 0 || session.validCount === 0;
+  }
+
+  showToast(
+    summary.errors.length
+      ? `Importación con ${summary.errors.length} error${summary.errors.length === 1 ? "" : "es"}`
+      : "Importación completada",
+  );
+}
+
+function updateProductsModuleTitle() {
+  elements.viewTitle.textContent = `Productos · ${productsSectionTitles[state.productsSection] || "Lista de productos"}`;
+}
+
+function openProductForm() {
+  clearProductForm();
+  renderProductCatalogSelects();
+  showView("product-form");
+}
+
+function closeProductForm() {
+  showView("productos", { productsSection: "products-list" });
+}
+
+function scrollWorkspaceToTop() {
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
 }
 
 function hydrateSettings() {
@@ -4754,6 +5449,8 @@ function renderDashboard() {
   elements.metricLowStock.textContent = `${lowStock.length} con stock bajo`;
   if (elements.navOrdersBadge) elements.navOrdersBadge.textContent = String(openOrders.length);
 
+  renderDashboardExpirationAlerts();
+
   elements.dashboardOrders.innerHTML = state.orders.length
     ? state.orders.slice(0, 5).map((order) => listRow(order.id, `${order.customerName} - ${order.status}`, currency.format(order.total))).join("")
     : emptyState("Aun no hay pedidos.");
@@ -4761,6 +5458,103 @@ function renderDashboard() {
   elements.dashboardAlerts.innerHTML = lowStock.length
     ? lowStock.map((product) => listRow(product.name, `${product.stock} disponibles`, "Stock bajo")).join("")
     : emptyState("Sin alertas por ahora.");
+}
+
+function renderDashboardExpirationAlerts() {
+  const activeProducts = state.products.filter((product) => product.status === "Activo");
+  renderExpirationAlertsSummary(elements.dashboardExpirationAlerts, activeProducts);
+}
+
+function renderExpirationAlertsSummary(container, products, options = {}) {
+  if (!container) return;
+
+  const clickable = Boolean(options.clickable);
+  const summary = getExpirationSummary(products);
+  const items = [
+    { key: "red", label: "0 días / vencidos", className: "is-expiration-red" },
+    { key: "orange", label: "15 días", className: "is-expiration-orange" },
+    { key: "yellow", label: "1 mes", className: "is-expiration-yellow" },
+    { key: "green", label: "2 meses", className: "is-expiration-green" },
+    { key: "blue", label: "3 meses", className: "is-expiration-blue" },
+    { key: "noAlert", label: "Sin alerta", className: "is-expiration-safe", discrete: true },
+  ];
+
+  function summaryCount(key) {
+    if (key === "noAlert") return summary.noAlert;
+    return summary[key] ?? 0;
+  }
+
+  function cardMarkup(item) {
+    const active = state.expirationFilter === item.key ? " is-active-filter" : "";
+    const discreteClass = item.discrete ? " is-discrete" : "";
+    const interactive = clickable
+      ? ` role="button" tabindex="0" data-action="filter-expiration" data-level="${item.key}"`
+      : "";
+    return `
+      <article class="expiration-summary-card ${item.className}${discreteClass}${clickable ? " is-clickable" : ""}${active}"${interactive}>
+        <span>${item.label}</span>
+        <strong>${summaryCount(item.key)}</strong>
+      </article>
+    `;
+  }
+
+  container.innerHTML = products.length
+    ? items.map((item) => cardMarkup(item)).join("")
+    : emptyState("Sin alertas de caducidad en productos activos.");
+}
+
+function setProductExpirationFilter(level) {
+  state.expirationFilter = level ? String(level) : null;
+  updateProductListFilterBar();
+  renderProducts();
+  renderExpirationAlertsSummary(
+    elements.inventoryExpirationAlerts,
+    state.products.filter((product) => product.status === "Activo"),
+    { clickable: true },
+  );
+}
+
+function clearExpirationFilter() {
+  state.expirationFilter = null;
+  updateProductListFilterBar();
+  const activeProducts = state.products.filter((product) => product.status === "Activo");
+  renderExpirationAlertsSummary(elements.inventoryExpirationAlerts, activeProducts, { clickable: true });
+  renderProducts();
+}
+
+function updateProductListFilterBar() {
+  if (!elements.expirationAlertsFilterActions) return;
+  const active = Boolean(state.expirationFilter);
+  elements.expirationAlertsFilterActions.hidden = !active;
+  if (elements.productListFilterChip) {
+    elements.productListFilterChip.textContent = active
+      ? `Mostrando: ${EXPIRATION_FILTER_LABELS[state.expirationFilter] || state.expirationFilter}`
+      : "";
+    elements.productListFilterChip.hidden = !active;
+  }
+}
+
+function getFilteredProducts(options = {}) {
+  const applyExpiration = options.applyExpirationFilter !== false;
+  const expirationFilter = applyExpiration ? state.expirationFilter : null;
+  const query = state.productQuery;
+
+  return state.products.filter((product) => {
+    const laboratory = inventoryLaboratory(product);
+    const text = `${product.sku || ""} ${product.name} ${product.category} ${product.type} ${product.status} ${product.substance || ""} ${laboratory}`.toLowerCase();
+    const matchesQuery = !query || text.includes(query);
+    const matchesExpiration = productMatchesExpirationFilter(product, expirationFilter);
+    return matchesQuery && matchesExpiration;
+  });
+}
+
+function getProductStoredPromotionalPrice(product) {
+  if (product.promotionalPrice != null && product.promotionalPrice !== "") return toNumber(product.promotionalPrice);
+  const salePrice = toNumber(product.regularPrice ?? product.price);
+  if (product.discountPrice != null && product.discountPrice !== "" && toNumber(product.discountPrice) !== salePrice) {
+    return toNumber(product.discountPrice);
+  }
+  return null;
 }
 
 function seedChat() {
@@ -5349,14 +6143,14 @@ function moveOrderNext(orderId) {
 }
 
 function createProductRefreshButton() {
-  const heading = elements.productSearch?.closest(".panel-heading");
+  const heading = document.querySelector(".product-list-toolbar");
   if (!heading || heading.querySelector("[data-action='refresh-products']")) return;
 
   const button = document.createElement("button");
   button.className = "ghost-button small";
   button.type = "button";
   button.dataset.action = "refresh-products";
-  button.textContent = "Actualizar productos";
+  button.textContent = "Actualizar";
   heading.appendChild(button);
 }
 
@@ -5409,13 +6203,22 @@ async function saveProductToApi(product) {
   return data.product;
 }
 
-async function deactivateProductInApi(id) {
+async function archiveProductInApi(id) {
   const response = await fetch(`${productsApiUrl}/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.details || data.error || "No se pudo desactivar producto");
-  return data.product;
+  if (!response.ok) throw new Error(data.error || data.details || "No se pudo dar de baja el producto");
+  return data;
+}
+
+async function permanentDeleteProductInApi(id) {
+  const response = await fetch(`${productsApiUrl}/${encodeURIComponent(id)}/permanent`, {
+    method: "DELETE",
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.details || "No se pudo eliminar definitivamente el producto");
+  return data;
 }
 
 function classificationRequiresRecipe(name) {
@@ -5589,7 +6392,7 @@ function renderProductCatalogSelects() {
 
   if (elements.productCategory) {
     elements.productCategory.innerHTML =
-      `<option value="">Selecciona categoria</option>` +
+      `<option value="">Selecciona categoría</option>` +
       activeCategories
         .map((category) => `<option value="${escapeHTML(category.name)}">${escapeHTML(category.name)}</option>`)
         .join("");
@@ -5599,7 +6402,7 @@ function renderProductCatalogSelects() {
   if (elements.productType) {
     if (activeClassifications.length) {
       elements.productType.innerHTML =
-        `<option value="">Selecciona clasificacion</option>` +
+        `<option value="">Selecciona clasificación</option>` +
         activeClassifications
           .map(
             (classification) =>
@@ -5608,9 +6411,9 @@ function renderProductCatalogSelects() {
           .join("");
     } else {
       elements.productType.innerHTML = `
-        <option value="">Selecciona clasificacion</option>
+        <option value="">Selecciona clasificación</option>
         <option value="Venta libre">Venta libre</option>
-        <option value="Receta medica">Receta medica</option>
+        <option value="Receta medica">Receta médica</option>
       `;
     }
     if (currentType) ensureSelectOption(elements.productType, currentType);
@@ -5651,17 +6454,17 @@ async function saveCategory(event) {
 function editCategory(id) {
   const category = state.categories.find((item) => item.id === id);
   if (!category) return;
-  elements.categoryFormTitle.textContent = "Editar categoria";
+  elements.categoryFormTitle.textContent = "Editar categoría";
   elements.categoryId.value = category.id;
   elements.categoryName.value = category.name;
   elements.categoryDescription.value = category.description || "";
-  showView("categorias");
+  showView("productos", { productsSection: "products-categories" });
 }
 
 function clearCategoryForm() {
   elements.categoryForm.reset();
   elements.categoryId.value = "";
-  elements.categoryFormTitle.textContent = "Nueva categoria";
+  elements.categoryFormTitle.textContent = "Nueva categoría";
 }
 
 async function deactivateCategory(id) {
@@ -5701,18 +6504,18 @@ async function saveClassification(event) {
 function editClassification(id) {
   const classification = state.classifications.find((item) => item.id === id);
   if (!classification) return;
-  elements.classificationFormTitle.textContent = "Editar clasificacion";
+  elements.classificationFormTitle.textContent = "Editar clasificación";
   elements.classificationId.value = classification.id;
   elements.classificationName.value = classification.name;
   elements.classificationDescription.value = classification.description || "";
   elements.classificationStatus.value = classification.status;
-  showView("clasificaciones");
+  showView("productos", { productsSection: "products-classifications" });
 }
 
 function clearClassificationForm() {
   elements.classificationForm.reset();
   elements.classificationId.value = "";
-  elements.classificationFormTitle.textContent = "Nueva clasificacion";
+  elements.classificationFormTitle.textContent = "Nueva clasificación";
   elements.classificationStatus.value = "Activo";
 }
 
@@ -5731,65 +6534,255 @@ async function deactivateClassification(id) {
 }
 
 function renderProducts() {
-  const products = state.products.filter((product) => {
-    const text = `${product.sku || ""} ${product.name} ${product.category} ${product.type} ${product.status} ${product.substance || ""}`.toLowerCase();
-    return text.includes(state.productQuery);
-  });
+  if (!elements.productTable) return;
+
+  const products = getFilteredProducts();
+  const visibleWithoutExpiration = getFilteredProducts({ applyExpirationFilter: false });
+
+  if (elements.productListCount) {
+    if (state.expirationFilter) {
+      elements.productListCount.textContent = `${products.length} de ${visibleWithoutExpiration.length} producto${visibleWithoutExpiration.length === 1 ? "" : "s"}`;
+    } else {
+      elements.productListCount.textContent = `${products.length} producto${products.length === 1 ? "" : "s"}`;
+    }
+  }
+
   elements.productTable.innerHTML = products.length
     ? products
         .map((product) => {
-          const status = stockStatus(product);
+          const salePrice = toNumber(product.regularPrice ?? product.price);
+          const storedPromo = getProductStoredPromotionalPrice(product);
+          const promoInputValue = storedPromo != null ? formatPriceInputValue(storedPromo) : "";
+          const metaParts = [product.category, product.type].filter(Boolean);
+          const expirationStatus = getProductUrgentExpirationStatus(product);
+          const expirationBadge = expirationBadgeMarkup(expirationStatus.expiresAt || product.expiresAt);
+          const activeLotCount = getActiveProductLots(product).filter((lot) => lot.stock > 0).length;
+          const rowClass =
+            expirationStatus.level !== "none" ? `product-list-row ${expirationStatus.className}` : "product-list-row";
           return `
-            <tr>
-              <td class="product-cell-product">
-                <div class="admin-product-cell">
-                  ${productImageMarkup(product)}
-                  <div class="admin-product-copy">
-                    <strong class="admin-product-name">${escapeHTML(product.name)}</strong>
-                    <p class="admin-product-meta">
-                      <span>SKU: ${escapeHTML(product.sku || "Sin SKU")}</span>
-                      ${product.substance ? `<span>${escapeHTML(product.substance)}</span>` : ""}
-                    </p>
+            <tr class="${rowClass}">
+              <td class="col-check"><input class="product-row-check" type="checkbox" aria-label="Seleccionar ${escapeHTML(product.name)}" /></td>
+              <td class="col-product">
+                <div class="product-list-item">
+                  ${productListImageMarkup(product)}
+                  <div class="product-list-copy">
+                    <button class="product-list-name ${expirationStatus.className}" type="button" data-action="edit-product" data-id="${product.id}" title="Editar producto">${escapeHTML(product.name)}</button>
+                    <p class="product-list-meta">${product.sku ? `SKU ${escapeHTML(product.sku)}` : "Sin SKU"}${metaParts.length ? ` · ${escapeHTML(metaParts.join(" · "))}` : ""}</p>
+                    <div class="product-list-expiry">${expirationBadge}</div>
                   </div>
                 </div>
               </td>
-              <td class="product-cell-category">${escapeHTML(product.category)}</td>
-              <td class="product-cell-price"><strong class="product-price-value">${currency.format(product.price)}</strong></td>
-              <td class="product-cell-stock">
-                <strong class="product-stock-value">${product.stock}</strong>
-                <span class="product-stock-meta">${escapeHTML(status.label)} · Cad. ${escapeHTML(product.expiresAt || "N/D")}</span>
+              <td class="col-stock"><span class="product-list-stock">${toInteger(product.stock)}</span></td>
+              <td class="col-expiry">
+                <span class="product-list-expiry-date">${product.expiresAt ? escapeHTML(product.expiresAt) : "—"}</span>
               </td>
-              <td class="product-cell-type"><span class="badge ${product.type === "Receta medica" ? "danger" : "success"}">${escapeHTML(product.type)}</span></td>
-              <td class="product-cell-actions">
-                <div class="table-actions product-row-actions">
-                  <button class="ghost-button small" type="button" data-action="edit-product" data-id="${product.id}">Editar</button>
-                  <button class="ghost-button small" type="button" data-action="toggle-product" data-id="${product.id}">
-                    ${product.status === "Activo" ? "Pausar" : "Activar"}
-                  </button>
+              <td class="col-lots"><span class="product-lot-count">${activeLotCount}</span></td>
+              <td class="col-price">
+                <input
+                  class="product-price-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputmode="decimal"
+                  data-price-field="sale"
+                  data-id="${product.id}"
+                  value="${formatPriceInputValue(salePrice)}"
+                  aria-label="Precio venta de ${escapeHTML(product.name)}"
+                />
+              </td>
+              <td class="col-price">
+                <input
+                  class="product-price-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputmode="decimal"
+                  data-price-field="promo"
+                  data-id="${product.id}"
+                  value="${promoInputValue}"
+                  placeholder="${formatPriceInputValue(salePrice)}"
+                  aria-label="Precio promocional de ${escapeHTML(product.name)}"
+                />
+              </td>
+              <td class="col-actions">
+                <div class="product-list-actions">
+                  <button class="product-list-action has-tooltip" type="button" data-action="duplicate-product" data-id="${product.id}" data-tooltip="Duplicar producto" aria-label="Duplicar producto">${productListActionIcon("duplicate")}</button>
+                  ${
+                    product.status === "Activo"
+                      ? `<button class="product-list-action has-tooltip" type="button" data-action="pause-product" data-id="${product.id}" data-tooltip="Pausar producto" aria-label="Pausar producto">${productListActionIcon("pause")}</button>`
+                      : `<button class="product-list-action has-tooltip is-success" type="button" data-action="activate-product" data-id="${product.id}" data-tooltip="Activar producto" aria-label="Activar producto">${productListActionIcon("activate")}</button>`
+                  }
+                  <div class="product-list-action-menu">
+                    <button class="product-list-action has-tooltip is-menu" type="button" data-action="toggle-product-menu" data-id="${product.id}" data-tooltip="Más acciones" aria-label="Más acciones" aria-haspopup="menu">${productListActionIcon("more")}</button>
+                    <div class="product-list-action-menu-panel" role="menu" hidden>
+                      <button class="product-list-menu-item is-danger" type="button" role="menuitem" data-action="delete-product" data-id="${product.id}">
+                        <span class="product-list-menu-title">Eliminar producto</span>
+                        <span class="product-list-menu-desc">Baja administrativa, conserva trazabilidad.</span>
+                      </button>
+                      <button class="product-list-menu-item is-critical" type="button" role="menuitem" data-action="permanent-delete-product" data-id="${product.id}">
+                        <span class="product-list-menu-title">Eliminar definitivamente</span>
+                        <span class="product-list-menu-desc">Borrado físico irreversible.</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </td>
             </tr>
           `;
         })
         .join("")
-    : tableEmpty(6, state.productLoadError || "No hay productos.");
+    : tableEmpty(8, state.productLoadError || (state.expirationFilter ? "No hay productos con este filtro de caducidad." : "No hay productos."));
+  updateProductListFilterBar();
+  const activeProducts = state.products.filter((product) => product.status === "Activo");
+  renderExpirationAlertsSummary(elements.inventoryExpirationAlerts, activeProducts, { clickable: true });
+}
+
+function productListImageMarkup(product) {
+  const initialsText = initials(product.name || "P");
+  if (!product.imageUrl) {
+    return `<div class="product-list-thumb product-list-thumb--empty" aria-hidden="true">${escapeHTML(initialsText)}</div>`;
+  }
+  return `<img class="product-list-thumb" src="${escapeHTML(product.imageUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'), { className: 'product-list-thumb product-list-thumb--empty', textContent: '${escapeHTML(initialsText)}' }))" />`;
+}
+
+function productListActionIcon(name) {
+  if (name === "duplicate") {
+    return `<svg class="product-list-action-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.25" y="5.25" width="7.5" height="7.5" rx="1.25" fill="none" stroke="currentColor" stroke-width="1.35"></rect><path d="M3.5 10.75V4.35c0-.47.38-.85.85-.85h6.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"></path></svg>`;
+  }
+  if (name === "pause") {
+    return `<svg class="product-list-action-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.35"></circle><path d="M6.35 6.1v3.8M9.65 6.1v3.8" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"></path></svg>`;
+  }
+  if (name === "delete") {
+    return `<svg class="product-list-action-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.25 4.5V3.35c0-.47.38-.85.85-.85h1.8c.47 0 .85.38.85.85V4.5M6.4 7.1v4.1M9.6 7.1v4.1M4.65 4.5l.45 8.15c0 .47.38.85.85.85h4.1c.47 0 .85-.38.85-.85l.45-8.15" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"></path></svg>`;
+  }
+  if (name === "delete-permanent") {
+    return `<svg class="product-list-action-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6.25 4.5V3.35c0-.47.38-.85.85-.85h1.8c.47 0 .85.38.85.85V4.5M6.4 7.1v4.1M9.6 7.1v4.1M4.65 4.5l.45 8.15c0 .47.38.85.85.85h4.1c.47 0 .85-.38.85-.85l.45-8.15" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"></path><path d="M8 2.5v1.2M3.2 3.8 2.5 3.1M12.8 3.8l-.7.7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"></path></svg>`;
+  }
+  if (name === "more") {
+    return `<svg class="product-list-action-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.1" fill="currentColor"></circle><circle cx="8" cy="8" r="1.1" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.1" fill="currentColor"></circle></svg>`;
+  }
+  return `<svg class="product-list-action-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.2 4.8A4 4 0 1 0 4.8 11.2" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"></path><path d="M8 3.5V2M11.5 8H13M8 12.5V14M4.5 8H3" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"></path></svg>`;
+}
+
+function formatPriceInputValue(value) {
+  const number = toNumber(value);
+  return Number.isFinite(number) ? String(number) : "0";
+}
+
+async function handleProductPriceInputBlur(input) {
+  const id = input.dataset.id;
+  const field = input.dataset.priceField;
+  const product = getProduct(id);
+  if (!product || !field) return;
+
+  const nextValue = input.value.trim() === "" ? null : toNumber(input.value);
+  const previousRaw = input.dataset.previousValue ?? input.value;
+  const previousValue = previousRaw === "" ? null : toNumber(previousRaw);
+  if (nextValue !== null && (!Number.isFinite(nextValue) || nextValue < 0)) {
+    input.value = previousRaw;
+    return showToast("El precio debe ser un número mayor o igual a 0");
+  }
+  if (nextValue === previousValue) return;
+
+  const payload = {};
+  if (field === "sale") {
+    payload.regularPrice = nextValue;
+    payload.price = nextValue;
+  } else {
+    if (product.promotionalPriceSupported === false) {
+      input.value = previousRaw;
+      return showToast("Precio promocional requiere columna precio_promocional en Supabase");
+    }
+    payload.discountPrice = input.value.trim() === "" ? null : nextValue;
+    payload.promotionalPrice = payload.discountPrice;
+  }
+
+  try {
+    await saveProductToApi({ id: product.id, ...payload });
+    const index = state.products.findIndex((item) => item.id === product.id);
+    if (index >= 0) {
+      const updated = { ...state.products[index] };
+      if (field === "sale") {
+        updated.regularPrice = nextValue;
+        updated.price = nextValue;
+      } else {
+        updated.discountPrice = payload.discountPrice;
+        updated.promotionalPrice = payload.promotionalPrice;
+      }
+      state.products[index] = updated;
+    }
+    showToast("Precio actualizado");
+  } catch (error) {
+    input.value = previousRaw;
+    showToast(error.message || "No se pudo actualizar el precio");
+  }
+}
+
+async function duplicateProduct(id) {
+  const product = getProduct(id);
+  if (!product) return;
+
+  const copy = {
+    sku: product.sku ? `${product.sku}-COPY` : "",
+    name: `${product.name} (copia)`,
+    laboratory: product.laboratory || product.laboratorio || "",
+    category: product.category,
+    description: product.description,
+    substance: product.substance,
+    expiresAt: product.expiresAt,
+    stock: product.stock,
+    minStock: product.minStock,
+    maxStock: product.maxStock,
+    cost: product.cost,
+    regularPrice: product.regularPrice ?? product.price,
+    price: product.regularPrice ?? product.price,
+    discountPrice: product.discountPrice ?? null,
+    imageUrl: product.imageUrl,
+    type: product.type,
+    classificationId: product.classificationId || "",
+    requiresRecipe: product.requiresRecipe,
+    iva: product.iva,
+    status: "Activo",
+  };
+
+  try {
+    await saveProductToApi(copy);
+    await loadProducts();
+    showToast("Producto duplicado");
+  } catch (error) {
+    showToast(error.message || "No se pudo duplicar producto");
+  }
 }
 
 function renderInventory() {
   const activeProducts = state.products.filter((product) => product.status === "Activo");
   const lowStockProducts = activeProducts.filter((product) => product.stock > 0 && product.stock <= product.minStock);
-  const expiringProducts = activeProducts.filter(isInventoryExpiringSoon);
-  const inventoryValue = activeProducts.reduce((total, product) => total + product.stock * toNumber(product.cost), 0);
+  const summary = getExpirationSummary(activeProducts);
+  const expiringCount = summary.red + summary.orange + summary.yellow + summary.green + summary.blue;
+  const inventoryValue = activeProducts.reduce((total, product) => {
+    const lots = getActiveProductLots(product);
+    if (lots.length) {
+      return total + lots.reduce((sum, lot) => sum + lot.stock * toNumber(lot.cost), 0);
+    }
+    return total + product.stock * toNumber(product.cost);
+  }, 0);
 
-  elements.inventoryActiveProducts.textContent = String(activeProducts.length);
-  elements.inventoryLowStock.textContent = String(lowStockProducts.length);
-  elements.inventoryExpiringSoon.textContent = String(expiringProducts.length);
-  elements.inventoryTotalValue.textContent = currency.format(inventoryValue);
+  if (elements.inventoryActiveProducts) elements.inventoryActiveProducts.textContent = String(activeProducts.length);
+  if (elements.inventoryLowStock) elements.inventoryLowStock.textContent = String(lowStockProducts.length);
+  if (elements.inventoryExpiringSoon) elements.inventoryExpiringSoon.textContent = String(expiringCount);
+  if (elements.inventoryTotalValue) elements.inventoryTotalValue.textContent = currency.format(inventoryValue);
+
+  renderExpirationAlertsSummary(elements.inventoryExpirationAlerts, activeProducts, { clickable: true });
+  renderInventoryTable();
+}
+
+function renderInventoryTable() {
+  if (!elements.inventoryTable) return;
 
   const categories = [...new Set(state.products.map((product) => product.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const laboratories = [...new Set(state.products.map(inventoryLaboratory).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
-  updateInventoryFilterOptions(elements.inventoryCategoryFilter, categories, "Todas", state.inventoryCategory);
-  updateInventoryFilterOptions(elements.inventoryLaboratoryFilter, laboratories, "Todos", state.inventoryLaboratory);
+  if (elements.inventoryCategoryFilter) updateInventoryFilterOptions(elements.inventoryCategoryFilter, categories, "Todas", state.inventoryCategory);
+  if (elements.inventoryLaboratoryFilter) updateInventoryFilterOptions(elements.inventoryLaboratoryFilter, laboratories, "Todos", state.inventoryLaboratory);
 
   const products = state.products.filter((product) => {
     const status = inventoryStatus(product).label;
@@ -5807,24 +6800,28 @@ function renderInventory() {
     ? products
         .map((product) => {
           const status = inventoryStatus(product);
+          const laboratory = inventoryLaboratory(product);
+          const activeLotCount = getActiveProductLots(product).filter((lot) => lot.stock > 0).length;
+          const urgentStatus = getProductUrgentExpirationStatus(product);
           return `
-            <tr>
-              <td><div class="inventory-product-cell">${productImageMarkup(product)}<div><strong>${escapeHTML(product.name)}</strong><span>${escapeHTML(product.sku || "Sin SKU")}</span></div></div></td>
-              <td>${escapeHTML(inventoryLaboratory(product))}</td>
-              <td>${escapeHTML(product.category || "Sin categoría")}</td>
-              <td>${escapeHTML(product.presentation || product.presentacion || "No registrada")}</td>
-              <td>${escapeHTML(product.lot || product.lote || "Sin lote")}</td>
-              <td>${escapeHTML(product.expiresAt || "Sin fecha")}</td>
+            <tr class="${isSanitaryExpirationLevel(urgentStatus.level) ? `inventory-row ${urgentStatus.className}` : ""}">
+              <td><div class="inventory-product-cell">${productImageMarkup(product)}<div><strong>${escapeHTML(product.name)}</strong></div></div></td>
+              <td>${escapeHTML(product.sku || "Sin SKU")}</td>
+              <td>${escapeHTML(laboratory === "No registrado" ? "—" : laboratory)}</td>
+              <td><span class="catalog-tag is-category">${escapeHTML(product.category || "Sin categoría")}</span></td>
               <td><strong>${toInteger(product.stock)}</strong></td>
-              <td>${toInteger(product.minStock)}</td>
+              <td><span class="product-lot-count">${activeLotCount}</span></td>
+              <td>${expirationCellMarkup(product.expiresAt)}</td>
               <td><span class="inventory-status ${status.className}">${status.icon} ${escapeHTML(status.label)}</span></td>
-              <td><strong>${currency.format(product.price)}</strong></td>
-              <td><button class="ghost-button small" type="button" data-action="view-inventory-product" data-id="${product.id}">Ver detalle</button></td>
+              <td class="table-actions">
+                <button class="ghost-button small" type="button" data-action="edit-product" data-id="${product.id}">Editar</button>
+                <button class="ghost-button small" type="button" data-action="view-inventory-product" data-id="${product.id}">Ver</button>
+              </td>
             </tr>
           `;
         })
         .join("")
-    : tableEmpty(11, state.productLoadError || "No hay productos que coincidan con los filtros.");
+    : tableEmpty(9, state.productLoadError || "No hay productos que coincidan con los filtros.");
 }
 
 function updateInventoryFilterOptions(select, values, emptyLabel, selectedValue) {
@@ -5839,10 +6836,8 @@ function inventoryLaboratory(product) {
 }
 
 function isInventoryExpiringSoon(product) {
-  if (!product.expiresAt) return false;
-  const expiresAt = new Date(`${product.expiresAt}T23:59:59`);
-  const daysUntilExpiration = (expiresAt.getTime() - Date.now()) / 86400000;
-  return Number.isFinite(daysUntilExpiration) && daysUntilExpiration <= 90;
+  const status = getProductUrgentExpirationStatus(product);
+  return isSanitaryExpirationLevel(status.level);
 }
 
 function inventoryStatus(product) {
@@ -5856,36 +6851,47 @@ function openInventoryDetail(id) {
   const product = getProduct(id);
   if (!product) return;
   const status = inventoryStatus(product);
+  const urgentStatus = getProductUrgentExpirationStatus(product);
   elements.inventoryDetailTitle.textContent = product.name;
   elements.inventoryDetailContent.innerHTML = `
     <div class="inventory-detail-hero">
       ${productImageMarkup(product)}
-      <div><span class="inventory-status ${status.className}">${status.icon} ${escapeHTML(status.label)}</span><p>${escapeHTML(product.description || "Sin descripción registrada")}</p></div>
+      <div>
+        <span class="inventory-status ${status.className}">${status.icon} ${escapeHTML(status.label)}</span>
+        <div class="product-list-expiry">${expirationBadgeMarkup(urgentStatus.expiresAt || product.expiresAt)}</div>
+        <p>${escapeHTML(product.description || "Sin descripción registrada")}</p>
+      </div>
     </div>
     <dl class="inventory-detail-grid">
       ${inventoryDetailItem("Nombre comercial", product.name)}
       ${inventoryDetailItem("Sustancia activa", product.substance || "No registrada")}
       ${inventoryDetailItem("Laboratorio", inventoryLaboratory(product))}
       ${inventoryDetailItem("Categoría", product.category || "Sin categoría")}
+      ${inventoryDetailItem("Clasificación", product.type || "Sin clasificación")}
       ${inventoryDetailItem("Presentación", product.presentation || product.presentacion || "No registrada")}
-      ${inventoryDetailItem("Concentración", product.concentration || product.concentracion || "No registrada")}
       ${inventoryDetailItem("Código de barras / SKU", product.sku || "No registrado")}
-      ${inventoryDetailItem("Lote", product.lot || product.lote || "Sin lote")}
-      ${inventoryDetailItem("Caducidad", product.expiresAt || "Sin fecha")}
-      ${inventoryDetailItem("Costo compra", currency.format(product.cost || 0))}
+      ${inventoryDetailItem("Stock total", String(toInteger(product.stock)))}
+      ${inventoryDetailItem("Próxima caducidad", expirationDetailMarkup(product.expiresAt), { html: true })}
       ${inventoryDetailItem("Precio venta", currency.format(product.price || 0))}
-      ${inventoryDetailItem("Stock actual", String(toInteger(product.stock)))}
-      ${inventoryDetailItem("Stock mínimo", String(toInteger(product.minStock)))}
       ${inventoryDetailItem("Requiere receta", product.requiresRecipe ? "Sí" : "No")}
-      ${inventoryDetailItem("Medicamento controlado", product.isControlled ? "Sí" : "No registrado")}
-      ${inventoryDetailItem("Refrigeración", product.requiresRefrigeration ? "Sí" : "No registrado")}
     </dl>
+    <section class="product-lots-detail-section">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Inventario</p>
+          <h3>Lotes del producto</h3>
+        </div>
+        <button class="ghost-button small" type="button" data-action="add-product-lot" data-id="${product.id}">Agregar Lote</button>
+      </div>
+      ${renderProductLotsTableMarkup(product, { showActions: true })}
+    </section>
   `;
   elements.inventoryDetailDialog.showModal();
 }
 
-function inventoryDetailItem(label, value) {
-  return `<div><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(value)}</dd></div>`;
+function inventoryDetailItem(label, value, options = {}) {
+  const content = options.html ? value : escapeHTML(value);
+  return `<div><dt>${escapeHTML(label)}</dt><dd>${content}</dd></div>`;
 }
 
 function productImageMarkup(product) {
@@ -5945,14 +6951,22 @@ async function saveProduct(event) {
   const sku = elements.productSku.value.trim();
   const id = elements.productId.value;
   const cost = toNumber(elements.productCost.value);
-  const regularPrice = toNumber(elements.productRegularPrice.value);
-  const price = toNumber(elements.productPrice.value);
-  const stock = toInteger(elements.productStock.value);
   const minStock = toInteger(elements.productMinStock.value);
   const maxStock = toInteger(elements.productMaxStock.value);
-  if ([cost, regularPrice, price, stock, minStock, maxStock].some((value) => value < 0)) return showToast("No se permiten valores negativos");
+  const firstLotCode = elements.productFirstLotCode?.value.trim() || "";
+  const firstLotStock = toInteger(elements.productFirstLotStock?.value);
+  const firstLotExpires = elements.productFirstLotExpires?.value || "";
+
+  const listPrice = toNumber(elements.productRegularPrice.value);
+  const promoRaw = elements.productPrice.value.trim();
+  const promoPrice = promoRaw === "" ? null : toNumber(elements.productPrice.value);
+
+  if ([cost, listPrice, minStock, maxStock].some((value) => value < 0)) return showToast("No se permiten valores negativos");
+  if (promoPrice != null && promoPrice < 0) return showToast("No se permiten valores negativos");
   if (minStock > maxStock) return showToast("El minimo no puede superar el maximo");
-  if (stock > maxStock) return showToast("El stock no puede superar el maximo");
+  if (!id && firstLotStock < 0) return showToast("El stock inicial no puede ser negativo");
+  if (!id && firstLotCode && !firstLotExpires) return showToast("Indica la caducidad del lote inicial");
+  if (!id && firstLotExpires && !firstLotCode) return showToast("Indica el número del lote inicial");
 
   const imageUrl = elements.productImageUrl.value.trim();
   if (productImagePendingFile && !imageUrl) {
@@ -5971,17 +6985,17 @@ async function saveProduct(event) {
     id,
     sku,
     name: elements.productName.value.trim(),
+    laboratory: elements.productLaboratory.value.trim(),
     category: elements.productCategory.value.trim(),
     description: elements.productDescription.value.trim(),
     substance: elements.productSubstance.value.trim(),
-    expiresAt: elements.productExpiresAt.value,
-    stock,
     minStock,
     maxStock,
     cost,
-    regularPrice: regularPrice || price,
-    price,
-    discountPrice: price,
+    regularPrice: listPrice,
+    price: listPrice,
+    discountPrice: promoPrice,
+    promotionalPrice: promoPrice,
     imageUrl: elements.productImageUrl.value.trim(),
     type: elements.productType.value,
     classificationId: elements.productType.selectedOptions[0]?.dataset?.id || "",
@@ -5990,13 +7004,21 @@ async function saveProduct(event) {
     status: elements.productStatus.value,
   };
 
-  if (!product.category) return showToast("Selecciona una categoria");
-  if (!product.type) return showToast("Selecciona una clasificacion");
+  if (!id) {
+    product.stock = firstLotCode ? firstLotStock : 0;
+    product.expiresAt = firstLotExpires;
+    product.lot = firstLotCode;
+    product.lote = firstLotCode;
+  }
+
+  if (!product.category) return showToast("Selecciona una categoría");
+  if (!product.type) return showToast("Selecciona una clasificación");
+  if (!listPrice && listPrice !== 0) return showToast("Indica el precio lista");
 
   try {
     await saveProductToApi(product);
     await loadProducts();
-    clearProductForm();
+    closeProductForm();
     showToast("Producto guardado");
   } catch (error) {
     showToast(error.message || "No se pudo guardar producto en Supabase");
@@ -6011,6 +7033,7 @@ function editProduct(id) {
   elements.productId.value = product.id;
   elements.productSku.value = product.sku || "";
   elements.productName.value = product.name;
+  elements.productLaboratory.value = product.laboratory || product.laboratorio || "";
   ensureSelectOption(elements.productCategory, product.category);
   elements.productCategory.value = product.category;
   elements.productSubstance.value = product.substance || "";
@@ -6019,33 +7042,282 @@ function editProduct(id) {
   updateProductImagePreview();
   updateProductImageStatus("");
   elements.productCost.value = product.cost || 0;
-  elements.productRegularPrice.value = product.regularPrice || product.price;
-  elements.productPrice.value = product.price;
-  elements.productStock.value = product.stock;
+  const listPrice = toNumber(product.regularPrice ?? product.price);
+  const storedPromo = getProductStoredPromotionalPrice(product);
+  elements.productRegularPrice.value = listPrice;
+  elements.productPrice.value = storedPromo != null ? storedPromo : listPrice;
+  if (elements.productPromoPriceNotice) {
+    elements.productPromoPriceNotice.hidden = product.promotionalPriceSupported !== false;
+  }
   elements.productMinStock.value = product.minStock;
   elements.productMaxStock.value = product.maxStock;
-  elements.productExpiresAt.value = product.expiresAt || "";
   ensureSelectOption(elements.productType, product.type);
   elements.productType.value = product.type;
   elements.productIva.value = product.iva ? "Si" : "No";
   elements.productStatus.value = product.status;
   elements.productDescription.value = product.description;
+  renderProductLotsPanel(product);
   updateProductProfitSummary();
-  showView("productos");
+  showView("product-form");
 }
 
-async function toggleProduct(id) {
+async function refreshProductsAfterAction(message) {
+  await loadProducts();
+  if (message) showToast(message);
+}
+
+function openProductActionDialog({ title, message, confirmLabel, confirmClass = "primary-button" }) {
+  return new Promise((resolve) => {
+    if (!elements.productActionDialog) {
+      resolve(window.confirm(`${title}\n\n${message}`));
+      return;
+    }
+    productActionDialogResolver = resolve;
+    elements.productActionDialogTitle.textContent = title;
+    elements.productActionDialogMessage.textContent = message;
+    elements.productActionDialogConfirm.textContent = confirmLabel;
+    elements.productActionDialogConfirm.className = confirmClass;
+    elements.productActionDialog.showModal();
+  });
+}
+
+function handleProductActionDialogClose() {
+  const confirmed = elements.productActionDialog?.returnValue === "confirm";
+  productActionDialogResolver?.(confirmed);
+  productActionDialogResolver = null;
+}
+
+function openProductPermanentDeleteDialog(product) {
+  return new Promise((resolve) => {
+    if (!elements.productPermanentDeleteDialog) {
+      resolve(false);
+      return;
+    }
+    productPermanentDeleteResolver = resolve;
+    elements.productPermanentDeleteTitle.textContent = `¿Eliminar definitivamente "${product.name}"?`;
+    elements.productPermanentDeleteMessage.textContent =
+      "Esta acción borrará el producto físicamente de Supabase. No se podrá recuperar desde MASTER CRM. Úsalo solo para productos de prueba o registros creados por error.";
+    elements.productPermanentDeleteConfirmInput.value = "";
+    elements.productPermanentDeleteError.hidden = true;
+    elements.productPermanentDeleteError.textContent = "";
+    elements.productPermanentDeleteDialog.showModal();
+    elements.productPermanentDeleteConfirmInput.focus();
+  });
+}
+
+function handleProductPermanentDeleteSubmit(event) {
+  event.preventDefault();
+  if (elements.productPermanentDeleteConfirmInput.value.trim() !== "ELIMINAR") {
+    elements.productPermanentDeleteError.hidden = false;
+    elements.productPermanentDeleteError.textContent = "Debes escribir ELIMINAR para confirmar.";
+    elements.productPermanentDeleteConfirmInput.focus();
+    return;
+  }
+  const resolve = productPermanentDeleteResolver;
+  productPermanentDeleteResolver = null;
+  elements.productPermanentDeleteDialog.close();
+  resolve?.(true);
+}
+
+function closeAllProductActionMenus() {
+  hideProductActionTooltip();
+  document.querySelectorAll(".product-list-action-menu-panel").forEach((panel) => {
+    panel.hidden = true;
+    panel.classList.remove("is-floating");
+    panel.style.position = "";
+    panel.style.top = "";
+    panel.style.left = "";
+    panel.style.right = "";
+    panel.style.zIndex = "";
+    panel.style.visibility = "";
+    if (panel._menuHost && panel.parentElement === document.body) {
+      panel._menuHost.appendChild(panel);
+    }
+  });
+}
+
+function positionProductActionMenu(button, panel) {
+  const viewportPadding = 8;
+  const gap = 6;
+  panel.classList.add("is-floating");
+  panel.hidden = false;
+  panel.style.visibility = "hidden";
+  panel.style.position = "fixed";
+  panel.style.zIndex = "10050";
+
+  const menuWidth = panel.offsetWidth || 252;
+  const menuHeight = panel.offsetHeight || 132;
+  const rect = button.getBoundingClientRect();
+
+  let left = rect.right - menuWidth;
+  if (left < viewportPadding) left = viewportPadding;
+  if (left + menuWidth > window.innerWidth - viewportPadding) {
+    left = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
+  }
+
+  let top = rect.bottom + gap;
+  if (top + menuHeight > window.innerHeight - viewportPadding) {
+    top = rect.top - menuHeight - gap;
+  }
+  if (top < viewportPadding) top = viewportPadding;
+
+  panel.style.top = `${top}px`;
+  panel.style.left = `${left}px`;
+  panel.style.right = "auto";
+  panel.style.visibility = "";
+}
+
+let productActionTooltipEl = null;
+let productActionTooltipButton = null;
+
+function ensureProductActionTooltip() {
+  if (!productActionTooltipEl) {
+    productActionTooltipEl = document.createElement("div");
+    productActionTooltipEl.className = "product-action-floating-tooltip";
+    productActionTooltipEl.hidden = true;
+    document.body.appendChild(productActionTooltipEl);
+  }
+  return productActionTooltipEl;
+}
+
+function hideProductActionTooltip() {
+  if (productActionTooltipEl) productActionTooltipEl.hidden = true;
+  productActionTooltipButton = null;
+}
+
+function handleProductActionTooltipOver(event) {
+  const button = event.target.closest(".product-list-action.has-tooltip");
+  if (!button || !elements.productTable?.contains(button)) return;
+  if (button.closest(".product-list-action-menu-panel")) return;
+  showProductActionTooltip(button);
+}
+
+function handleProductActionTooltipOut(event) {
+  const button = event.target.closest(".product-list-action.has-tooltip");
+  if (!button || button !== productActionTooltipButton) return;
+  const next = event.relatedTarget;
+  if (next && button.contains(next)) return;
+  hideProductActionTooltip();
+}
+
+function showProductActionTooltip(button) {
+  const text = button.getAttribute("data-tooltip");
+  if (!text) return;
+  const tooltip = ensureProductActionTooltip();
+  productActionTooltipButton = button;
+  tooltip.textContent = text;
+  tooltip.hidden = false;
+  tooltip.style.visibility = "hidden";
+  const padding = 8;
+  const rect = button.getBoundingClientRect();
+  const isMenu = button.classList.contains("is-menu");
+  const tipRect = tooltip.getBoundingClientRect();
+  let top;
+  let left;
+
+  if (isMenu) {
+    top = rect.top + rect.height / 2 - tipRect.height / 2;
+    left = rect.left - tipRect.width - 8;
+    if (left < padding) left = rect.right + 8;
+    if (top < padding) top = padding;
+    if (top + tipRect.height > window.innerHeight - padding) {
+      top = window.innerHeight - tipRect.height - padding;
+    }
+  } else {
+    top = rect.top - tipRect.height - 8;
+    left = rect.left + rect.width / 2 - tipRect.width / 2;
+    if (left < padding) left = padding;
+    if (left + tipRect.width > window.innerWidth - padding) {
+      left = window.innerWidth - tipRect.width - padding;
+    }
+    if (top < padding) top = rect.bottom + 8;
+  }
+
+  tooltip.style.top = `${top}px`;
+  tooltip.style.left = `${left}px`;
+  tooltip.style.visibility = "";
+}
+
+function toggleProductActionMenu(button) {
+  const host = button.closest(".product-list-action-menu");
+  const panel = host?.querySelector(".product-list-action-menu-panel");
+  if (!panel || !host) return;
+  const willOpen = panel.hidden;
+  closeAllProductActionMenus();
+  if (!willOpen) return;
+
+  hideProductActionTooltip();
+  panel._menuHost = host;
+  panel.hidden = false;
+  document.body.appendChild(panel);
+  positionProductActionMenu(button, panel);
+}
+
+async function pauseProduct(id) {
+  const product = getProduct(id);
+  if (!product || product.status !== "Activo") return;
+  const confirmed = await openProductActionDialog({
+    title: `¿Pausar "${product.name}"?`,
+    message:
+      "El producto dejará de mostrarse como activo, pero podrás reactivarlo después.",
+    confirmLabel: "Pausar producto",
+  });
+  if (!confirmed) return;
+  try {
+    await saveProductToApi({ ...product, status: "Pausado" });
+    await refreshProductsAfterAction("Producto pausado");
+  } catch (error) {
+    showToast(error.message || "No se pudo pausar producto");
+  }
+}
+
+async function activateProduct(id) {
+  const product = getProduct(id);
+  if (!product || product.status === "Activo") return;
+  const confirmed = await openProductActionDialog({
+    title: `¿Activar "${product.name}"?`,
+    message: "El producto volverá a mostrarse como activo en el catálogo.",
+    confirmLabel: "Activar producto",
+    confirmClass: "primary-button is-success",
+  });
+  if (!confirmed) return;
+  try {
+    await saveProductToApi({ ...product, status: "Activo" });
+    await refreshProductsAfterAction("Producto activado");
+  } catch (error) {
+    showToast(error.message || "No se pudo activar producto");
+  }
+}
+
+async function deleteProduct(id) {
   const product = getProduct(id);
   if (!product) return;
+  const confirmed = await openProductActionDialog({
+    title: `¿Eliminar "${product.name}"?`,
+    message:
+      "El producto se dará de baja del catálogo y dejará de aparecer en la lista activa. No se contabilizará como producto disponible. Esta acción conserva el registro administrativo para trazabilidad.",
+    confirmLabel: "Eliminar producto",
+    confirmClass: "primary-button is-danger",
+  });
+  if (!confirmed) return;
   try {
-    if (product.status === "Activo") {
-      await deactivateProductInApi(id);
-    } else {
-      await saveProductToApi({ ...product, status: "Activo" });
-    }
-    await loadProducts();
+    await archiveProductInApi(id);
+    await refreshProductsAfterAction("Producto dado de baja del catálogo");
   } catch (error) {
-    showToast(error.message || "No se pudo actualizar producto en Supabase");
+    showToast(error.message || "No se pudo eliminar producto");
+  }
+}
+
+async function permanentDeleteProduct(id) {
+  const product = getProduct(id);
+  if (!product) return;
+  const confirmed = await openProductPermanentDeleteDialog(product);
+  if (!confirmed) return;
+  try {
+    await permanentDeleteProductInApi(id);
+    await refreshProductsAfterAction("Producto eliminado definitivamente");
+  } catch (error) {
+    showToast(error.message || "No se pudo eliminar definitivamente el producto");
   }
 }
 
@@ -6055,8 +7327,12 @@ function clearProductForm() {
   elements.productFormTitle.textContent = "Nuevo producto";
   elements.productMinStock.value = 5;
   elements.productMaxStock.value = 50;
+  elements.productFirstLotStock.value = "0";
+  if (elements.productPromoPriceNotice) elements.productPromoPriceNotice.hidden = true;
   clearProductImagePendingFile();
   updateProductProfitSummary();
+  renderProductLotsPanel(null);
+  updateProductLotFormPreview();
   updateProductImagePreview();
   updateProductImageStatus("");
 }
@@ -6072,6 +7348,13 @@ function clearProductImagePendingFile(options = {}) {
 
 function handleProductImageUploadClick() {
   elements.productImageFile.click();
+}
+
+function handleProductImageClearClick() {
+  elements.productImageUrl.value = "";
+  clearProductImagePendingFile();
+  updateProductImagePreview();
+  updateProductImageStatus("Imagen quitada. Guarda el producto para persistir el cambio.");
 }
 
 function handleProductImageFileChange(event) {
@@ -6132,6 +7415,12 @@ function isValidProductImageUrl(value) {
   }
 }
 
+function updateProductImageClearButton() {
+  if (!elements.productImageClearButton) return;
+  const hasImage = Boolean(productImageObjectUrl || productImagePendingFile || isValidProductImageUrl(elements.productImageUrl.value));
+  elements.productImageClearButton.hidden = !hasImage;
+}
+
 function updateProductImagePreview() {
   if (!elements.productImagePreview || !elements.productImagePreviewImg) return;
 
@@ -6152,6 +7441,7 @@ function updateProductImagePreview() {
     if (elements.productImagePreviewImg.getAttribute("src") !== previewSrc) {
       elements.productImagePreviewImg.src = previewSrc;
     }
+    updateProductImageClearButton();
     return;
   }
 
@@ -6162,40 +7452,112 @@ function updateProductImagePreview() {
     empty.hidden = false;
     empty.textContent = "Sin imagen";
   }
+  updateProductImageClearButton();
 }
 
 function updateProductProfitSummary() {
   if (!elements.productProfitSummary) return;
 
-  const costRaw = elements.productCost.value.trim();
-  const cost = toNumber(costRaw);
-  const price = toNumber(elements.productPrice.value);
-  const hasCost = costRaw !== "" && cost > 0;
+  const productId = elements.productId?.value;
+  const product = productId ? getProduct(productId) : null;
+  const listPrice = toNumber(elements.productRegularPrice.value);
+  const promoPrice = toNumber(elements.productPrice.value);
+  const metrics = getProductCommercialMetrics(product, {
+    listPrice,
+    promoPrice,
+    fallbackCost: toNumber(elements.productCost.value),
+    fallbackStock: toInteger(elements.productFirstLotStock?.value),
+  });
 
   elements.productProfitSummary.classList.remove("is-loss", "is-profit", "is-neutral");
 
-  if (!hasCost) {
+  if (elements.productProfitStockTotal) elements.productProfitStockTotal.textContent = String(metrics.stockTotal);
+  if (elements.productProfitWeightedCost) {
+    elements.productProfitWeightedCost.textContent =
+      metrics.stockTotal > 0 ? currency.format(metrics.weightedAvgCost) : "—";
+  }
+  if (elements.productProfitInventoryValue) {
+    elements.productProfitInventoryValue.textContent = currency.format(metrics.inventoryCostValue);
+  }
+
+  if (!metrics.stockTotal || metrics.weightedAvgCost <= 0) {
     elements.productProfitAmount.textContent = "—";
-    elements.productProfitPercent.textContent = "Sin costo registrado";
-    elements.productProfitNote.textContent = "";
+    elements.productProfitPercent.textContent = "Sin costo por lote";
+    elements.productProfitNote.textContent = metrics.stockTotal
+      ? "Registra el costo en cada lote activo para calcular ganancia ponderada."
+      : "Agrega lotes con stock para calcular ganancia ponderada.";
+    if (elements.productProfitPromoBlock) elements.productProfitPromoBlock.hidden = true;
     elements.productProfitSummary.classList.add("is-neutral");
     return;
   }
 
-  const profit = price - cost;
-  const marginPercent = (profit / cost) * 100;
+  elements.productProfitAmount.textContent = currency.format(metrics.listProfitTotal);
+  elements.productProfitPercent.textContent = `${metrics.marginPercent.toFixed(1)}%`;
 
-  elements.productProfitAmount.textContent = currency.format(profit);
-  elements.productProfitPercent.textContent = `${marginPercent.toFixed(1)}%`;
+  if (elements.productProfitPromoBlock && elements.productProfitPromoAmount) {
+    if (metrics.hasPromo) {
+      elements.productProfitPromoBlock.hidden = false;
+      elements.productProfitPromoAmount.textContent = currency.format(metrics.promoProfitTotal);
+    } else {
+      elements.productProfitPromoBlock.hidden = true;
+    }
+  }
 
-  if (price < cost) {
+  if (metrics.listProfitTotal < 0 || (metrics.hasPromo && metrics.promoProfitTotal < 0)) {
     elements.productProfitSummary.classList.add("is-loss");
-    elements.productProfitNote.textContent = "El precio de venta es menor que el costo (perdida).";
+    elements.productProfitNote.textContent = "Hay precios por debajo del costo ponderado de los lotes.";
     return;
   }
 
-  elements.productProfitSummary.classList.add("is-profit");
-  elements.productProfitNote.textContent = profit === 0 ? "Sin ganancia sobre el costo." : "";
+  elements.productProfitSummary.classList.add(metrics.listProfitTotal > 0 ? "is-profit" : "is-neutral");
+  elements.productProfitNote.textContent =
+    metrics.stockTotal > 1 || getActiveProductLots(product || {}).length > 1
+      ? "Cálculo ponderado por stock de cada lote activo."
+      : "";
+}
+
+function getProductCommercialMetrics(product, options = {}) {
+  const listPrice = toNumber(options.listPrice ?? product?.regularPrice ?? product?.price);
+  const promoInput = options.promoPrice ?? product?.discountPrice;
+  const promoPrice = promoInput == null || promoInput === "" ? listPrice : toNumber(promoInput);
+  const hasPromo = promoPrice !== listPrice;
+
+  let lots = getActiveProductLots(product || {}).filter((lot) => lot.stock > 0);
+  if (!lots.length) {
+    const fallbackStock = toInteger(options.fallbackStock ?? product?.stock);
+    const fallbackCost = toNumber(options.fallbackCost ?? product?.cost);
+    if (fallbackStock > 0) {
+      lots = [{ stock: fallbackStock, cost: fallbackCost }];
+    }
+  }
+
+  let stockTotal = 0;
+  let inventoryCostValue = 0;
+  let listProfitTotal = 0;
+  let promoProfitTotal = 0;
+
+  lots.forEach((lot) => {
+    const stock = toInteger(lot.stock);
+    const cost = toNumber(lot.cost);
+    stockTotal += stock;
+    inventoryCostValue += cost * stock;
+    listProfitTotal += (listPrice - cost) * stock;
+    if (hasPromo) promoProfitTotal += (promoPrice - cost) * stock;
+  });
+
+  const weightedAvgCost = stockTotal > 0 ? inventoryCostValue / stockTotal : 0;
+  const marginPercent =
+    weightedAvgCost > 0 && listPrice > 0 ? ((listPrice - weightedAvgCost) / weightedAvgCost) * 100 : 0;
+
+  return {
+    stockTotal,
+    inventoryCostValue,
+    weightedAvgCost,
+    listProfitTotal,
+    promoProfitTotal,
+    hasPromo,
+    marginPercent,
+  };
 }
 
 function renderSales() {
@@ -6305,6 +7667,411 @@ function getCustomer(id) {
 
 function getOrder(id) {
   return state.orders.find((order) => order.id === id);
+}
+
+function getDaysUntilExpiration(expiresAt) {
+  if (!expiresAt) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = new Date(`${expiresAt}T00:00:00`);
+  if (Number.isNaN(expiry.getTime())) return null;
+  return Math.round((expiry.getTime() - today.getTime()) / 86400000);
+}
+
+async function saveProductLotToApi(payload) {
+  const response = await fetch(productLotsApiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo guardar lote");
+  return data;
+}
+
+async function updateProductLotInApi(lotId, payload) {
+  const response = await fetch(`${productLotsApiUrl}/${encodeURIComponent(lotId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo actualizar lote");
+  return data;
+}
+
+const EXPIRATION_URGENCY_RANK = {
+  red: 0,
+  orange: 1,
+  yellow: 2,
+  green: 3,
+  blue: 4,
+  safe: 5,
+  none: 6,
+};
+
+function getProductLots(product) {
+  if (!product) return [];
+  if (Array.isArray(product.lots) && product.lots.length) return product.lots;
+  if (product.expiresAt || product.lot || product.lote || toInteger(product.stock) > 0) {
+    return [
+      {
+        id: product.lotId || "",
+        lot: product.lot || product.lote || "Sin lote",
+        lote: product.lot || product.lote || "Sin lote",
+        stock: toInteger(product.stock),
+        expiresAt: product.expiresAt || "",
+        cost: toNumber(product.cost),
+        active: true,
+      },
+    ];
+  }
+  return [];
+}
+
+function getActiveProductLots(product) {
+  return getProductLots(product).filter((lot) => lot.active !== false);
+}
+
+function getVisibleProductLots(product) {
+  return getProductLots(product).filter((lot) => lot.active !== false && (lot.stock > 0 || lot.expiresAt));
+}
+
+function sortLotsFefo(lots) {
+  return [...lots]
+    .filter((lot) => lot.active !== false && lot.stock > 0 && getDaysUntilExpiration(lot.expiresAt) !== null)
+    .sort((left, right) => {
+      const leftDays = getDaysUntilExpiration(left.expiresAt);
+      const rightDays = getDaysUntilExpiration(right.expiresAt);
+      return leftDays - rightDays;
+    });
+}
+
+function planFefoDeduction(lots, quantity) {
+  const plan = [];
+  let remaining = Math.max(0, toInteger(quantity));
+  sortLotsFefo(lots).forEach((lot) => {
+    if (remaining <= 0) return;
+    const take = Math.min(lot.stock, remaining);
+    if (take > 0) {
+      plan.push({ lotId: lot.id, lot: lot.lot || lot.lote, quantity: take, expiresAt: lot.expiresAt });
+      remaining -= take;
+    }
+  });
+  return { plan, remaining };
+}
+
+function getProductUrgentExpirationStatus(product) {
+  const lots = getActiveProductLots(product).filter((lot) => lot.stock > 0);
+  let urgent = { level: "none", label: "Sin fecha", daysLeft: null, className: "is-expiration-none", expiresAt: "" };
+  lots.forEach((lot) => {
+    if (!lot.expiresAt) return;
+    const status = getExpirationStatus(lot.expiresAt);
+    if (
+      urgent.level === "none" ||
+      EXPIRATION_URGENCY_RANK[status.level] < EXPIRATION_URGENCY_RANK[urgent.level]
+    ) {
+      urgent = { ...status, expiresAt: lot.expiresAt };
+    }
+  });
+  if (urgent.level !== "none") return urgent;
+  const fallback = getExpirationStatus(product.expiresAt);
+  return { ...fallback, expiresAt: product.expiresAt || "" };
+}
+
+function renderProductLotsTableMarkup(product, options = {}) {
+  const lots = getProductLots(product);
+  const showActions = Boolean(options.showActions);
+  if (!lots.length) {
+    return `<p class="product-lots-empty">Sin lotes registrados para este producto.</p>`;
+  }
+
+  const sortedLots = [...lots].sort((left, right) => {
+    const leftDays = getDaysUntilExpiration(left.expiresAt);
+    const rightDays = getDaysUntilExpiration(right.expiresAt);
+    return compareExpirationDays(leftDays, rightDays);
+  });
+
+  return `
+    <div class="table-scroll product-lots-scroll">
+      <table class="product-lots-table">
+        <thead>
+          <tr>
+            <th>Lote</th>
+            <th>Stock</th>
+            <th>Caducidad</th>
+            <th>Semáforo</th>
+            <th>Costo</th>
+            ${showActions ? "<th>Acciones</th>" : ""}
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedLots
+            .map((lot) => {
+              const status = getExpirationStatus(lot.expiresAt);
+              const inactive = lot.active === false;
+              const depleted = lot.stock <= 0;
+              const rowClass = inactive ? "is-lot-inactive" : depleted ? "is-lot-depleted" : status.className;
+              const actions = showActions
+                ? `<td class="table-actions">
+                    <button class="ghost-button small" type="button" data-action="edit-product-lot" data-product-id="${product.id}" data-id="${lot.id}">Editar</button>
+                    <button class="ghost-button small ${inactive ? "is-success" : "is-danger"}" type="button" data-action="toggle-product-lot" data-product-id="${product.id}" data-id="${lot.id}">
+                      ${inactive ? "Activar" : "Pausar"}
+                    </button>
+                  </td>`
+                : "";
+              return `
+                <tr class="product-lot-row ${rowClass}">
+                  <td>${escapeHTML(lot.lot || lot.lote || "Sin lote")}${inactive ? ' <span class="product-lot-flag">Pausado</span>' : ""}${depleted && !inactive ? ' <span class="product-lot-flag">Agotado</span>' : ""}</td>
+                  <td>${toInteger(lot.stock)}</td>
+                  <td>${lot.expiresAt ? escapeHTML(lot.expiresAt) : "—"}</td>
+                  <td>${expirationBadgeMarkup(lot.expiresAt)}</td>
+                  <td>${currency.format(lot.cost || 0)}</td>
+                  ${actions}
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function compareExpirationDays(left, right) {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left - right;
+}
+
+function renderProductLotsPanel(product) {
+  const isEditing = Boolean(product?.id);
+  if (elements.productLotCreateFields) elements.productLotCreateFields.hidden = isEditing;
+  if (elements.productLotsManagePanel) elements.productLotsManagePanel.hidden = !isEditing;
+  if (!isEditing) {
+    updateProductLotFormPreview();
+    return;
+  }
+
+  const urgentStatus = getProductUrgentExpirationStatus(product);
+  const activeLots = getActiveProductLots(product).filter((lot) => lot.stock > 0);
+  if (elements.productLotStockTotal) elements.productLotStockTotal.textContent = String(toInteger(product.stock));
+  if (elements.productLotNextExpiry) {
+    elements.productLotNextExpiry.textContent = product.expiresAt || "—";
+  }
+  if (elements.productLotActiveCount) elements.productLotActiveCount.textContent = String(activeLots.length);
+  if (elements.productExpirationStatus) {
+    elements.productExpirationStatus.innerHTML = expirationBadgeMarkup(urgentStatus.expiresAt || product.expiresAt);
+    elements.productExpirationStatus.className = `product-expiration-status has-status ${urgentStatus.className}`;
+  }
+  if (elements.productLotsTable) {
+    const lots = getProductLots(product);
+    if (!lots.length) {
+      elements.productLotsTable.innerHTML = `<tr><td colspan="6">${escapeHTML("Sin lotes registrados.")}</td></tr>`;
+    } else {
+      const sortedLots = [...lots].sort((left, right) =>
+        compareExpirationDays(getDaysUntilExpiration(left.expiresAt), getDaysUntilExpiration(right.expiresAt)),
+      );
+      elements.productLotsTable.innerHTML = sortedLots
+        .map((lot) => {
+          const status = getExpirationStatus(lot.expiresAt);
+          const inactive = lot.active === false;
+          const depleted = lot.stock <= 0;
+          const rowClass = inactive ? "is-lot-inactive" : depleted ? "is-lot-depleted" : status.className;
+          return `
+            <tr class="product-lot-row ${rowClass}">
+              <td>${escapeHTML(lot.lot || lot.lote || "Sin lote")}${inactive ? ' <span class="product-lot-flag">Pausado</span>' : ""}${depleted && !inactive ? ' <span class="product-lot-flag">Agotado</span>' : ""}</td>
+              <td>${toInteger(lot.stock)}</td>
+              <td>${lot.expiresAt ? escapeHTML(lot.expiresAt) : "—"}</td>
+              <td>${expirationBadgeMarkup(lot.expiresAt)}</td>
+              <td>${currency.format(lot.cost || 0)}</td>
+              <td class="table-actions">
+                <button class="ghost-button small" type="button" data-action="edit-product-lot" data-product-id="${product.id}" data-id="${lot.id}">Editar</button>
+                <button class="ghost-button small ${inactive ? "is-success" : "is-danger"}" type="button" data-action="toggle-product-lot" data-product-id="${product.id}" data-id="${lot.id}">
+                  ${inactive ? "Activar" : "Pausar"}
+                </button>
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+  }
+  if (elements.openProductLotFormButton) {
+    elements.openProductLotFormButton.dataset.productId = product.id;
+  }
+  updateProductProfitSummary();
+}
+
+function updateProductLotFormPreview() {
+  if (!elements.productExpirationStatus) return;
+  const isEditing = Boolean(elements.productId?.value);
+  if (isEditing) return;
+  const expiresAt = elements.productFirstLotExpires?.value || "";
+  if (!expiresAt) {
+    elements.productExpirationStatus.innerHTML = expirationBadgeMarkup("");
+    elements.productExpirationStatus.className = "product-expiration-status has-status is-expiration-none";
+    return;
+  }
+  const status = getExpirationStatus(expiresAt);
+  elements.productExpirationStatus.innerHTML = expirationBadgeMarkup(expiresAt);
+  elements.productExpirationStatus.className = `product-expiration-status has-status ${status.className}`;
+}
+
+function openProductLotDialog(productId, lotId = "") {
+  const resolvedProductId = productId || elements.productId?.value || elements.openProductLotFormButton?.dataset.productId;
+  if (!resolvedProductId) return showToast("Guarda el producto antes de agregar lotes");
+
+  const product = getProduct(resolvedProductId);
+  const lot = lotId ? getProductLots(product).find((item) => item.id === lotId) : null;
+  elements.productLotProductId.value = resolvedProductId;
+  elements.productLotId.value = lot?.id || "";
+  elements.productLotCode.value = lot?.lot || lot?.lote || "";
+  elements.productLotStock.value = lot ? String(lot.stock) : "0";
+  elements.productLotExpiresAt.value = lot?.expiresAt || "";
+  elements.productLotCost.value = lot ? String(lot.cost || 0) : String(elements.productCost?.value || 0);
+  elements.productLotDialogTitle.textContent = lot ? "Editar lote" : "Nuevo lote";
+  elements.productLotDialog.showModal();
+}
+
+async function saveProductLot(event) {
+  event.preventDefault();
+  const productId = elements.productLotProductId.value;
+  const lotId = elements.productLotId.value;
+  const payload = {
+    productId,
+    lot: elements.productLotCode.value.trim(),
+    stock: toInteger(elements.productLotStock.value),
+    expiresAt: elements.productLotExpiresAt.value,
+    cost: toNumber(elements.productLotCost.value),
+  };
+
+  if (!payload.lot) return showToast("El número de lote es obligatorio");
+  if (!payload.expiresAt) return showToast("La caducidad del lote es obligatoria");
+  if (payload.stock < 0) return showToast("El stock no puede ser negativo");
+
+  try {
+    if (lotId) {
+      await updateProductLotInApi(lotId, payload);
+    } else {
+      await saveProductLotToApi(payload);
+    }
+    await loadProducts();
+    elements.productLotDialog.close();
+    const product = getProduct(productId);
+    if (elements.productId.value === productId) renderProductLotsPanel(product);
+    if (elements.inventoryDetailDialog.open) openInventoryDetail(productId);
+    showToast(lotId ? "Lote actualizado" : "Lote agregado");
+  } catch (error) {
+    showToast(error.message || "No se pudo guardar lote");
+  }
+}
+
+async function toggleProductLot(productId, lotId) {
+  const product = getProduct(productId);
+  const lot = getProductLots(product).find((item) => item.id === lotId);
+  if (!lot) return;
+  const nextActive = lot.active === false;
+  const actionLabel = nextActive ? "activar" : "pausar";
+  if (!window.confirm(`¿Deseas ${actionLabel} el lote "${lot.lot || lot.lote}"?`)) return;
+
+  try {
+    await updateProductLotInApi(lotId, { active: nextActive });
+    await loadProducts();
+    const refreshed = getProduct(productId);
+    if (elements.productId.value === productId) renderProductLotsPanel(refreshed);
+    if (elements.inventoryDetailDialog.open) openInventoryDetail(productId);
+    showToast(nextActive ? "Lote activado" : "Lote pausado");
+  } catch (error) {
+    showToast(error.message || "No se pudo actualizar lote");
+  }
+}
+
+function isSanitaryExpirationLevel(level) {
+  return level === "red" || level === "orange" || level === "yellow" || level === "green" || level === "blue";
+}
+
+function getExpirationStatus(expiresAt) {
+  const daysLeft = getDaysUntilExpiration(expiresAt);
+  if (daysLeft === null) {
+    return { level: "none", label: "Sin fecha", daysLeft: null, className: "is-expiration-none" };
+  }
+  if (daysLeft <= 0) {
+    return {
+      level: "red",
+      label: daysLeft < 0 ? "Vencido" : "Vence hoy",
+      daysLeft,
+      className: "is-expiration-red",
+    };
+  }
+  if (daysLeft <= 15) {
+    return { level: "orange", label: `${daysLeft} días`, daysLeft, className: "is-expiration-orange" };
+  }
+  if (daysLeft <= 30) {
+    return { level: "yellow", label: `${daysLeft} días`, daysLeft, className: "is-expiration-yellow" };
+  }
+  if (daysLeft <= 60) {
+    return { level: "green", label: `${daysLeft} días`, daysLeft, className: "is-expiration-green" };
+  }
+  if (daysLeft <= 90) {
+    return { level: "blue", label: `${daysLeft} días`, daysLeft, className: "is-expiration-blue" };
+  }
+  return { level: "safe", label: "+3 meses", daysLeft, className: "is-expiration-safe" };
+}
+
+function getProductExpirationGroup(product) {
+  return getProductUrgentExpirationStatus(product).level;
+}
+
+function productMatchesExpirationFilter(product, filter) {
+  if (!filter) return true;
+  const level = getProductExpirationGroup(product);
+  if (filter === "noAlert") return level === "safe" || level === "none";
+  return level === filter;
+}
+
+function getExpirationSummary(products) {
+  const summary = { red: 0, orange: 0, yellow: 0, green: 0, blue: 0, safe: 0, none: 0 };
+  products.forEach((product) => {
+    const level = getProductExpirationGroup(product);
+    if (Object.prototype.hasOwnProperty.call(summary, level)) summary[level] += 1;
+  });
+  summary.noAlert = summary.safe + summary.none;
+  summary.total = products.length;
+  // Grupos exclusivos: cada producto activo cae en un solo bucket.
+  const accounted = summary.red + summary.orange + summary.yellow + summary.green + summary.blue + summary.noAlert;
+  if (accounted !== summary.total) {
+    console.warn("[caducidad] Conteo inconsistente", { summary, accounted });
+  }
+  return summary;
+}
+
+function expirationBadgeMarkup(expiresAt) {
+  const status = getExpirationStatus(expiresAt);
+  return `<span class="expiry-badge ${status.className}">${escapeHTML(status.label)}</span>`;
+}
+
+function expirationCellMarkup(expiresAt) {
+  const status = getExpirationStatus(expiresAt);
+  if (status.level === "none") return expirationBadgeMarkup(expiresAt);
+  return `<span class="expiration-inline"><span class="expiration-date">${escapeHTML(expiresAt)}</span>${expirationBadgeMarkup(expiresAt)}</span>`;
+}
+
+function expirationDetailMarkup(expiresAt) {
+  const status = getExpirationStatus(expiresAt);
+  if (status.level === "none") return "Sin fecha";
+  return `<span class="expiration-inline"><span class="expiration-date">${escapeHTML(expiresAt)}</span>${expirationBadgeMarkup(expiresAt)}</span>`;
+}
+
+function updateProductExpirationStatus() {
+  if (!elements.productExpirationStatus) return;
+  const productId = elements.productId?.value;
+  if (productId) {
+    renderProductLotsPanel(getProduct(productId));
+    return;
+  }
+  updateProductLotFormPreview();
 }
 
 function stockStatus(product) {
