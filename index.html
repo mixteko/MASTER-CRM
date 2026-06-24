@@ -472,15 +472,12 @@
                 <table class="inventory-table">
                   <thead>
                     <tr>
-                      <th>Producto</th>
-                      <th>SKU</th>
-                      <th>Laboratorio</th>
-                      <th>Categoría</th>
-                      <th>Stock</th>
-                      <th>Lotes</th>
-                      <th>Caducidad</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
+                      <th class="inventory-col-product">Producto</th>
+                      <th class="inventory-col-category">Categoría</th>
+                      <th class="inventory-col-stock">Stock</th>
+                      <th class="inventory-col-lots">Lotes</th>
+                      <th class="inventory-col-expiry">Caducidad</th>
+                      <th class="inventory-col-actions">Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="inventoryTable"></tbody>
@@ -1023,6 +1020,127 @@
       </form>
     </dialog>
 
+    <dialog class="inventory-dialog stock-adjustment-dialog" id="stockAdjustmentDialog">
+      <div class="inventory-dialog-header stock-adjustment-header">
+        <div><p class="eyebrow">Inventario</p><h2>Ajustar stock</h2></div>
+        <button class="ghost-button small" type="button" data-action="close-stock-adjustment-dialog">Cerrar</button>
+      </div>
+      <form class="stock-adjustment-form" id="stockAdjustmentForm">
+        <input id="stockAdjustmentProductId" type="hidden" />
+        <div class="stock-adjustment-summary">
+          <p class="stock-adjustment-product-name" id="stockAdjustmentProductName"></p>
+          <p class="stock-adjustment-meta">
+            SKU: <span id="stockAdjustmentSku"></span> · <span id="stockAdjustmentStockLabel">Stock actual</span>: <strong id="stockAdjustmentCurrentStock">0</strong>
+          </p>
+        </div>
+        <div class="stock-adjustment-mode-tabs" role="tablist" aria-label="Modo de gestión de stock">
+          <button class="stock-adjustment-mode-tab is-active" type="button" data-action="set-stock-adjust-mode" data-value="existing">Ajustar lote existente</button>
+          <button class="stock-adjustment-mode-tab" type="button" data-action="set-stock-adjust-mode" data-value="new-lot">Agregar nuevo lote</button>
+        </div>
+        <div class="stock-adjustment-panel" id="stockAdjustmentExistingPanel">
+          <label class="stock-adjustment-lot-field" id="stockAdjustmentLotField" hidden>
+            Lote
+            <select id="stockAdjustmentLotId"></select>
+          </label>
+          <label class="stock-adjustment-quantity-field">
+            Cantidad
+            <input id="stockAdjustmentQuantity" type="number" min="0" step="1" inputmode="numeric" />
+          </label>
+          <div class="stock-adjustment-tabs" role="tablist" aria-label="Tipo de ajuste">
+            <button class="stock-adjustment-tab is-active" type="button" data-action="set-stock-adjust-action" data-value="add">Agregar</button>
+            <button class="stock-adjustment-tab" type="button" data-action="set-stock-adjust-action" data-value="subtract">Descontar</button>
+            <button class="stock-adjustment-tab" type="button" data-action="set-stock-adjust-action" data-value="replace">Reemplazar</button>
+          </div>
+          <div class="stock-adjustment-explain">
+            <p class="stock-adjustment-help" id="stockAdjustmentHelp"></p>
+            <p class="stock-adjustment-example" id="stockAdjustmentExample"></p>
+          </div>
+          <p class="stock-adjustment-result">
+            Nuevo stock del lote: <strong id="stockAdjustmentNewStock">0</strong>
+          </p>
+          <label class="stock-adjustment-reason-field">
+            Motivo del cambio
+            <select id="stockAdjustmentReasonPreset">
+              <option value="">Seleccionar motivo sugerido</option>
+              <option value="Compra nueva">Compra nueva</option>
+              <option value="Venta manual">Venta manual</option>
+              <option value="Merma">Merma</option>
+              <option value="Producto dañado">Producto dañado</option>
+              <option value="Producto caducado">Producto caducado</option>
+              <option value="Conteo físico">Conteo físico</option>
+              <option value="Corrección administrativa">Corrección administrativa</option>
+              <option value="Inventario inicial">Inventario inicial</option>
+              <option value="Otro">Otro</option>
+            </select>
+            <input id="stockAdjustmentReason" type="text" placeholder="Ejemplo: Compra nueva proveedor Nadro, factura 1234" />
+          </label>
+          <p class="stock-adjustment-warning" id="stockAdjustmentReasonWarning" hidden>
+            Agrega un motivo para conservar trazabilidad del inventario.
+          </p>
+        </div>
+        <div class="stock-adjustment-panel" id="stockAdjustmentNewLotPanel" hidden>
+          <div class="stock-adjustment-explain stock-adjustment-new-lot-help">
+            <p class="stock-adjustment-help">Agrega un lote nuevo cuando recibas mercancía con un número de lote diferente. No se crea otro producto; se suma al inventario del producto actual.</p>
+            <p class="stock-adjustment-example">Ejemplo: Paracetamol recibe lote ABC123 con 20 piezas y caducidad 2027-01-30.</p>
+          </div>
+          <label class="stock-adjustment-lot-field">
+            Número de lote
+            <input id="stockAdjustmentNewLotCode" type="text" autocomplete="off" />
+          </label>
+          <label class="stock-adjustment-quantity-field">
+            Fecha de caducidad
+            <input id="stockAdjustmentNewLotExpiresAt" type="date" />
+          </label>
+          <label class="stock-adjustment-quantity-field">
+            Cantidad recibida
+            <input id="stockAdjustmentNewLotQuantity" type="number" min="1" step="1" inputmode="numeric" />
+          </label>
+          <label class="stock-adjustment-quantity-field">
+            Costo de compra por pieza
+            <input id="stockAdjustmentNewLotCost" type="number" min="0" step="0.01" inputmode="decimal" />
+          </label>
+          <label class="stock-adjustment-lot-field">
+            Proveedor <span class="field-optional">(opcional)</span>
+            <input id="stockAdjustmentNewLotSupplier" type="text" autocomplete="off" />
+          </label>
+          <label class="stock-adjustment-lot-field">
+            Ubicación <span class="field-optional">(opcional)</span>
+            <input id="stockAdjustmentNewLotLocation" type="text" autocomplete="off" />
+          </label>
+          <label class="stock-adjustment-reason-field">
+            Motivo del movimiento
+            <select id="stockAdjustmentNewLotReasonPreset">
+              <option value="">Seleccionar motivo sugerido</option>
+              <option value="Compra nueva">Compra nueva</option>
+              <option value="Reposición">Reposición</option>
+              <option value="Inventario inicial">Inventario inicial</option>
+              <option value="Corrección administrativa">Corrección administrativa</option>
+              <option value="Otro">Otro</option>
+            </select>
+            <input id="stockAdjustmentNewLotReason" type="text" placeholder="Ejemplo: Compra nueva proveedor Nadro, factura 1234" />
+          </label>
+          <p class="stock-adjustment-warning" id="stockAdjustmentDuplicateWarning" hidden>
+            Ya existe un lote con este número y la misma caducidad.
+          </p>
+          <p class="stock-adjustment-result">
+            Nuevo stock total estimado: <strong id="stockAdjustmentNewLotTotalStock">0</strong>
+          </p>
+        </div>
+        <div class="product-lot-form-actions stock-adjustment-actions">
+          <button class="ghost-button small" type="button" data-action="close-stock-adjustment-dialog">Cancelar</button>
+          <button class="primary-button small" type="submit" id="stockAdjustmentSubmit">Guardar ajuste</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="inventory-dialog inventory-movements-dialog" id="inventoryMovementsDialog">
+      <div class="inventory-dialog-header inventory-movements-header">
+        <div><p class="eyebrow">Inventario</p><h2 id="inventoryMovementsTitle">Historial de movimientos</h2></div>
+        <button class="ghost-button small" type="button" data-action="close-inventory-movements-dialog">Cerrar</button>
+      </div>
+      <div class="inventory-movements-body" id="inventoryMovementsContent"></div>
+    </dialog>
+
     <dialog class="inventory-dialog inventory-detail-dialog" id="inventoryDetailDialog">
       <div class="inventory-dialog-header">
         <div><p class="eyebrow">Ficha farmacéutica</p><h2 id="inventoryDetailTitle">Detalle del producto</h2></div>
@@ -1058,6 +1176,24 @@
         <div class="product-action-dialog-actions">
           <button class="ghost-button" type="button" data-action="close-permanent-delete-dialog">Cancelar</button>
           <button class="primary-button is-critical" type="submit" id="productPermanentDeleteConfirm">Eliminar definitivamente</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="product-action-dialog product-action-dialog--danger" id="productLotDeleteDialog">
+      <form class="product-action-dialog-form" id="productLotDeleteForm">
+        <div class="product-action-dialog-header">
+          <h2 id="productLotDeleteTitle">Eliminar lote</h2>
+        </div>
+        <p class="product-action-dialog-message" id="productLotDeleteMessage"></p>
+        <label class="product-action-dialog-field">
+          Para confirmar, escribe <strong>ELIMINAR</strong>
+          <input id="productLotDeleteConfirmInput" type="text" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="product-action-dialog-error" id="productLotDeleteError" hidden></p>
+        <div class="product-action-dialog-actions">
+          <button class="ghost-button" type="button" data-action="close-lot-delete-dialog">Cancelar</button>
+          <button class="primary-button is-critical" type="submit" id="productLotDeleteConfirm">Eliminar lote</button>
         </div>
       </form>
     </dialog>

@@ -181,6 +181,25 @@ Inventario por lote (US-010 / US-010A):
 * FEFO preparado: `sortLotsFefo()` y `planFefoDeduction()` (ventas pendientes)
 * Formulario de edición centrado (`max-width` alineado a lista de productos)
 
+Ajuste de stock en Inventario (US-011A / US-011C):
+
+* Subpágina **Inventario**: acciones **Ajustar stock** y **Ver historial** por producto
+* Modal **Ajustar stock** con dos pestañas principales:
+  * **Ajustar lote existente** — selector de lote, Agregar / Descontar / Reemplazar, motivo; modifica un lote ya creado
+  * **Agregar nuevo lote** — solo campos de lote nuevo (sin selector ni Descontar/Reemplazar); crea entrada en el mismo producto; movimiento `entrada`
+* **Lista de productos** y **Inventario** usan el mismo flujo para agregar lote (pestaña **Agregar nuevo lote** o botón **Agregar Lote** en edición de producto)
+* El producto es único en catálogo (`productos`); los lotes son filas en `inventario`
+* **Pausar lote** es reversible (prefijo `[INACTIVO]`); **Eliminar lote** es irreversible y requiere escribir `ELIMINAR` en confirmación
+* Al eliminar lote: `DELETE /api/inventory/lots/:lotId`, recalcula stock total, registra movimiento `correccion` con motivo «Eliminación permanente de lote»; conserva historial previo del producto
+* Si el lote eliminado tenía stock > 0, la confirmación advierte que se descontará del total
+* Si ya existe lote con mismo número y caducidad, advertencia antes de duplicar al agregar
+* Endpoints: `POST /api/inventory/adjust`, `POST /api/inventory/lots`, `DELETE /api/inventory/lots/:lotId`, `GET /api/inventory/movements?productId=ID`
+* Tabla Supabase: `movimientos_inventario` — SQL en `server/sql/movimientos_inventario.sql` (ejecutar en Supabase antes de usar)
+* No modifica productos con `eliminado=true`; no borra lotes; no permite stock negativo en ajustes
+* Tras ajuste: toast «Stock ajustado»; tras nuevo lote: toast «Lote agregado al inventario»; recarga productos
+* **Ver historial** — movimientos del producto; columna Tipo como badge corto (Entrada, Salida, Reemplazo, etc.)
+* **FEFO:** al descontar stock, el sistema sugiere primero el lote con caducidad más próxima (`sortLotsFefo()`)
+
 Módulo Productos (navegación):
 
 * La sección principal del menú lateral es **Productos**, con submenús:
@@ -237,7 +256,7 @@ Pulido módulo Productos (US-010D / US-010F):
 * Checkboxes de selección más pequeños; tabla y tarjetas de alerta más compactas
 * Botón **Agregar producto** con altura reducida
 * Formulario: botón **Quitar imagen** limpia `imageUrl`, preview y archivo local; al guardar persiste sin imagen (no borra archivo en Storage)
-* Texto formal **Agregar Lote** en formulario e inventario
+* Texto formal **Agregar Lote** en formulario de producto; en Inventario se accede desde la pestaña **Agregar nuevo lote** dentro de **Ajustar stock**
 * Acciones en lista: duplicar y pausar visibles; menú **Más acciones** con eliminar (baja) y eliminar definitivamente (modal con confirmación `ELIMINAR`)
 
 Importar / Exportar CSV (US-011):

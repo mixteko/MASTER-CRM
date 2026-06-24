@@ -16,6 +16,8 @@ let productImagePendingFile = null;
 let productImageObjectUrl = "";
 let productActionDialogResolver = null;
 let productPermanentDeleteResolver = null;
+let productLotDeleteResolver = null;
+let productLotDeleteContext = null;
 
 const initialProducts = [
   {
@@ -4289,6 +4291,9 @@ const state = {
   productsSection: "products-list",
   expirationFilter: null,
   csvImportSession: null,
+  stockAdjustmentAction: "add",
+  stockAdjustmentMode: "existing",
+  stockAdjustmentProductId: null,
 };
 
 const EXPIRATION_FILTER_LABELS = {
@@ -4315,6 +4320,9 @@ function resolveLocalApiPath(path) {
 
 const productsApiUrl = resolveLocalApiPath("/api/products");
 const productLotsApiUrl = resolveLocalApiPath("/api/product-lots");
+const inventoryAdjustApiUrl = resolveLocalApiPath("/api/inventory/adjust");
+const inventoryMovementsApiUrl = resolveLocalApiPath("/api/inventory/movements");
+const inventoryLotsApiUrl = resolveLocalApiPath("/api/inventory/lots");
 const productImageUploadUrl = resolveLocalApiPath("/api/uploads/product-image");
 const categoriesApiUrl = resolveLocalApiPath("/api/categories");
 const classificationsApiUrl = resolveLocalApiPath("/api/classifications");
@@ -4378,6 +4386,24 @@ const PRODUCT_CSV_COLUMNS = [
   "imageUrl",
   "status",
 ];
+
+const STOCK_ADJUST_ACTION_COPY = {
+  add: {
+    help: "Agregar aumenta el stock actual. Úsalo cuando recibas mercancía nueva o quieras sumar piezas al inventario.",
+    example: (current, quantity, next) =>
+      `Ejemplo: stock actual ${current} + agregar ${quantity} = nuevo stock ${next}.`,
+  },
+  subtract: {
+    help: "Descontar reduce el stock actual. Úsalo para ventas manuales, mermas, caducados, daños o faltantes.",
+    example: (current, quantity, next) =>
+      `Ejemplo: stock actual ${current} - descontar ${quantity} = nuevo stock ${next}.`,
+  },
+  replace: {
+    help: "Reemplazar cambia el stock actual por una cantidad exacta. Úsalo cuando hagas conteo físico o corrección administrativa.",
+    example: (current, quantity, next) =>
+      `Ejemplo: stock actual ${current}, reemplazar por ${quantity} = nuevo stock ${next}.`,
+  },
+};
 
 const orderColumns = ["Nuevo", "Por cobrar", "Por enviar", "Enviado", "Completado"];
 const currency = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
@@ -4587,8 +4613,47 @@ const elements = {
   productPermanentDeleteConfirmInput: $("#productPermanentDeleteConfirmInput"),
   productPermanentDeleteError: $("#productPermanentDeleteError"),
   productPermanentDeleteConfirm: $("#productPermanentDeleteConfirm"),
+  productLotDeleteDialog: $("#productLotDeleteDialog"),
+  productLotDeleteForm: $("#productLotDeleteForm"),
+  productLotDeleteTitle: $("#productLotDeleteTitle"),
+  productLotDeleteMessage: $("#productLotDeleteMessage"),
+  productLotDeleteConfirmInput: $("#productLotDeleteConfirmInput"),
+  productLotDeleteError: $("#productLotDeleteError"),
+  productLotDeleteConfirm: $("#productLotDeleteConfirm"),
   inventoryDetailTitle: $("#inventoryDetailTitle"),
   inventoryDetailContent: $("#inventoryDetailContent"),
+  stockAdjustmentDialog: $("#stockAdjustmentDialog"),
+  stockAdjustmentForm: $("#stockAdjustmentForm"),
+  stockAdjustmentProductId: $("#stockAdjustmentProductId"),
+  stockAdjustmentProductName: $("#stockAdjustmentProductName"),
+  stockAdjustmentSku: $("#stockAdjustmentSku"),
+  stockAdjustmentCurrentStock: $("#stockAdjustmentCurrentStock"),
+  stockAdjustmentLotField: $("#stockAdjustmentLotField"),
+  stockAdjustmentLotId: $("#stockAdjustmentLotId"),
+  stockAdjustmentHelp: $("#stockAdjustmentHelp"),
+  stockAdjustmentExample: $("#stockAdjustmentExample"),
+  stockAdjustmentQuantity: $("#stockAdjustmentQuantity"),
+  stockAdjustmentNewStock: $("#stockAdjustmentNewStock"),
+  stockAdjustmentReasonPreset: $("#stockAdjustmentReasonPreset"),
+  stockAdjustmentReason: $("#stockAdjustmentReason"),
+  stockAdjustmentReasonWarning: $("#stockAdjustmentReasonWarning"),
+  stockAdjustmentStockLabel: $("#stockAdjustmentStockLabel"),
+  stockAdjustmentExistingPanel: $("#stockAdjustmentExistingPanel"),
+  stockAdjustmentNewLotPanel: $("#stockAdjustmentNewLotPanel"),
+  stockAdjustmentSubmit: $("#stockAdjustmentSubmit"),
+  stockAdjustmentNewLotCode: $("#stockAdjustmentNewLotCode"),
+  stockAdjustmentNewLotExpiresAt: $("#stockAdjustmentNewLotExpiresAt"),
+  stockAdjustmentNewLotQuantity: $("#stockAdjustmentNewLotQuantity"),
+  stockAdjustmentNewLotCost: $("#stockAdjustmentNewLotCost"),
+  stockAdjustmentNewLotSupplier: $("#stockAdjustmentNewLotSupplier"),
+  stockAdjustmentNewLotLocation: $("#stockAdjustmentNewLotLocation"),
+  stockAdjustmentNewLotReasonPreset: $("#stockAdjustmentNewLotReasonPreset"),
+  stockAdjustmentNewLotReason: $("#stockAdjustmentNewLotReason"),
+  stockAdjustmentNewLotTotalStock: $("#stockAdjustmentNewLotTotalStock"),
+  stockAdjustmentDuplicateWarning: $("#stockAdjustmentDuplicateWarning"),
+  inventoryMovementsDialog: $("#inventoryMovementsDialog"),
+  inventoryMovementsTitle: $("#inventoryMovementsTitle"),
+  inventoryMovementsContent: $("#inventoryMovementsContent"),
   salesTable: $("#salesTable"),
   shipmentsTable: $("#shipmentsTable"),
   paymentsTable: $("#paymentsTable"),
@@ -4764,14 +4829,46 @@ function bindEvents() {
   }
   elements.openInventoryProductModal?.addEventListener("click", () => elements.inventoryProductDialog.showModal());
   elements.inventoryProductVisualForm?.addEventListener("submit", saveInventoryProduct);
-  elements.openProductLotFormButton?.addEventListener("click", () => openProductLotDialog());
+  elements.openProductLotFormButton?.addEventListener("click", () => {
+    const productId = elements.productId?.value || elements.openProductLotFormButton?.dataset.productId;
+    if (!productId) return showToast("Guarda el producto antes de agregar lotes");
+    openStockAdjustmentDialog(productId, { mode: "new-lot" });
+  });
   elements.productLotForm?.addEventListener("submit", saveProductLot);
+  elements.stockAdjustmentForm?.addEventListener("submit", saveStockAdjustment);
+  elements.stockAdjustmentQuantity?.addEventListener("input", updateStockAdjustmentPreview);
+  elements.stockAdjustmentLotId?.addEventListener("change", updateStockAdjustmentPreview);
+  elements.stockAdjustmentNewLotQuantity?.addEventListener("input", updateStockAdjustmentNewLotPreview);
+  elements.stockAdjustmentNewLotCode?.addEventListener("input", updateStockAdjustmentNewLotPreview);
+  elements.stockAdjustmentNewLotExpiresAt?.addEventListener("change", updateStockAdjustmentNewLotPreview);
+  elements.stockAdjustmentReasonPreset?.addEventListener("change", (event) => {
+    const value = event.target.value;
+    if (!elements.stockAdjustmentReason) return;
+    if (value && value !== "Otro") elements.stockAdjustmentReason.value = value;
+    if (value === "Otro") elements.stockAdjustmentReason.value = "";
+    updateStockAdjustmentReasonWarning();
+  });
+  elements.stockAdjustmentReason?.addEventListener("input", updateStockAdjustmentReasonWarning);
+  elements.stockAdjustmentNewLotReasonPreset?.addEventListener("change", (event) => {
+    const value = event.target.value;
+    if (!elements.stockAdjustmentNewLotReason) return;
+    if (value && value !== "Otro") elements.stockAdjustmentNewLotReason.value = value;
+    if (value === "Otro") elements.stockAdjustmentNewLotReason.value = "";
+  });
   elements.productActionDialogForm?.addEventListener("close", handleProductActionDialogClose);
   elements.productPermanentDeleteForm?.addEventListener("submit", handleProductPermanentDeleteSubmit);
   elements.productPermanentDeleteDialog?.addEventListener("close", () => {
     if (productPermanentDeleteResolver) {
       productPermanentDeleteResolver(false);
       productPermanentDeleteResolver = null;
+    }
+  });
+  elements.productLotDeleteForm?.addEventListener("submit", handleProductLotDeleteSubmit);
+  elements.productLotDeleteDialog?.addEventListener("close", () => {
+    if (productLotDeleteResolver) {
+      productLotDeleteResolver(false);
+      productLotDeleteResolver = null;
+      productLotDeleteContext = null;
     }
   });
 
@@ -4805,6 +4902,7 @@ function handleDocumentAction(event) {
     permanentDeleteProduct(id);
   }
   if (action.dataset.action === "close-permanent-delete-dialog") elements.productPermanentDeleteDialog?.close("cancel");
+  if (action.dataset.action === "close-lot-delete-dialog") elements.productLotDeleteDialog?.close("cancel");
   if (action.dataset.action === "edit-category") editCategory(id);
   if (action.dataset.action === "deactivate-category") deactivateCategory(id);
   if (action.dataset.action === "edit-classification") editClassification(id);
@@ -4829,9 +4927,16 @@ function handleDocumentAction(event) {
     clearExpirationFilter();
   }
   if (action.dataset.action === "view-inventory-product") openInventoryDetail(id);
-  if (action.dataset.action === "add-product-lot") openProductLotDialog(id);
+  if (action.dataset.action === "add-product-lot") openStockAdjustmentDialog(id, { mode: "new-lot" });
   if (action.dataset.action === "edit-product-lot") openProductLotDialog(action.dataset.productId, id);
   if (action.dataset.action === "toggle-product-lot") toggleProductLot(action.dataset.productId, id);
+  if (action.dataset.action === "delete-product-lot") deleteProductLot(action.dataset.productId, id);
+  if (action.dataset.action === "adjust-inventory-stock") openStockAdjustmentDialog(id);
+  if (action.dataset.action === "view-inventory-history") openInventoryMovementsDialog(id);
+  if (action.dataset.action === "set-stock-adjust-mode") setStockAdjustmentMode(action.dataset.value);
+  if (action.dataset.action === "set-stock-adjust-action") setStockAdjustmentAction(action.dataset.value);
+  if (action.dataset.action === "close-stock-adjustment-dialog") closeStockAdjustmentDialog();
+  if (action.dataset.action === "close-inventory-movements-dialog") elements.inventoryMovementsDialog?.close();
   if (action.dataset.action === "close-product-lot-dialog") elements.productLotDialog?.close();
   if (action.dataset.action === "close-inventory-product-modal") elements.inventoryProductDialog.close();
   if (action.dataset.action === "close-inventory-detail") elements.inventoryDetailDialog.close();
@@ -4875,6 +4980,8 @@ function showProductsSection(sectionId) {
 
   $$(".nav-subitem").forEach((item) => item.classList.toggle("active", item.dataset.productsSection === sectionId));
   $$(".products-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.productsPanel === sectionId));
+
+  if (sectionId === "products-inventory") renderInventory();
 
   if ($("#productos")?.classList.contains("active")) updateProductsModuleTitle();
 }
@@ -6799,29 +6906,43 @@ function renderInventoryTable() {
   elements.inventoryTable.innerHTML = products.length
     ? products
         .map((product) => {
-          const status = inventoryStatus(product);
-          const laboratory = inventoryLaboratory(product);
           const activeLotCount = getActiveProductLots(product).filter((lot) => lot.stock > 0).length;
           const urgentStatus = getProductUrgentExpirationStatus(product);
+          const expiryDate = urgentStatus.expiresAt || product.expiresAt || "";
+          const skuLine = product.sku
+            ? `<span class="inventory-product-sku">SKU ${escapeHTML(product.sku)}</span>`
+            : "";
           return `
             <tr class="${isSanitaryExpirationLevel(urgentStatus.level) ? `inventory-row ${urgentStatus.className}` : ""}">
-              <td><div class="inventory-product-cell">${productImageMarkup(product)}<div><strong>${escapeHTML(product.name)}</strong></div></div></td>
-              <td>${escapeHTML(product.sku || "Sin SKU")}</td>
-              <td>${escapeHTML(laboratory === "No registrado" ? "—" : laboratory)}</td>
-              <td><span class="catalog-tag is-category">${escapeHTML(product.category || "Sin categoría")}</span></td>
-              <td><strong>${toInteger(product.stock)}</strong></td>
-              <td><span class="product-lot-count">${activeLotCount}</span></td>
-              <td>${expirationCellMarkup(product.expiresAt)}</td>
-              <td><span class="inventory-status ${status.className}">${status.icon} ${escapeHTML(status.label)}</span></td>
-              <td class="table-actions">
-                <button class="ghost-button small" type="button" data-action="edit-product" data-id="${product.id}">Editar</button>
-                <button class="ghost-button small" type="button" data-action="view-inventory-product" data-id="${product.id}">Ver</button>
+              <td class="inventory-col-product">
+                <div class="inventory-product-cell">
+                  ${productImageMarkup(product)}
+                  <div class="inventory-product-copy">
+                    <strong class="inventory-product-name">${escapeHTML(product.name)}</strong>
+                    ${skuLine}
+                  </div>
+                </div>
+              </td>
+              <td class="inventory-col-category"><span class="catalog-tag is-category inventory-category-tag">${escapeHTML(product.category || "Sin categoría")}</span></td>
+              <td class="inventory-col-stock"><span class="inventory-stock-value">${toInteger(product.stock)}</span></td>
+              <td class="inventory-col-lots"><span class="inventory-lot-badge">${activeLotCount}</span></td>
+              <td class="inventory-col-expiry">
+                <div class="inventory-expiry-cell">
+                  <span class="inventory-expiry-date">${expiryDate ? escapeHTML(expiryDate) : "—"}</span>
+                  ${expiryDate ? expirationBadgeMarkup(expiryDate) : `<span class="expiry-badge is-expiration-none">Sin fecha</span>`}
+                </div>
+              </td>
+              <td class="inventory-col-actions">
+                <div class="inventory-table-actions">
+                  <button class="ghost-button small inventory-action-btn" type="button" data-action="adjust-inventory-stock" data-id="${product.id}">Ajustar stock</button>
+                  <button class="ghost-button small inventory-action-btn" type="button" data-action="view-inventory-history" data-id="${product.id}">Ver historial</button>
+                </div>
               </td>
             </tr>
           `;
         })
         .join("")
-    : tableEmpty(9, state.productLoadError || "No hay productos que coincidan con los filtros.");
+    : tableEmpty(6, state.productLoadError || "No hay productos que coincidan con los filtros.");
 }
 
 function updateInventoryFilterOptions(select, values, emptyLabel, selectedValue) {
@@ -6845,6 +6966,464 @@ function inventoryStatus(product) {
   if (isInventoryExpiringSoon(product)) return { label: "Próximo a caducar", icon: "🟠", className: "is-expiring" };
   if (toInteger(product.stock) <= toInteger(product.minStock)) return { label: "Stock bajo", icon: "🟡", className: "is-low" };
   return { label: "Disponible", icon: "🟢", className: "is-available" };
+}
+
+function getStockAdjustmentLots(product) {
+  return getActiveProductLots(product).filter((lot) => lot.id);
+}
+
+function getStockAdjustmentCurrentStock(product, lotId = "") {
+  if (!product) return 0;
+  const lots = getStockAdjustmentLots(product);
+  if (lotId) {
+    const lot = lots.find((item) => item.id === lotId);
+    return lot ? toInteger(lot.stock) : 0;
+  }
+  if (lots.length === 1) return toInteger(lots[0].stock);
+  return toInteger(product.stock);
+}
+
+function getDefaultStockAdjustmentLotId(product, action = "add") {
+  const lots = getStockAdjustmentLots(product);
+  if (!lots.length) return "";
+  if (lots.length === 1) return lots[0].id;
+  if (action === "subtract") {
+    const fefo = sortLotsFefo(lots);
+    if (fefo.length) return fefo[0].id;
+  }
+  return lots[0].id;
+}
+
+function formatStockAdjustmentLotLabel(lot) {
+  const code = lot.lot || lot.lote || "Sin lote";
+  const expiry = lot.expiresAt ? ` · ${lot.expiresAt}` : "";
+  return `${code} (${toInteger(lot.stock)} pzas${expiry})`;
+}
+
+function updateStockAdjustmentLotFieldVisibility(product) {
+  if (!elements.stockAdjustmentLotField || !elements.stockAdjustmentLotId) return;
+  const lots = getStockAdjustmentLots(product);
+  if (lots.length > 1) {
+    elements.stockAdjustmentLotField.hidden = false;
+    elements.stockAdjustmentLotId.innerHTML = lots
+      .map((lot) => `<option value="${escapeHTML(lot.id)}">${escapeHTML(formatStockAdjustmentLotLabel(lot))}</option>`)
+      .join("");
+    elements.stockAdjustmentLotId.value = getDefaultStockAdjustmentLotId(product, state.stockAdjustmentAction);
+  } else {
+    elements.stockAdjustmentLotField.hidden = true;
+    elements.stockAdjustmentLotId.innerHTML = lots.length
+      ? `<option value="${escapeHTML(lots[0].id)}">${escapeHTML(formatStockAdjustmentLotLabel(lots[0]))}</option>`
+      : "";
+    if (lots.length) elements.stockAdjustmentLotId.value = lots[0].id;
+  }
+}
+
+function setStockAdjustmentMode(mode) {
+  const normalized = mode === "new-lot" ? "new-lot" : "existing";
+  state.stockAdjustmentMode = normalized;
+  document.querySelectorAll("[data-action='set-stock-adjust-mode']").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.value === normalized);
+  });
+  if (elements.stockAdjustmentExistingPanel) {
+    elements.stockAdjustmentExistingPanel.hidden = normalized !== "existing";
+    elements.stockAdjustmentExistingPanel.classList.toggle("is-hidden", normalized !== "existing");
+  }
+  if (elements.stockAdjustmentNewLotPanel) {
+    elements.stockAdjustmentNewLotPanel.hidden = normalized !== "new-lot";
+    elements.stockAdjustmentNewLotPanel.classList.toggle("is-hidden", normalized !== "new-lot");
+  }
+  if (elements.stockAdjustmentSubmit) {
+    elements.stockAdjustmentSubmit.textContent = normalized === "new-lot" ? "Guardar lote" : "Guardar ajuste";
+  }
+  if (elements.stockAdjustmentStockLabel) {
+    elements.stockAdjustmentStockLabel.textContent = normalized === "new-lot" ? "Stock actual total" : "Stock actual del lote";
+  }
+  const product = getProduct(state.stockAdjustmentProductId);
+  if (!product) return;
+  if (normalized === "new-lot") {
+    if (elements.stockAdjustmentCurrentStock) {
+      elements.stockAdjustmentCurrentStock.textContent = String(toInteger(product.stock));
+    }
+    updateStockAdjustmentNewLotPreview();
+  } else {
+    updateStockAdjustmentLotFieldVisibility(product);
+    updateStockAdjustmentPreview();
+  }
+}
+
+function resetStockAdjustmentNewLotFields(product) {
+  if (elements.stockAdjustmentNewLotCode) elements.stockAdjustmentNewLotCode.value = "";
+  if (elements.stockAdjustmentNewLotExpiresAt) elements.stockAdjustmentNewLotExpiresAt.value = "";
+  if (elements.stockAdjustmentNewLotQuantity) elements.stockAdjustmentNewLotQuantity.value = "";
+  if (elements.stockAdjustmentNewLotCost) {
+    elements.stockAdjustmentNewLotCost.value = product ? String(product.cost || 0) : "";
+  }
+  if (elements.stockAdjustmentNewLotSupplier) elements.stockAdjustmentNewLotSupplier.value = "";
+  if (elements.stockAdjustmentNewLotLocation) elements.stockAdjustmentNewLotLocation.value = "";
+  if (elements.stockAdjustmentNewLotReasonPreset) elements.stockAdjustmentNewLotReasonPreset.value = "";
+  if (elements.stockAdjustmentNewLotReason) elements.stockAdjustmentNewLotReason.value = "";
+  if (elements.stockAdjustmentDuplicateWarning) elements.stockAdjustmentDuplicateWarning.hidden = true;
+  updateStockAdjustmentNewLotPreview();
+}
+
+function findMatchingProductLot(product, lotCode, expiresAt) {
+  const normalizedLot = String(lotCode || "").trim().toLowerCase();
+  const normalizedExpiry = String(expiresAt || "").trim();
+  if (!normalizedLot || !normalizedExpiry) return null;
+  return getActiveProductLots(product).find((lot) => {
+    const code = String(lot.lot || lot.lote || "").trim().toLowerCase();
+    const expiry = String(lot.expiresAt || "").trim();
+    return code === normalizedLot && expiry === normalizedExpiry;
+  });
+}
+
+function updateStockAdjustmentNewLotPreview() {
+  const product = getProduct(state.stockAdjustmentProductId);
+  if (!product) return;
+
+  const current = toInteger(product.stock);
+  const rawQuantity = elements.stockAdjustmentNewLotQuantity?.value;
+  const quantity = rawQuantity === "" || rawQuantity == null ? 0 : toInteger(rawQuantity);
+  if (elements.stockAdjustmentCurrentStock && state.stockAdjustmentMode === "new-lot") {
+    elements.stockAdjustmentCurrentStock.textContent = String(current);
+  }
+  if (elements.stockAdjustmentNewLotTotalStock) {
+    elements.stockAdjustmentNewLotTotalStock.textContent = String(current + Math.max(0, quantity));
+  }
+
+  const lotCode = String(elements.stockAdjustmentNewLotCode?.value || "").trim();
+  const expiresAt = String(elements.stockAdjustmentNewLotExpiresAt?.value || "").trim();
+  if (elements.stockAdjustmentDuplicateWarning) {
+    const duplicate = findMatchingProductLot(product, lotCode, expiresAt);
+    elements.stockAdjustmentDuplicateWarning.hidden = !duplicate;
+  }
+}
+
+function setStockAdjustmentAction(action) {
+  const normalized = String(action || "add").toLowerCase();
+  if (!STOCK_ADJUST_ACTION_COPY[normalized]) return;
+  state.stockAdjustmentAction = normalized;
+  document.querySelectorAll("[data-action='set-stock-adjust-action']").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.value === normalized);
+  });
+  const product = getProduct(state.stockAdjustmentProductId);
+  if (product && elements.stockAdjustmentLotId) {
+    const defaultLotId = getDefaultStockAdjustmentLotId(product, normalized);
+    if (defaultLotId) elements.stockAdjustmentLotId.value = defaultLotId;
+  }
+  const copy = STOCK_ADJUST_ACTION_COPY[normalized];
+  if (elements.stockAdjustmentHelp) elements.stockAdjustmentHelp.textContent = copy.help;
+  if (elements.stockAdjustmentQuantity) {
+    elements.stockAdjustmentQuantity.min = normalized === "replace" ? "0" : "1";
+    if (normalized !== "replace" && elements.stockAdjustmentQuantity.value === "0") {
+      elements.stockAdjustmentQuantity.value = "";
+    }
+  }
+  updateStockAdjustmentPreview();
+}
+
+function updateStockAdjustmentReasonWarning() {
+  if (!elements.stockAdjustmentReasonWarning || !elements.stockAdjustmentReason) return;
+  const empty = !String(elements.stockAdjustmentReason.value || "").trim();
+  elements.stockAdjustmentReasonWarning.hidden = !empty;
+}
+
+function updateStockAdjustmentPreview() {
+  const product = getProduct(state.stockAdjustmentProductId);
+  if (!product) return;
+
+  const lotId = elements.stockAdjustmentLotId?.value || "";
+  const current = getStockAdjustmentCurrentStock(product, lotId);
+  const action = state.stockAdjustmentAction;
+  const rawQuantity = elements.stockAdjustmentQuantity?.value;
+  const quantity = rawQuantity === "" || rawQuantity == null ? 0 : toInteger(rawQuantity);
+  let next = current;
+
+  if (action === "add") next = current + quantity;
+  else if (action === "subtract") next = current - quantity;
+  else if (action === "replace") next = quantity;
+
+  if (elements.stockAdjustmentCurrentStock && state.stockAdjustmentMode === "existing") {
+    elements.stockAdjustmentCurrentStock.textContent = String(current);
+  }
+  if (elements.stockAdjustmentNewStock) {
+    elements.stockAdjustmentNewStock.textContent = String(Math.max(0, next));
+    elements.stockAdjustmentNewStock.classList.toggle("is-invalid", next < 0);
+  }
+
+  const copy = STOCK_ADJUST_ACTION_COPY[action];
+  if (copy && elements.stockAdjustmentExample) {
+    const displayQty = rawQuantity === "" || rawQuantity == null ? "…" : quantity;
+    elements.stockAdjustmentExample.textContent = copy.example(current, displayQty, Math.max(0, next));
+  }
+}
+
+function openStockAdjustmentDialog(productId, options = {}) {
+  const product = getProduct(productId);
+  if (!product) return showToast("Producto no encontrado");
+
+  state.stockAdjustmentProductId = productId;
+  state.stockAdjustmentAction = "add";
+
+  if (elements.stockAdjustmentProductId) elements.stockAdjustmentProductId.value = productId;
+  if (elements.stockAdjustmentProductName) elements.stockAdjustmentProductName.textContent = product.name;
+  if (elements.stockAdjustmentSku) elements.stockAdjustmentSku.textContent = product.sku || "Sin SKU";
+  if (elements.stockAdjustmentQuantity) elements.stockAdjustmentQuantity.value = "";
+  if (elements.stockAdjustmentReasonPreset) elements.stockAdjustmentReasonPreset.value = "";
+  if (elements.stockAdjustmentReason) elements.stockAdjustmentReason.value = "";
+  updateStockAdjustmentReasonWarning();
+  resetStockAdjustmentNewLotFields(product);
+
+  updateStockAdjustmentLotFieldVisibility(product);
+
+  document.querySelectorAll("[data-action='set-stock-adjust-action']").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.value === "add");
+  });
+  if (elements.stockAdjustmentHelp) {
+    elements.stockAdjustmentHelp.textContent = STOCK_ADJUST_ACTION_COPY.add.help;
+  }
+  setStockAdjustmentMode(options.mode === "new-lot" ? "new-lot" : "existing");
+  elements.stockAdjustmentDialog?.showModal();
+}
+
+function closeStockAdjustmentDialog() {
+  elements.stockAdjustmentDialog?.close();
+  state.stockAdjustmentProductId = null;
+  state.stockAdjustmentMode = "existing";
+}
+
+async function saveStockAdjustment(event) {
+  event.preventDefault();
+  if (state.stockAdjustmentMode === "new-lot") {
+    await saveNewInventoryLotFromAdjustment();
+    return;
+  }
+
+  const productId = elements.stockAdjustmentProductId?.value || state.stockAdjustmentProductId;
+  const product = getProduct(productId);
+  if (!product) return showToast("Producto no encontrado");
+
+  const action = state.stockAdjustmentAction;
+  const quantityRaw = elements.stockAdjustmentQuantity?.value;
+  const reason = String(elements.stockAdjustmentReason?.value || "").trim();
+
+  updateStockAdjustmentReasonWarning();
+  if (!reason) return showToast("Agrega un motivo para conservar trazabilidad del inventario");
+
+  if (quantityRaw === "" || quantityRaw == null) return showToast("Ingresa una cantidad");
+  const quantity = toInteger(quantityRaw);
+  if (!Number.isFinite(quantity) || quantity < 0) return showToast("La cantidad debe ser un número >= 0");
+  if ((action === "add" || action === "subtract") && quantity <= 0) {
+    return showToast("La cantidad debe ser mayor a 0 para agregar o descontar");
+  }
+
+  const previewLotId =
+    elements.stockAdjustmentLotId?.value || getDefaultStockAdjustmentLotId(product, action);
+  const current = getStockAdjustmentCurrentStock(product, previewLotId);
+  const next =
+    action === "add" ? current + quantity : action === "subtract" ? current - quantity : quantity;
+  if (next < 0) return showToast("El stock no puede quedar negativo");
+
+  const lots = getStockAdjustmentLots(product);
+  let resolvedLotId = "";
+  if (lots.length === 1) resolvedLotId = lots[0].id;
+  else if (lots.length > 1) resolvedLotId = elements.stockAdjustmentLotId?.value || "";
+
+  const payload = {
+    productId,
+    action,
+    quantity,
+    reason,
+  };
+  if (resolvedLotId) payload.lotId = resolvedLotId;
+
+  try {
+    await adjustInventoryStockInApi(payload);
+    closeStockAdjustmentDialog();
+    const detailProductId = productId;
+    await loadProducts();
+    if (elements.inventoryDetailDialog?.open) openInventoryDetail(detailProductId);
+    showToast("Stock ajustado");
+  } catch (error) {
+    showToast(error.message || "No se pudo ajustar stock");
+  }
+}
+
+async function adjustInventoryStockInApi(payload) {
+  const response = await fetch(inventoryAdjustApiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo ajustar stock");
+  return data;
+}
+
+function getInventoryMovementTypeMeta(type) {
+  const key = String(type || "").toLowerCase();
+  const labels = {
+    entrada: "Entrada",
+    salida: "Salida",
+    reemplazo: "Reemplazo",
+    merma: "Merma",
+    caducidad: "Caducado",
+    correccion: "Corrección",
+    inventario_inicial: "Inicial",
+    agregar: "Agregar",
+    descontar: "Descontar",
+    reemplazar: "Reemplazar",
+    add: "Agregar",
+    subtract: "Descontar",
+    replace: "Reemplazar",
+  };
+  const label = labels[key] || type || "—";
+  let tone = "is-neutral";
+  if (["entrada", "agregar", "add", "inventario_inicial"].includes(key)) tone = "is-entry";
+  else if (["salida", "descontar", "subtract", "merma", "caducidad"].includes(key)) tone = "is-exit";
+  else if (["reemplazo", "reemplazar", "replace"].includes(key)) tone = "is-replace";
+  else if (key === "correccion") tone = "is-correction";
+  return { label, tone };
+}
+
+function formatInventoryMovementType(type) {
+  return getInventoryMovementTypeMeta(type).label;
+}
+
+function inventoryMovementTypeBadge(type) {
+  const meta = getInventoryMovementTypeMeta(type);
+  return `<span class="inventory-movement-badge ${meta.tone}">${escapeHTML(meta.label)}</span>`;
+}
+
+async function addInventoryLotInApi(payload) {
+  const response = await fetch(inventoryLotsApiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo agregar lote");
+  return data;
+}
+
+async function saveNewInventoryLotFromAdjustment() {
+  const productId = elements.stockAdjustmentProductId?.value || state.stockAdjustmentProductId;
+  const product = getProduct(productId);
+  if (!product) return showToast("Producto no encontrado");
+
+  const lot = String(elements.stockAdjustmentNewLotCode?.value || "").trim();
+  const expiresAt = String(elements.stockAdjustmentNewLotExpiresAt?.value || "").trim();
+  const quantityRaw = elements.stockAdjustmentNewLotQuantity?.value;
+  const costRaw = elements.stockAdjustmentNewLotCost?.value;
+  const reason = String(elements.stockAdjustmentNewLotReason?.value || "").trim();
+  const supplier = String(elements.stockAdjustmentNewLotSupplier?.value || "").trim();
+  const location = String(elements.stockAdjustmentNewLotLocation?.value || "").trim();
+
+  if (!lot) return showToast("Ingresa el número de lote");
+  if (!expiresAt) return showToast("Ingresa la fecha de caducidad");
+  if (!reason) return showToast("Agrega un motivo para conservar trazabilidad del inventario");
+  if (quantityRaw === "" || quantityRaw == null) return showToast("Ingresa la cantidad recibida");
+  const quantity = toInteger(quantityRaw);
+  if (!Number.isFinite(quantity) || quantity <= 0) return showToast("La cantidad debe ser mayor a 0");
+  if (costRaw === "" || costRaw == null) return showToast("Ingresa el costo de compra");
+  const cost = toNumber(costRaw);
+  if (!Number.isFinite(cost) || cost < 0) return showToast("El costo debe ser un número >= 0");
+
+  const duplicate = findMatchingProductLot(product, lot, expiresAt);
+  if (duplicate) {
+    const confirmed = await openProductActionDialog({
+      title: "Lote duplicado",
+      message: `Ya existe un lote "${lot}" con caducidad ${expiresAt}. ¿Deseas crear otro registro igual?`,
+      confirmLabel: "Crear de todos modos",
+    });
+    if (!confirmed) return;
+  }
+
+  const payload = {
+    productId,
+    lot,
+    expiresAt,
+    quantity,
+    cost,
+    reason,
+  };
+  if (supplier) payload.supplier = supplier;
+  if (location) payload.location = location;
+
+  try {
+    await addInventoryLotInApi(payload);
+    closeStockAdjustmentDialog();
+    const detailProductId = productId;
+    await loadProducts();
+    if (elements.productId?.value === productId) renderProductLotsPanel(getProduct(productId));
+    if (elements.inventoryDetailDialog?.open) openInventoryDetail(detailProductId);
+    showToast("Lote agregado al inventario");
+  } catch (error) {
+    showToast(error.message || "No se pudo agregar lote");
+  }
+}
+
+async function fetchInventoryMovements(productId) {
+  const response = await fetch(`${inventoryMovementsApiUrl}?productId=${encodeURIComponent(productId)}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo cargar historial");
+  return Array.isArray(data.movements) ? data.movements : [];
+}
+
+async function openInventoryMovementsDialog(productId) {
+  const product = getProduct(productId);
+  if (!product) return showToast("Producto no encontrado");
+
+  if (elements.inventoryMovementsTitle) {
+    elements.inventoryMovementsTitle.textContent = `Historial · ${product.name}`;
+  }
+  if (elements.inventoryMovementsContent) {
+    elements.inventoryMovementsContent.innerHTML = `<p class="inventory-movements-loading">Cargando movimientos…</p>`;
+  }
+  elements.inventoryMovementsDialog?.showModal();
+
+  try {
+    const movements = await fetchInventoryMovements(productId);
+    if (!elements.inventoryMovementsContent) return;
+    elements.inventoryMovementsContent.innerHTML = movements.length
+      ? `
+        <div class="table-scroll inventory-movements-scroll">
+          <table class="inventory-movements-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Cantidad</th>
+                <th>Stock anterior</th>
+                <th>Stock nuevo</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${movements
+                .map(
+                  (movement) => `
+                <tr>
+                  <td class="inventory-movements-date">${escapeHTML(formatShortDate(movement.createdAt) || "—")}</td>
+                  <td class="inventory-movements-type">${inventoryMovementTypeBadge(movement.type)}</td>
+                  <td class="inventory-movements-num">${toInteger(movement.quantity)}</td>
+                  <td class="inventory-movements-num">${toInteger(movement.previousStock)}</td>
+                  <td class="inventory-movements-num">${toInteger(movement.newStock)}</td>
+                  <td class="inventory-movements-reason">${escapeHTML(movement.reason || "—")}</td>
+                </tr>
+              `,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `
+      : `<p class="inventory-movements-empty">Sin movimientos registrados para este producto.</p>`;
+  } catch (error) {
+    if (elements.inventoryMovementsContent) {
+      elements.inventoryMovementsContent.innerHTML = `<p class="inventory-movements-empty">${escapeHTML(error.message || "No se pudo cargar historial")}</p>`;
+    }
+  }
 }
 
 function openInventoryDetail(id) {
@@ -6881,7 +7460,10 @@ function openInventoryDetail(id) {
           <p class="eyebrow">Inventario</p>
           <h3>Lotes del producto</h3>
         </div>
-        <button class="ghost-button small" type="button" data-action="add-product-lot" data-id="${product.id}">Agregar Lote</button>
+        <div class="inventory-detail-actions">
+          <button class="ghost-button small" type="button" data-action="adjust-inventory-stock" data-id="${product.id}">Ajustar stock</button>
+          <button class="ghost-button small" type="button" data-action="view-inventory-history" data-id="${product.id}">Ver historial</button>
+        </div>
       </div>
       ${renderProductLotsTableMarkup(product, { showActions: true })}
     </section>
@@ -7779,6 +8361,18 @@ function getProductUrgentExpirationStatus(product) {
   return { ...fallback, expiresAt: product.expiresAt || "" };
 }
 
+function renderProductLotActionsMarkup(product, lot) {
+  const inactive = lot.active === false;
+  const pauseTitle = inactive
+    ? "Reactiva este lote en el inventario."
+    : "Oculta temporalmente este lote sin eliminarlo. Puedes reactivarlo después.";
+  return `
+    <button class="ghost-button small product-lot-action-btn" type="button" data-action="edit-product-lot" data-product-id="${product.id}" data-id="${lot.id}" title="Modifica datos del lote como stock, caducidad o costo." aria-label="Editar lote">Editar</button>
+    <button class="ghost-button small product-lot-action-btn ${inactive ? "is-success" : "is-danger"}" type="button" data-action="toggle-product-lot" data-product-id="${product.id}" data-id="${lot.id}" title="${pauseTitle}" aria-label="${inactive ? "Activar lote" : "Pausar lote"}">${inactive ? "Activar" : "Pausar"}</button>
+    <button class="ghost-button small product-lot-action-btn is-danger" type="button" data-action="delete-product-lot" data-product-id="${product.id}" data-id="${lot.id}" title="Elimina permanentemente este lote del stock." aria-label="Eliminar lote">Eliminar</button>
+  `;
+}
+
 function renderProductLotsTableMarkup(product, options = {}) {
   const lots = getProductLots(product);
   const showActions = Boolean(options.showActions);
@@ -7813,12 +8407,7 @@ function renderProductLotsTableMarkup(product, options = {}) {
               const depleted = lot.stock <= 0;
               const rowClass = inactive ? "is-lot-inactive" : depleted ? "is-lot-depleted" : status.className;
               const actions = showActions
-                ? `<td class="table-actions">
-                    <button class="ghost-button small" type="button" data-action="edit-product-lot" data-product-id="${product.id}" data-id="${lot.id}">Editar</button>
-                    <button class="ghost-button small ${inactive ? "is-success" : "is-danger"}" type="button" data-action="toggle-product-lot" data-product-id="${product.id}" data-id="${lot.id}">
-                      ${inactive ? "Activar" : "Pausar"}
-                    </button>
-                  </td>`
+                ? `<td class="table-actions product-lot-table-actions">${renderProductLotActionsMarkup(product, lot)}</td>`
                 : "";
               return `
                 <tr class="product-lot-row ${rowClass}">
@@ -7886,12 +8475,7 @@ function renderProductLotsPanel(product) {
               <td>${lot.expiresAt ? escapeHTML(lot.expiresAt) : "—"}</td>
               <td>${expirationBadgeMarkup(lot.expiresAt)}</td>
               <td>${currency.format(lot.cost || 0)}</td>
-              <td class="table-actions">
-                <button class="ghost-button small" type="button" data-action="edit-product-lot" data-product-id="${product.id}" data-id="${lot.id}">Editar</button>
-                <button class="ghost-button small ${inactive ? "is-success" : "is-danger"}" type="button" data-action="toggle-product-lot" data-product-id="${product.id}" data-id="${lot.id}">
-                  ${inactive ? "Activar" : "Pausar"}
-                </button>
-              </td>
+              <td class="table-actions product-lot-table-actions">${renderProductLotActionsMarkup(product, lot)}</td>
             </tr>
           `;
         })
@@ -7920,18 +8504,26 @@ function updateProductLotFormPreview() {
 }
 
 function openProductLotDialog(productId, lotId = "") {
+  if (!lotId) {
+    const resolvedProductId = productId || elements.productId?.value || elements.openProductLotFormButton?.dataset.productId;
+    if (!resolvedProductId) return showToast("Guarda el producto antes de agregar lotes");
+    openStockAdjustmentDialog(resolvedProductId, { mode: "new-lot" });
+    return;
+  }
+
   const resolvedProductId = productId || elements.productId?.value || elements.openProductLotFormButton?.dataset.productId;
   if (!resolvedProductId) return showToast("Guarda el producto antes de agregar lotes");
 
   const product = getProduct(resolvedProductId);
-  const lot = lotId ? getProductLots(product).find((item) => item.id === lotId) : null;
+  const lot = getProductLots(product).find((item) => item.id === lotId);
+  if (!lot) return showToast("Lote no encontrado");
   elements.productLotProductId.value = resolvedProductId;
-  elements.productLotId.value = lot?.id || "";
-  elements.productLotCode.value = lot?.lot || lot?.lote || "";
-  elements.productLotStock.value = lot ? String(lot.stock) : "0";
-  elements.productLotExpiresAt.value = lot?.expiresAt || "";
-  elements.productLotCost.value = lot ? String(lot.cost || 0) : String(elements.productCost?.value || 0);
-  elements.productLotDialogTitle.textContent = lot ? "Editar lote" : "Nuevo lote";
+  elements.productLotId.value = lot.id;
+  elements.productLotCode.value = lot.lot || lot.lote || "";
+  elements.productLotStock.value = String(lot.stock);
+  elements.productLotExpiresAt.value = lot.expiresAt || "";
+  elements.productLotCost.value = String(lot.cost || 0);
+  elements.productLotDialogTitle.textContent = "Editar lote";
   elements.productLotDialog.showModal();
 }
 
@@ -7939,6 +8531,7 @@ async function saveProductLot(event) {
   event.preventDefault();
   const productId = elements.productLotProductId.value;
   const lotId = elements.productLotId.value;
+  if (!lotId) return showToast("Usa Ajustar stock para agregar un lote nuevo");
   const payload = {
     productId,
     lot: elements.productLotCode.value.trim(),
@@ -7952,17 +8545,13 @@ async function saveProductLot(event) {
   if (payload.stock < 0) return showToast("El stock no puede ser negativo");
 
   try {
-    if (lotId) {
-      await updateProductLotInApi(lotId, payload);
-    } else {
-      await saveProductLotToApi(payload);
-    }
+    await updateProductLotInApi(lotId, payload);
     await loadProducts();
     elements.productLotDialog.close();
     const product = getProduct(productId);
     if (elements.productId.value === productId) renderProductLotsPanel(product);
     if (elements.inventoryDetailDialog.open) openInventoryDetail(productId);
-    showToast(lotId ? "Lote actualizado" : "Lote agregado");
+    showToast("Lote actualizado");
   } catch (error) {
     showToast(error.message || "No se pudo guardar lote");
   }
@@ -7985,6 +8574,75 @@ async function toggleProductLot(productId, lotId) {
     showToast(nextActive ? "Lote activado" : "Lote pausado");
   } catch (error) {
     showToast(error.message || "No se pudo actualizar lote");
+  }
+}
+
+function openProductLotDeleteDialog(productId, lot) {
+  return new Promise((resolve) => {
+    if (!elements.productLotDeleteDialog) {
+      showToast("No se pudo abrir la confirmación de eliminación de lote");
+      resolve(false);
+      return;
+    }
+    productLotDeleteResolver = resolve;
+    productLotDeleteContext = { productId, lotId: lot.id };
+    const lotCode = lot.lot || lot.lote || "Sin lote";
+    const stock = toInteger(lot.stock);
+    let message =
+      "Este lote se eliminará permanentemente del inventario.\nNo aparecerá en el stock ni podrá usarse para ajustes futuros.\n\nEsta acción no se puede deshacer.";
+    if (stock > 0) {
+      message = `Este lote todavía tiene ${stock} piezas. Si lo eliminas, se descontarán del stock total.\n\n${message}`;
+    }
+    elements.productLotDeleteTitle.textContent = `¿Eliminar lote "${lotCode}"?`;
+    elements.productLotDeleteMessage.textContent = message;
+    elements.productLotDeleteConfirmInput.value = "";
+    elements.productLotDeleteError.hidden = true;
+    elements.productLotDeleteError.textContent = "";
+    elements.productLotDeleteDialog.showModal();
+    elements.productLotDeleteConfirmInput.focus();
+  });
+}
+
+function handleProductLotDeleteSubmit(event) {
+  event.preventDefault();
+  if (elements.productLotDeleteConfirmInput.value.trim() !== "ELIMINAR") {
+    elements.productLotDeleteError.hidden = false;
+    elements.productLotDeleteError.textContent = "Debes escribir ELIMINAR para confirmar.";
+    elements.productLotDeleteConfirmInput.focus();
+    return;
+  }
+  const resolve = productLotDeleteResolver;
+  productLotDeleteResolver = null;
+  elements.productLotDeleteDialog.close();
+  resolve?.(true);
+}
+
+async function deleteProductLotInApi(lotId) {
+  const response = await fetch(`${inventoryLotsApiUrl}/${encodeURIComponent(lotId)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo eliminar lote");
+  return data;
+}
+
+async function deleteProductLot(productId, lotId) {
+  const product = getProduct(productId);
+  const lot = getProductLots(product).find((item) => item.id === lotId);
+  if (!lot) return showToast("Lote no encontrado");
+
+  const confirmed = await openProductLotDeleteDialog(productId, lot);
+  if (!confirmed) return;
+
+  try {
+    await deleteProductLotInApi(lotId);
+    await loadProducts();
+    const refreshed = getProduct(productId);
+    if (elements.productId?.value === productId) renderProductLotsPanel(refreshed);
+    if (elements.inventoryDetailDialog?.open) openInventoryDetail(productId);
+    showToast("Lote eliminado del inventario");
+  } catch (error) {
+    showToast(error.message || "No se pudo eliminar lote");
+  } finally {
+    productLotDeleteContext = null;
   }
 }
 

@@ -83,6 +83,26 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && getRequestPath(request) === "/api/inventory/adjust") {
+    await handleInventoryAdjust(request, response);
+    return;
+  }
+
+  if (request.method === "GET" && getRequestPath(request) === "/api/inventory/movements") {
+    await handleGetInventoryMovements(request, response);
+    return;
+  }
+
+  if (request.method === "POST" && getRequestPath(request) === "/api/inventory/lots") {
+    await handleInventoryAddLot(request, response);
+    return;
+  }
+
+  if (request.method === "DELETE" && getRequestPath(request).startsWith("/api/inventory/lots/")) {
+    await handleDeleteInventoryLot(request, response);
+    return;
+  }
+
   if (request.method === "GET" && request.url.startsWith("/api/categories")) {
     await handleGetCategories(response);
     return;
@@ -1204,6 +1224,467 @@ async function handleUpdateProductLot(request, response) {
     sendJSON(response, 200, { ok: true, lot: mapInventarioRow(updated[0]), product });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudo actualizar lote", details: error.message });
+  }
+}
+
+const INVENTORY_ADJUST_ACTIONS = new Set(["add", "subtract", "replace"]);
+const INVENTORY_ADJUST_ACTION_LABELS = {
+  add: "agregar",
+  subtract: "descontar",
+  replace: "reemplazar",
+};
+
+function getRequestSearchParams(request) {
+  try {
+    return new URL(request.url, `http://${request.headers.host || "localhost"}`).searchParams;
+  } catch {
+    return new URLSearchParams();
+  }
+}
+
+function calculateAdjustedStock(currentStock, action, quantity) {
+  const current = toInteger(currentStock);
+  const amount = toNumber(quantity);
+  if (action === "add") return current + toInteger(amount);
+  if (action === "subtract") return current - toInteger(amount);
+  if (action === "replace") return toInteger(amount);
+  return current;
+}
+
+function validateInventoryAdjustPayload(body) {
+  const productId = String(body.productId || body.producto_id || "").trim();
+  if (!productId) return "productId requerido";
+
+  const action = String(body.action || "").trim().toLowerCase();
+  if (!INVENTORY_ADJUST_ACTIONS.has(action)) return "action inválida (add, subtract, replace)";
+
+  if (body.quantity === "" || body.quantity === null || body.quantity === undefined) return "quantity requerida";
+  const quantity = toNumber(body.quantity);
+  if (!Number.isFinite(quantity) || quantity < 0) return "quantity debe ser un número >= 0";
+  if ((action === "add" || action === "subtract") && quantity <= 0) {
+    return "quantity debe ser mayor a 0 para agregar o descontar";
+  }
+
+  const reason = String(body.reason || body.motivo || "").trim();
+  if (!reason) return "reason requerido para conservar trazabilidad";
+
+  return null;
+}
+
+function mapInventoryMovementFromDb(row) {
+  return {
+    id: row.id,
+    productId: row.producto_id,
+    lotId: row.lote_id || null,
+    type: row.tipo_movimiento,
+    quantity: toNumber(row.cantidad),
+    previousStock: toNumber(row.stock_anterior),
+    newStock: toNumber(row.stock_nuevo),
+    reason: row.motivo || "",
+    reference: row.referencia || "",
+    createdAt: row.created_at || "",
+  };
+}
+
+async function insertInventoryMovement({
+  productId,
+  lotId,
+  action,
+  tipoMovimiento,
+  quantity,
+  previousStock,
+  newStock,
+  reason,
+  reference = "",
+}) {
+  const tipo = tipoMovimiento || INVENTORY_ADJUST_ACTION_LABELS[action] || action;
+  const created = await supabaseRequest("/rest/v1/movimientos_inventario", {
+    method: "POST",
+    body: {
+      producto_id: productId,
+      lote_id: lotId || null,
+      tipo_movimiento: tipo,
+      cantidad: toNumber(quantity),
+      stock_anterior: toInteger(previousStock),
+      stock_nuevo: toInteger(newStock),
+      motivo: reason,
+      referencia: reference || null,
+    },
+    prefer: "return=representation",
+  });
+  return mapInventoryMovementFromDb(created[0]);
+}
+
+function validateInventoryAddLotPayload(body) {
+  const productId = String(body.productId || body.producto_id || "").trim();
+  if (!productId) return "productId requerido";
+
+  const lot = String(body.lot || body.lote || "").trim();
+  if (!lot) return "lote requerido";
+
+  const expiresAt = String(body.expiresAt || body.fecha_caducidad || "").trim();
+  if (!expiresAt) return "caducidad requerida";
+
+  const quantity = toNumber(body.quantity ?? body.stock);
+  if (!Number.isFinite(quantity) || quantity <= 0) return "quantity debe ser mayor a 0";
+
+  const costValue = body.cost ?? body.costo;
+  if (costValue === "" || costValue === null || costValue === undefined) return "cost requerido";
+  if (!Number.isFinite(toNumber(costValue)) || toNumber(costValue) < 0) return "cost debe ser un número >= 0";
+
+  const reason = String(body.reason || body.motivo || "").trim();
+  if (!reason) return "reason requerido para conservar trazabilidad";
+
+  return null;
+}
+
+function buildInventoryLotReference(body, lotCode) {
+  const parts = [];
+  if (lotCode) parts.push(`lote:${lotCode}`);
+  const supplier = String(body.supplier || body.proveedor || "").trim();
+  const location = String(body.location || body.ubicacion || "").trim();
+  if (supplier) parts.push(`proveedor:${supplier}`);
+  if (location) parts.push(`ubicación:${location}`);
+  return parts.join(" | ");
+}
+
+async function handleInventoryAddLot(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const body = await readJSONBody(request);
+    const validationError = validateInventoryAddLotPayload(body);
+    if (validationError) {
+      sendJSON(response, 400, { error: validationError });
+      return;
+    }
+
+    const productId = String(body.productId || body.producto_id).trim();
+    const lotCode = String(body.lot || body.lote).trim();
+    const quantity = toInteger(body.quantity ?? body.stock);
+    const reason = String(body.reason || body.motivo).trim();
+
+    const productRecord = await getSupabaseProductRecordById(productId);
+    if (!productRecord) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+    if (productRecord.eliminado === true) {
+      sendJSON(response, 409, { error: "No se puede agregar lote a un producto eliminado" });
+      return;
+    }
+
+    const productBefore = await getSupabaseProductById(productId);
+    const stockAnterior = toInteger(productBefore?.stock);
+
+    const lotPayload = {
+      productId,
+      lot: lotCode,
+      lote: lotCode,
+      stock: quantity,
+      expiresAt: String(body.expiresAt || body.fecha_caducidad).trim(),
+      cost: toNumber(body.cost ?? body.costo),
+    };
+    const lotValidationError = validateProductLotPayload(lotPayload, { requireProductId: true });
+    if (lotValidationError) {
+      sendJSON(response, 400, { error: lotValidationError });
+      return;
+    }
+
+    const lotBody = mapProductLotToDb(lotPayload);
+    lotBody.producto_id = productId;
+    const created = await supabaseRequest("/rest/v1/inventario", {
+      method: "POST",
+      body: lotBody,
+      prefer: "return=representation",
+    });
+    await syncProductStockFromLots(productId);
+
+    const productAfter = await getSupabaseProductById(productId);
+    const stockNuevo = toInteger(productAfter?.stock);
+    const createdLot = mapInventarioRow(created[0]);
+
+    let movement;
+    try {
+      movement = await insertInventoryMovement({
+        productId,
+        lotId: createdLot.id,
+        tipoMovimiento: "entrada",
+        quantity,
+        previousStock: stockAnterior,
+        newStock: stockNuevo,
+        reason,
+        reference: buildInventoryLotReference(body, lotCode),
+      });
+    } catch (movementError) {
+      sendJSON(response, 500, {
+        error: "Lote creado pero no se pudo registrar el movimiento",
+        details: movementError.message,
+        productId,
+        lot: createdLot,
+        stockAnterior,
+        stockNuevo,
+        product: productAfter,
+      });
+      return;
+    }
+
+    sendJSON(response, 200, {
+      ok: true,
+      productId,
+      lot: createdLot,
+      movement,
+      stockAnterior,
+      stockNuevo,
+      product: productAfter,
+    });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo agregar lote", details: error.message });
+  }
+}
+
+async function handleDeleteInventoryLot(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const lotId = getResourceIdFromUrl(getRequestPath(request), "/api/inventory/lots/");
+    if (!lotId) {
+      sendJSON(response, 400, { error: "ID de lote requerido" });
+      return;
+    }
+
+    const rows = await supabaseRequest(
+      `/rest/v1/inventario?select=id,producto_id,stock,lote&id=eq.${encodeURIComponent(lotId)}&limit=1`,
+    );
+    const lotRow = rows[0];
+    if (!lotRow) {
+      sendJSON(response, 404, { error: "Lote no encontrado" });
+      return;
+    }
+
+    const productId = lotRow.producto_id;
+    const productRecord = await getSupabaseProductRecordById(productId);
+    if (!productRecord) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+    if (productRecord.eliminado === true) {
+      sendJSON(response, 409, { error: "No se puede eliminar lote de un producto eliminado" });
+      return;
+    }
+
+    const productBefore = await getSupabaseProductById(productId);
+    const stockAnterior = toInteger(productBefore?.stock);
+    const lotStock = toInteger(lotRow.stock);
+    const parsedLot = parseInventoryLote(lotRow.lote);
+    const lotCode = parsedLot.lot || String(lotRow.lote || "").trim() || "Sin lote";
+
+    await supabaseRequest(`/rest/v1/inventario?id=eq.${encodeURIComponent(lotId)}`, { method: "DELETE" });
+    await syncProductStockFromLots(productId);
+    const productAfter = await getSupabaseProductById(productId);
+    const stockNuevo = toInteger(productAfter?.stock);
+
+    let movement;
+    try {
+      movement = await insertInventoryMovement({
+        productId,
+        lotId: null,
+        tipoMovimiento: "correccion",
+        quantity: lotStock,
+        previousStock: stockAnterior,
+        newStock: stockNuevo,
+        reason: "Eliminación permanente de lote",
+        reference: `lote:${lotCode}`,
+      });
+    } catch (movementError) {
+      sendJSON(response, 500, {
+        error: "Lote eliminado pero no se pudo registrar el movimiento",
+        details: movementError.message,
+        productId,
+        lotId,
+        stockAnterior,
+        stockNuevo,
+        product: productAfter,
+      });
+      return;
+    }
+
+    sendJSON(response, 200, {
+      ok: true,
+      productId,
+      lotId,
+      movement,
+      stockAnterior,
+      stockNuevo,
+      product: productAfter,
+    });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo eliminar lote", details: error.message });
+  }
+}
+
+async function handleInventoryAdjust(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const body = await readJSONBody(request);
+    const validationError = validateInventoryAdjustPayload(body);
+    if (validationError) {
+      sendJSON(response, 400, { error: validationError });
+      return;
+    }
+
+    const productId = String(body.productId || body.producto_id).trim();
+    const lotId = String(body.lotId || body.lote_id || "").trim() || null;
+    const action = String(body.action).trim().toLowerCase();
+    const quantity = toNumber(body.quantity);
+    const reason = String(body.reason || body.motivo).trim();
+
+    const productRecord = await getSupabaseProductRecordById(productId);
+    if (!productRecord) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+    if (productRecord.eliminado === true) {
+      sendJSON(response, 409, { error: "No se puede ajustar stock de un producto eliminado" });
+      return;
+    }
+
+    const inventoryRows = await supabaseRequest(
+      `/rest/v1/inventario?select=id,stock,lote,fecha_caducidad,costo,stock_minimo&producto_id=eq.${encodeURIComponent(productId)}`,
+    );
+
+    let targetRow = null;
+    if (lotId) {
+      targetRow = inventoryRows.find((row) => row.id === lotId) || null;
+      if (!targetRow) {
+        sendJSON(response, 404, { error: "Lote no encontrado" });
+        return;
+      }
+    } else if (inventoryRows.length === 1) {
+      targetRow = inventoryRows[0];
+    } else if (inventoryRows.length > 1) {
+      sendJSON(response, 400, { error: "Selecciona un lote para este producto" });
+      return;
+    }
+
+    let previousStock;
+    let newStock;
+    let resolvedLotId = targetRow?.id || null;
+
+    if (targetRow) {
+      previousStock = toInteger(targetRow.stock);
+      newStock = calculateAdjustedStock(previousStock, action, quantity);
+      if (newStock < 0) {
+        sendJSON(response, 400, { error: "El stock no puede quedar negativo" });
+        return;
+      }
+      await supabaseRequest(`/rest/v1/inventario?id=eq.${encodeURIComponent(targetRow.id)}`, {
+        method: "PATCH",
+        body: { stock: newStock, updated_at: new Date().toISOString() },
+        prefer: "return=representation",
+      });
+    } else {
+      previousStock = toInteger(productRecord.stock);
+      newStock = calculateAdjustedStock(previousStock, action, quantity);
+      if (newStock < 0) {
+        sendJSON(response, 400, { error: "El stock no puede quedar negativo" });
+        return;
+      }
+      const inventoryBody = {
+        producto_id: productId,
+        stock: newStock,
+        stock_minimo: 0,
+        costo: toNumber(productRecord.costo),
+        fecha_caducidad: productRecord.fecha_caducidad || null,
+        lote: null,
+        updated_at: new Date().toISOString(),
+      };
+      const created = await supabaseRequest("/rest/v1/inventario", {
+        method: "POST",
+        body: inventoryBody,
+        prefer: "return=representation",
+      });
+      resolvedLotId = created[0]?.id || null;
+    }
+
+    await syncProductStockFromLots(productId);
+
+    let movement;
+    try {
+      movement = await insertInventoryMovement({
+        productId,
+        lotId: resolvedLotId,
+        action,
+        quantity,
+        previousStock,
+        newStock,
+        reason,
+        reference: body.reference || body.referencia || "",
+      });
+    } catch (movementError) {
+      const product = await getSupabaseProductById(productId);
+      sendJSON(response, 500, {
+        error: "Stock actualizado pero no se pudo registrar el movimiento",
+        details: movementError.message,
+        previousStock,
+        newStock,
+        product,
+      });
+      return;
+    }
+
+    const product = await getSupabaseProductById(productId);
+    sendJSON(response, 200, {
+      ok: true,
+      previousStock,
+      newStock,
+      movement,
+      product,
+    });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudo ajustar stock", details: error.message });
+  }
+}
+
+async function handleGetInventoryMovements(request, response) {
+  if (!isSupabaseEnabled()) {
+    sendJSON(response, 500, { error: "Supabase no configurado" });
+    return;
+  }
+
+  try {
+    const params = getRequestSearchParams(request);
+    const productId = String(params.get("productId") || params.get("producto_id") || "").trim();
+    if (!productId) {
+      sendJSON(response, 400, { error: "productId requerido" });
+      return;
+    }
+
+    const productRecord = await getSupabaseProductRecordById(productId);
+    if (!productRecord) {
+      sendJSON(response, 404, { error: "Producto no encontrado" });
+      return;
+    }
+
+    const rows = await supabaseRequest(
+      `/rest/v1/movimientos_inventario?select=id,producto_id,lote_id,tipo_movimiento,cantidad,stock_anterior,stock_nuevo,motivo,referencia,created_at&producto_id=eq.${encodeURIComponent(productId)}&order=created_at.desc&limit=100`,
+    );
+    sendJSON(response, 200, {
+      ok: true,
+      movements: rows.map(mapInventoryMovementFromDb),
+    });
+  } catch (error) {
+    sendJSON(response, 500, { error: "No se pudieron cargar movimientos", details: error.message });
   }
 }
 

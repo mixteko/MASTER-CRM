@@ -594,7 +594,192 @@ label {
 }
 
 .inventory-panel {
-  padding: 20px;
+  padding: 14px 16px;
+  overflow: visible;
+}
+
+.inventory-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+.inventory-table {
+  width: 100%;
+  min-width: 680px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.inventory-table th,
+.inventory-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #edf1f5;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.inventory-table thead th {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: #fafbfc;
+}
+
+.inventory-col-product {
+  width: 34%;
+}
+
+.inventory-col-category {
+  width: 14%;
+}
+
+.inventory-col-stock {
+  width: 8%;
+  text-align: center;
+}
+
+.inventory-col-lots {
+  width: 8%;
+  text-align: center;
+}
+
+.inventory-col-expiry {
+  width: 20%;
+}
+
+.inventory-col-actions {
+  width: 16%;
+}
+
+.inventory-table thead th.inventory-col-stock,
+.inventory-table thead th.inventory-col-lots,
+.inventory-table tbody td.inventory-col-stock,
+.inventory-table tbody td.inventory-col-lots {
+  text-align: center;
+}
+
+.inventory-table thead th.inventory-col-actions,
+.inventory-table tbody td.inventory-col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  padding-right: 12px;
+  box-shadow: -4px 0 8px rgba(15, 23, 42, 0.04);
+}
+
+.inventory-table thead th.inventory-col-actions {
+  z-index: 3;
+  background: #fafbfc;
+}
+
+.inventory-table tbody tr.inventory-row td.inventory-col-actions {
+  background: #fffbf7;
+}
+
+.inventory-product-cell,
+.inventory-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.inventory-product-copy {
+  min-width: 0;
+}
+
+.inventory-product-name {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #0f172a;
+}
+
+.inventory-product-sku {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.inventory-product-cell img,
+.inventory-product-cell .product-image-placeholder {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.inventory-category-tag {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+}
+
+.inventory-stock-value {
+  display: inline-block;
+  min-width: 28px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.inventory-lot-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.inventory-expiry-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.inventory-expiry-date {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #334155;
+  line-height: 1.2;
+}
+
+.inventory-expiry-cell .expiry-badge {
+  font-size: 0.68rem;
+  padding: 2px 7px;
+}
+
+.inventory-table-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  width: 100%;
+  max-width: 128px;
+  margin-left: auto;
+}
+
+.inventory-action-btn.ghost-button.small {
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .inventory-toolbar {
@@ -616,34 +801,10 @@ label {
   width: 100%;
 }
 
-.inventory-table {
-  min-width: 1420px;
-}
-
-.inventory-product-cell,
 .inventory-detail-hero {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.inventory-product-cell img,
-.inventory-product-cell .product-image-placeholder {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  border-radius: 8px;
-  object-fit: contain;
-}
-
-.inventory-product-cell strong,
-.inventory-product-cell span {
-  display: block;
-}
-
-.inventory-product-cell span {
-  margin-top: 4px;
-  font-size: 0.76rem;
 }
 
 .inventory-status {
@@ -719,6 +880,322 @@ label {
   gap: 10px;
   grid-column: 1 / -1;
   padding-top: 8px;
+}
+
+.stock-adjustment-dialog {
+  width: min(420px, calc(100vw - 20px));
+}
+
+.field-optional {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.stock-adjustment-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.stock-adjustment-mode-tab {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid #dbe3ea;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.stock-adjustment-mode-tab.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.stock-adjustment-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.stock-adjustment-panel[hidden],
+.stock-adjustment-panel.is-hidden {
+  display: none !important;
+}
+
+.stock-adjustment-new-lot-help {
+  margin-bottom: 2px;
+}
+
+.stock-adjustment-header {
+  padding: 10px 12px;
+}
+
+.stock-adjustment-header h2 {
+  font-size: 1.05rem;
+}
+
+.stock-adjustment-header .eyebrow {
+  margin-bottom: 2px;
+  font-size: 0.68rem;
+}
+
+.stock-adjustment-form {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.stock-adjustment-summary {
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.stock-adjustment-product-name {
+  margin: 0 0 2px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.stock-adjustment-meta {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.stock-adjustment-lot-field,
+.stock-adjustment-quantity-field,
+.stock-adjustment-reason-field {
+  display: grid;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.stock-adjustment-lot-field select,
+.stock-adjustment-quantity-field input,
+.stock-adjustment-reason-field select,
+.stock-adjustment-reason-field input {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid #dbe3ea;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.stock-adjustment-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.stock-adjustment-tab {
+  min-height: 30px;
+  padding: 0 6px;
+  border: 1px solid #dbe3ea;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stock-adjustment-tab.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.stock-adjustment-explain {
+  display: grid;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border: 1px solid #edf1f5;
+}
+
+.stock-adjustment-help,
+.stock-adjustment-example {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.stock-adjustment-help {
+  color: #475569;
+}
+
+.stock-adjustment-example {
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.7rem;
+}
+
+.stock-adjustment-result {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 0.76rem;
+}
+
+.stock-adjustment-result strong.is-invalid {
+  color: #b91c1c;
+}
+
+.stock-adjustment-warning {
+  margin: 0;
+  color: #b45309;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.stock-adjustment-actions.product-lot-form-actions {
+  gap: 8px;
+  padding-top: 4px;
+  margin-top: 2px;
+}
+
+.inventory-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inventory-movements-dialog {
+  width: min(700px, calc(100vw - 20px));
+}
+
+.inventory-movements-header {
+  padding: 10px 12px;
+}
+
+.inventory-movements-header h2 {
+  font-size: 1.05rem;
+}
+
+.inventory-movements-body {
+  padding: 8px 12px 12px;
+}
+
+.inventory-movements-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.inventory-movements-table {
+  width: 100%;
+  min-width: 580px;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  table-layout: fixed;
+}
+
+.inventory-movements-table th,
+.inventory-movements-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.inventory-movements-table thead th {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: #fafbfc;
+}
+
+.inventory-movements-table .inventory-movements-num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-movements-table .inventory-movements-date {
+  width: 18%;
+  white-space: nowrap;
+}
+
+.inventory-movements-table .inventory-movements-type {
+  width: 7%;
+  min-width: 58px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.inventory-movement-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  max-width: 100%;
+  padding: 2px 5px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inventory-movement-badge.is-entry {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.inventory-movement-badge.is-exit {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.inventory-movement-badge.is-replace {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.inventory-movement-badge.is-correction {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.inventory-movement-badge.is-neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.inventory-movements-table .inventory-movements-num {
+  width: 9%;
+}
+
+.inventory-movements-table .inventory-movements-reason {
+  width: 42%;
+  word-break: break-word;
+}
+
+.inventory-movements-empty,
+.inventory-movements-loading {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.76rem;
 }
 
 .inventory-detail-dialog {
@@ -1378,6 +1855,20 @@ label {
   border-bottom: 1px solid #edf1f5;
   vertical-align: middle;
   text-align: left;
+}
+
+.product-lot-table-actions {
+  display: grid;
+  gap: 4px;
+  min-width: 92px;
+}
+
+.product-lot-action-btn.ghost-button.small {
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .product-lot-row.is-expiration-red {

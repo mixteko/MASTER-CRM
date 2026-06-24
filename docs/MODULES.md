@@ -24,6 +24,8 @@
 
 **Estado actual:** ofrece búsqueda, alta, edición, activación y desactivación mediante la API de productos; ya maneja datos básicos como sustancia, caducidad, stock y condición de receta.
 
+**Inventario (US-011A):** en **Productos → Inventario**, ajuste de stock con Agregar / Descontar / Reemplazar, motivo obligatorio, historial por producto y API `POST /api/inventory/adjust`. Ver `docs/DEVELOPMENT_GUIDE.md` § US-011A.
+
 **Futuro esperado:** nombre comercial, sustancia activa, laboratorio, presentación, concentración, forma farmacéutica, receta, clasificación de controlado, refrigeración e imágenes gestionadas.
 
 ## Inventario
@@ -32,7 +34,13 @@
 
 **Estado actual:** reutiliza la vista de Productos y muestra stock y alertas básicas.
 
-**Futuro esperado:** entradas y salidas auditables, lotes, FEFO, alertas de stock bajo y caducidad próxima, cadena fría, ajustes, reservas y actualización transaccional.
+**Ajuste de stock (US-011A / US-011C / US-011D):** modal unificado con **Ajustar lote existente** (modifica lote ya creado; Agregar/Descontar/Reemplazar) y **Agregar nuevo lote** (entrada nueva en el mismo producto; sin selector de lote existente; movimiento `entrada`). Inventario: **Ajustar stock** y **Ver historial**. Historial con badges compactos en columna Tipo.
+
+**Lotes en producto:** Editar, Pausar (reversible) y Eliminar (irreversible; confirmación escribiendo `ELIMINAR`; recalcula stock; movimiento `correccion`).
+
+**FEFO:** las salidas deben priorizar el lote con caducidad más próxima; en Inventario, Descontar preselecciona ese lote.
+
+**Futuro esperado:** entradas y salidas auditables adicionales, alertas de stock bajo y caducidad próxima, cadena fría, reservas y actualización transaccional en ventas.
 
 ## Recetas
 
