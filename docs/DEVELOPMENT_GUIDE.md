@@ -109,14 +109,29 @@ Subida de imagenes de producto:
 * `SUPABASE_SERVICE_ROLE_KEY` solo en `server/.env`
 * La tabla `productos` guarda solo `imagen_url` (URL publica); no base64
 
-Categorias y clasificaciones (US-008):
+Categorias y clasificaciones (US-008 / Categorías Tiendanube):
 
 * Endpoints: `GET/POST/PATCH/DELETE /api/categories` y `/api/classifications`
-* `DELETE` desactiva (`activo=false`); no hay borrado fisico
-* Tabla `categorias` ya existe en Supabase (`server/sql/schema.sql`)
+* **Categorías principales y subcategorías:** columna `parent_id` en `categorias` (SQL en `server/sql/categorias_subcategorias.sql`)
+* **Ocultar en tienda:** columna `visible_en_tienda` (default `true`); el CRM sigue mostrando la categoría y los productos conservan su asociación
+* Vista **Productos → Categorías:** lista jerárquica compacta; en escritorio acciones visibles por fila (**Editar**, **Subcategoría**, **Ocultar/Mostrar**, **Eliminar**); en móvil menú ⋮
+* **Ocultar en tienda:** mantiene la categoría en CRM (`visible_en_tienda=false`); no afecta productos ni su `categoria_id`
+* **Eliminar categoría:** solo si no tiene productos (`productos.categoria_id`) ni subcategorías hijas; si hay dependencias el backend responde `409` con `productCount` y `subcategoryCount` y el frontend muestra modal bloqueante con opción **Ocultar en tienda** cuando hay productos
+* **Clasificaciones (US-012B):** etiquetas internas del CRM (no visibles en tienda); columna `activo` para activar/desactivar; la descripción explica el uso interno
+* Vista **Productos → Clasificaciones:** tabla compacta con columnas Clasificación, Descripción, Estado y Acciones; en escritorio acciones visibles (**Editar**, **Desactivar/Activar**, **Eliminar**); en móvil menú ⋮
+* **Desactivar clasificación:** mantiene la clasificación en CRM (`activo=false`); no afecta productos ya asociados ni quita su `clasificacion_id`
+* **Eliminar clasificación:** solo si no tiene productos (`productos.clasificacion_id`); si hay productos el backend responde `409` con `CLASSIFICATION_HAS_PRODUCTS` y `productCount`; el frontend muestra modal bloqueante con opción **Desactivar clasificación**
+* Confirmaciones con modales del proyecto (no `window.confirm`)
+* Tabla `categorias` base en `server/sql/schema.sql`
 * Tabla `clasificaciones` debe crearse en Supabase antes de usar la seccion administrativa
 
-SQL recomendado (ejecutar en el SQL Editor de Supabase):
+SQL subcategorías y visibilidad (ejecutar en Supabase):
+
+```bash
+# Ver server/sql/categorias_subcategorias.sql
+```
+
+SQL recomendado clasificaciones (ejecutar en el SQL Editor de Supabase):
 
 ```sql
 create table if not exists clasificaciones (
@@ -259,17 +274,32 @@ Pulido módulo Productos (US-010D / US-010F):
 * Texto formal **Agregar Lote** en formulario de producto; en Inventario se accede desde la pestaña **Agregar nuevo lote** dentro de **Ajustar stock**
 * Acciones en lista: duplicar y pausar visibles; menú **Más acciones** con eliminar (baja) y eliminar definitivamente (modal con confirmación `ELIMINAR`)
 
-Importar / Exportar CSV (US-011):
+Importar / Exportar CSV (US-013):
 
 * Subpágina **Importar / Exportar** dentro de Productos (`products-import-export`)
-* **Exportar CSV**: genera `master-crm-productos-YYYY-MM-DD.csv` desde `state.products` con columnas:
-  `sku`, `name`, `description`, `category`, `classification`, `laboratory`, `stock`, `minStock`, `maxStock`, `lot`, `expiresAt`, `cost`, `regularPrice`, `price`, `promotionalPrice`, `discountPrice`, `imageUrl`, `status`
-* **Importar CSV**: lectura en frontend, vista previa (total / válidas / errores / primeras 10 filas) y botón **Confirmar importación**
-* Validaciones mínimas por fila: `name` requerido, `price` y `stock` numéricos `>= 0`, `expiresAt` opcional en formato `YYYY-MM-DD`
-* Si `sku` coincide con un producto existente → `PATCH /api/products/:id`; si no hay `sku` o no existe → `POST /api/products`
-* No borra productos ausentes del CSV; no elimina por importación en esta fase
-* `imageUrl` vacío no sobrescribe imagen existente salvo que se marque **Sobrescribir imagen si imageUrl viene vacío**; no sube archivos a Storage (solo URL)
+* **Exportar CSV**: genera `master-crm-productos-YYYY-MM-DD.csv` desde productos con estado **Activo**
+* Columnas exportadas (español): `sku`, `nombre`, `descripcion`, `categoria`, `clasificacion`, `laboratorio`, `precio_venta`, `precio_promocional`, `costo`, `stock`, `lote`, `caducidad`, `imagen_url`, `estado`
+* Si un producto tiene varios lotes, exporta el lote FEFO (caducidad más próxima con stock); `stock` exporta el total del producto
+* **Importar CSV**: lectura en frontend, vista previa obligatoria (total / válidas / errores / crear / actualizar / primeras 10 filas) y botones **Cancelar** + **Confirmar importación**
+* Validaciones por fila: `nombre` requerido; `precio_venta` o `price` requerido y `>= 0`; `stock` y `costo` opcionales pero numéricos `>= 0` si vienen; `caducidad` opcional en `YYYY-MM-DD`
+* Si `sku` coincide con un producto existente → `PATCH /api/products/:id`; si no hay `sku` o no existe → `POST /api/products` (con advertencia)
+* No borra productos ausentes del CSV; no elimina lotes ni imágenes automáticamente
+* Opción **Mantener imágenes actuales si el CSV no trae imagen** (activa por defecto): si `imagen_url` viene vacía, conserva `imageUrl` del producto existente
 * Si hay filas con error crítico, **Confirmar importación** permanece deshabilitado
+* La importación acepta encabezados en español o inglés (`nombre`/`name`, `precio_venta`/`price`, etc.)
+
+Importar CSV editable (US-013B):
+
+* Vista previa en **tabla editable** (todas las filas, scroll interno) para corregir errores antes de confirmar
+* Botón **Revalidar datos** recalcula totales, errores, crear/actualizar y habilita **Confirmar importación** cuando todo es válido
+* Revalidación automática al salir de una celda (`blur`) en la fila editada
+* Fechas de caducidad aceptan `YYYY-MM-DD`, `YYYY-M-D`, `DD/MM/YYYY`, `D/M/YYYY`, `DD-MM-YYYY`, `DD/MM/YY`, `D/M/YY` y variantes con guión; años de 2 dígitos (`00-79` → `2000-2079`, `80-99` → `1980-1999`); se normalizan internamente a `YYYY-MM-DD`
+* Celdas con error muestran borde rojo y mensaje en columna **Validación**
+* Mensajes: «Corrige los errores antes de importar.» / «Datos válidos. Puedes confirmar la importación.»
+* **Confirmar importación** usa los datos corregidos en la tabla, no el CSV original
+* Tras confirmar importación con al menos una fila guardada, se oculta la vista previa editable y se muestra resumen final con **Importar otro CSV** y **Ver productos**; se evita doble confirmación del mismo archivo
+* Si falla por completo (0 creados/actualizados), la vista previa permanece para corregir y reintentar
+* Opción **Mantener imágenes actuales si el CSV no trae imagen** sigue visible y activa por defecto
 
 Pulido acciones y filtros (US-010G):
 

@@ -18,6 +18,8 @@ let productActionDialogResolver = null;
 let productPermanentDeleteResolver = null;
 let productLotDeleteResolver = null;
 let productLotDeleteContext = null;
+let categoryDependencyResolver = null;
+let classificationDependencyResolver = null;
 
 const initialProducts = [
   {
@@ -4366,25 +4368,38 @@ const viewAliases = {
   "importar-exportar": { view: "productos", productsSection: "products-import-export" },
 };
 
-const PRODUCT_CSV_COLUMNS = [
+const PRODUCT_CSV_EXPORT_COLUMNS = [
   "sku",
-  "name",
-  "description",
-  "category",
-  "classification",
-  "laboratory",
+  "nombre",
+  "descripcion",
+  "categoria",
+  "clasificacion",
+  "laboratorio",
+  "precio_venta",
+  "precio_promocional",
+  "costo",
   "stock",
-  "minStock",
-  "maxStock",
-  "lot",
-  "expiresAt",
-  "cost",
-  "regularPrice",
-  "price",
-  "promotionalPrice",
-  "discountPrice",
-  "imageUrl",
-  "status",
+  "lote",
+  "caducidad",
+  "imagen_url",
+  "estado",
+];
+
+const PRODUCT_IMPORT_EDITABLE_FIELDS = [
+  { field: "sku", label: "SKU" },
+  { field: "name", label: "Nombre" },
+  { field: "description", label: "Descripción" },
+  { field: "category", label: "Categoría" },
+  { field: "classification", label: "Clasificación" },
+  { field: "laboratory", label: "Laboratorio" },
+  { field: "precio_venta", label: "Precio venta" },
+  { field: "precio_promocional", label: "Precio promo" },
+  { field: "cost", label: "Costo" },
+  { field: "stock", label: "Stock" },
+  { field: "lot", label: "Lote" },
+  { field: "caducidad", label: "Caducidad" },
+  { field: "imagen_url", label: "Imagen URL" },
+  { field: "estado", label: "Estado", type: "status" },
 ];
 
 const STOCK_ADJUST_ACTION_COPY = {
@@ -4548,11 +4563,23 @@ const elements = {
   categoryForm: $("#categoryForm"),
   categoryFormTitle: $("#categoryFormTitle"),
   categoryId: $("#categoryId"),
+  categoryParentId: $("#categoryParentId"),
+  categoryParentHint: $("#categoryParentHint"),
   categoryName: $("#categoryName"),
   categoryDescription: $("#categoryDescription"),
   categorySearch: $("#categorySearch"),
   categoryTable: $("#categoryTable"),
   clearCategoryForm: $("#clearCategoryForm"),
+  categoryDependencyDialog: $("#categoryDependencyDialog"),
+  categoryDependencyDialogForm: $("#categoryDependencyDialogForm"),
+  categoryDependencyTitle: $("#categoryDependencyTitle"),
+  categoryDependencyMessage: $("#categoryDependencyMessage"),
+  categoryDependencyHideButton: $("#categoryDependencyHideButton"),
+  classificationDependencyDialog: $("#classificationDependencyDialog"),
+  classificationDependencyDialogForm: $("#classificationDependencyDialogForm"),
+  classificationDependencyTitle: $("#classificationDependencyTitle"),
+  classificationDependencyMessage: $("#classificationDependencyMessage"),
+  classificationDependencyDeactivateButton: $("#classificationDependencyDeactivateButton"),
   classificationForm: $("#classificationForm"),
   classificationFormTitle: $("#classificationFormTitle"),
   classificationId: $("#classificationId"),
@@ -4571,14 +4598,24 @@ const elements = {
   exportProductsCsvButton: $("#exportProductsCsvButton"),
   importProductsCsvFile: $("#importProductsCsvFile"),
   importProductsCsvSelectButton: $("#importProductsCsvSelectButton"),
-  importProductsOverwriteImage: $("#importProductsOverwriteImage"),
+  importProductsKeepCurrentImages: $("#importProductsKeepCurrentImages"),
   importProductsFileName: $("#importProductsFileName"),
   importProductsPreviewPanel: $("#importProductsPreviewPanel"),
+  importProductsPreviewWorkspace: $("#importProductsPreviewWorkspace"),
   importProductsStats: $("#importProductsStats"),
   importProductsPreviewTable: $("#importProductsPreviewTable"),
+  importProductsWarnings: $("#importProductsWarnings"),
   importProductsErrors: $("#importProductsErrors"),
-  importProductsResult: $("#importProductsResult"),
+  importProductsFinalPanel: $("#importProductsFinalPanel"),
+  importProductsFinalTitle: $("#importProductsFinalTitle"),
+  importProductsFinalMessage: $("#importProductsFinalMessage"),
+  importProductsFinalSummary: $("#importProductsFinalSummary"),
+  importProductsFinalErrors: $("#importProductsFinalErrors"),
+  importProductsAnotherCsvButton: $("#importProductsAnotherCsvButton"),
+  importProductsViewProductsButton: $("#importProductsViewProductsButton"),
   confirmProductsImportButton: $("#confirmProductsImportButton"),
+  cancelProductsImportButton: $("#cancelProductsImportButton"),
+  revalidateProductsImportButton: $("#revalidateProductsImportButton"),
   inventorySearch: $("#inventorySearch"),
   inventoryCategoryFilter: $("#inventoryCategoryFilter"),
   inventoryLaboratoryFilter: $("#inventoryLaboratoryFilter"),
@@ -4797,6 +4834,16 @@ function bindEvents() {
   elements.importProductsCsvSelectButton?.addEventListener("click", () => elements.importProductsCsvFile?.click());
   elements.importProductsCsvFile?.addEventListener("change", handleImportCsvFileSelect);
   elements.confirmProductsImportButton?.addEventListener("click", confirmProductsImport);
+  elements.cancelProductsImportButton?.addEventListener("click", () => resetImportProductsUi());
+  elements.revalidateProductsImportButton?.addEventListener("click", revalidateProductsImport);
+  elements.importProductsAnotherCsvButton?.addEventListener("click", startAnotherProductsImport);
+  elements.importProductsViewProductsButton?.addEventListener("click", goToProductsListAfterImport);
+  elements.importProductsPreviewTable?.addEventListener("input", handleImportPreviewInput);
+  elements.importProductsPreviewTable?.addEventListener("change", handleImportPreviewInput);
+  elements.importProductsPreviewTable?.addEventListener("blur", handleImportPreviewBlur, true);
+  elements.importProductsKeepCurrentImages?.addEventListener("change", () => {
+    if (state.csvImportSession) renderImportProductsPreview(state.csvImportSession);
+  });
 
   document.addEventListener("mouseover", handleProductActionTooltipOver);
   document.addEventListener("mouseout", handleProductActionTooltipOut);
@@ -4871,6 +4918,8 @@ function bindEvents() {
       productLotDeleteContext = null;
     }
   });
+  elements.categoryDependencyDialogForm?.addEventListener("close", handleCategoryDependencyDialogClose);
+  elements.classificationDependencyDialogForm?.addEventListener("close", handleClassificationDependencyDialogClose);
 
   document.addEventListener("click", handleDocumentAction);
   document.addEventListener("click", (event) => {
@@ -4904,9 +4953,15 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "close-permanent-delete-dialog") elements.productPermanentDeleteDialog?.close("cancel");
   if (action.dataset.action === "close-lot-delete-dialog") elements.productLotDeleteDialog?.close("cancel");
   if (action.dataset.action === "edit-category") editCategory(id);
-  if (action.dataset.action === "deactivate-category") deactivateCategory(id);
+  if (action.dataset.action === "create-subcategory") createSubcategory(id);
+  if (action.dataset.action === "toggle-category-store-visibility") toggleCategoryStoreVisibility(id);
+  if (action.dataset.action === "delete-category") deleteCategory(id);
+  if (action.dataset.action === "toggle-category-menu") toggleProductActionMenu(action);
   if (action.dataset.action === "edit-classification") editClassification(id);
   if (action.dataset.action === "deactivate-classification") deactivateClassification(id);
+  if (action.dataset.action === "activate-classification") activateClassification(id);
+  if (action.dataset.action === "delete-classification") deleteClassification(id);
+  if (action.dataset.action === "toggle-classification-menu") toggleProductActionMenu(action);
   if (action.dataset.action === "order-next") moveOrderNext(id);
   if (action.dataset.action === "mark-paid") markPaymentPaid(id);
   if (action.dataset.action === "mark-shipped") markShipmentSent(id);
@@ -4992,38 +5047,55 @@ function escapeCsvValue(value) {
   return text;
 }
 
+function getExportLotSnapshot(product) {
+  const lots = getActiveProductLots(product);
+  if (!lots.length) {
+    return {
+      lot: product.lot || product.lote || "",
+      expiresAt: product.expiresAt || "",
+      cost: toNumber(product.cost),
+    };
+  }
+
+  const fefoLots = sortLotsFefo(lots);
+  const primary = fefoLots[0] || lots.find((lot) => lot.active !== false) || lots[0];
+  return {
+    lot: primary.lot || primary.lote || "",
+    expiresAt: primary.expiresAt || "",
+    cost: primary.cost != null ? toNumber(primary.cost) : toNumber(product.cost),
+  };
+}
+
 function productToCsvRecord(product) {
   const promo = getProductStoredPromotionalPrice(product);
   const listPrice = toNumber(product.regularPrice ?? product.price);
+  const lotSnapshot = getExportLotSnapshot(product);
   return {
     sku: product.sku || "",
-    name: product.name || "",
-    description: product.description || "",
-    category: product.category || "",
-    classification: product.type || "",
-    laboratory: product.laboratory || product.laboratorio || "",
+    nombre: product.name || "",
+    descripcion: product.description || "",
+    categoria: product.category || "",
+    clasificacion: product.type || "",
+    laboratorio: product.laboratory || product.laboratorio || "",
+    precio_venta: listPrice,
+    precio_promocional: promo != null ? promo : "",
+    costo: lotSnapshot.cost,
     stock: toInteger(product.stock),
-    minStock: toInteger(product.minStock),
-    maxStock: toInteger(product.maxStock),
-    lot: product.lot || product.lote || "",
-    expiresAt: product.expiresAt || "",
-    cost: toNumber(product.cost),
-    regularPrice: listPrice,
-    price: toNumber(product.price ?? listPrice),
-    promotionalPrice: promo != null ? promo : "",
-    discountPrice: promo != null ? promo : "",
-    imageUrl: product.imageUrl || "",
-    status: product.status || "Activo",
+    lote: lotSnapshot.lot,
+    caducidad: lotSnapshot.expiresAt,
+    imagen_url: product.imageUrl || "",
+    estado: product.status || "Activo",
   };
 }
 
 function exportProductsToCsv() {
-  if (!state.products.length) return showToast("No hay productos para exportar");
+  const exportableProducts = state.products.filter((product) => product.status === "Activo");
+  if (!exportableProducts.length) return showToast("No hay productos activos para exportar");
 
-  const header = PRODUCT_CSV_COLUMNS.join(",");
-  const lines = state.products.map((product) => {
+  const header = PRODUCT_CSV_EXPORT_COLUMNS.join(",");
+  const lines = exportableProducts.map((product) => {
     const record = productToCsvRecord(product);
-    return PRODUCT_CSV_COLUMNS.map((column) => escapeCsvValue(record[column])).join(",");
+    return PRODUCT_CSV_EXPORT_COLUMNS.map((column) => escapeCsvValue(record[column])).join(",");
   });
 
   const csv = `\uFEFF${header}\n${lines.join("\n")}`;
@@ -5037,7 +5109,7 @@ function exportProductsToCsv() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-  showToast("CSV exportado");
+  showToast(`CSV exportado (${exportableProducts.length} productos)`);
 }
 
 function parseCsvText(text) {
@@ -5102,11 +5174,59 @@ function mapCsvRow(headers, values) {
   return row;
 }
 
-function isValidImportDate(value) {
+function expandImportTwoDigitYear(yearTwo) {
+  const yy = Number(yearTwo);
+  if (!Number.isFinite(yy) || yy < 0 || yy > 99) return null;
+  return yy <= 79 ? 2000 + yy : 1900 + yy;
+}
+
+function formatImportDate(year, month, day) {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function isValidImportCalendarDate(year, month, day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const normalized = formatImportDate(year, month, day);
+  const date = new Date(`${normalized}T00:00:00`);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getFullYear() === year &&
+    date.getMonth() + 1 === month &&
+    date.getDate() === day
+  );
+}
+
+function parseImportDate(value) {
   const text = String(value || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
-  const date = new Date(`${text}T00:00:00`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
+  if (!text) return { valid: true, normalized: "" };
+
+  const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]);
+    const day = Number(isoMatch[3]);
+    if (isValidImportCalendarDate(year, month, day)) {
+      return { valid: true, normalized: formatImportDate(year, month, day) };
+    }
+    return { valid: false, normalized: "" };
+  }
+
+  const dayFirstMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
+  if (dayFirstMatch) {
+    const day = Number(dayFirstMatch[1]);
+    const month = Number(dayFirstMatch[2]);
+    let year = Number(dayFirstMatch[3]);
+    if (String(dayFirstMatch[3]).length === 2) {
+      const expandedYear = expandImportTwoDigitYear(dayFirstMatch[3]);
+      if (expandedYear === null) return { valid: false, normalized: "" };
+      year = expandedYear;
+    }
+    if (isValidImportCalendarDate(year, month, day)) {
+      return { valid: true, normalized: formatImportDate(year, month, day) };
+    }
+  }
+
+  return { valid: false, normalized: "" };
 }
 
 function isValidNonNegativeNumber(value) {
@@ -5116,25 +5236,118 @@ function isValidNonNegativeNumber(value) {
 }
 
 function getImportRowPrice(row) {
-  if (row.regularPrice !== "" && row.regularPrice != null) return row.regularPrice;
-  if (row.price !== "" && row.price != null) return row.price;
+  const candidates = [row.precio_venta, row.regularPrice, row.price];
+  for (const value of candidates) {
+    if (value !== "" && value != null) return value;
+  }
   return "";
 }
 
+function getImportFieldValue(row, field) {
+  switch (field) {
+    case "precio_venta":
+      return getImportRowPrice(row);
+    case "precio_promocional":
+      return row.promotionalPrice || row.discountPrice || "";
+    case "caducidad":
+      return row.caducidad || row.expiresAt || "";
+    case "imagen_url":
+      return row.imageUrl || "";
+    case "estado":
+      return row.status || "Activo";
+    default:
+      return row[field] ?? "";
+  }
+}
+
+function applyImportFieldValue(row, field, value) {
+  const text = String(value ?? "").trim();
+  switch (field) {
+    case "precio_venta":
+      row.precio_venta = text;
+      row.regularPrice = text;
+      row.price = text;
+      break;
+    case "precio_promocional":
+      row.promotionalPrice = text;
+      row.discountPrice = text;
+      break;
+    case "caducidad":
+      row.caducidad = text;
+      row.expiresAt = text;
+      break;
+    case "imagen_url":
+      row.imageUrl = text;
+      break;
+    case "estado":
+      row.status = text || "Activo";
+      break;
+    default:
+      row[field] = text;
+      break;
+  }
+}
+
 function validateImportCsvRow(row) {
+  const fieldErrors = {};
   const errors = [];
-  if (!String(row.name || "").trim()) errors.push("name requerido");
+  const warnings = [];
+
+  if (!String(row.name || "").trim()) {
+    errors.push("falta nombre");
+    fieldErrors.name = "falta nombre";
+  }
 
   const priceValue = getImportRowPrice(row);
-  if (priceValue === "" || priceValue == null) errors.push("price requerido");
-  else if (!isValidNonNegativeNumber(priceValue)) errors.push("price debe ser número >= 0");
+  if (priceValue === "" || priceValue == null) {
+    errors.push("precio_venta requerido");
+    fieldErrors.precio_venta = "precio_venta requerido";
+  } else if (!isValidNonNegativeNumber(priceValue)) {
+    errors.push("precio_venta debe ser número >= 0");
+    fieldErrors.precio_venta = "precio_venta debe ser número >= 0";
+  }
 
-  if (row.stock === "" || row.stock == null) errors.push("stock requerido");
-  else if (!isValidNonNegativeNumber(row.stock)) errors.push("stock debe ser número >= 0");
+  if (row.stock !== "" && row.stock != null && !isValidNonNegativeNumber(row.stock)) {
+    errors.push("stock debe ser número >= 0");
+    fieldErrors.stock = "stock debe ser número >= 0";
+  }
 
-  if (row.expiresAt && !isValidImportDate(row.expiresAt)) errors.push("expiresAt inválida (YYYY-MM-DD)");
+  if (row.cost !== "" && row.cost != null && !isValidNonNegativeNumber(row.cost)) {
+    errors.push("costo debe ser número >= 0");
+    fieldErrors.cost = "costo debe ser número >= 0";
+  }
 
-  return errors;
+  const rawDate = String(row.caducidad || row.expiresAt || "").trim();
+  if (rawDate) {
+    const parsedDate = parseImportDate(rawDate);
+    if (!parsedDate.valid) {
+      const message = "Caducidad inválida. Usa YYYY-MM-DD, DD/MM/YYYY o DD/MM/YY.";
+      errors.push(message);
+      fieldErrors.caducidad = message;
+    } else {
+      row.caducidad = parsedDate.normalized;
+      row.expiresAt = parsedDate.normalized;
+    }
+  }
+
+  const categoryName = String(row.category || "").trim();
+  if (categoryName && !getCategoryByName(categoryName)) {
+    warnings.push(`categoría "${categoryName}" no está registrada`);
+  }
+
+  const classificationName = String(row.classification || "").trim();
+  if (
+    classificationName &&
+    !state.classifications.some((classification) => classification.name === classificationName)
+  ) {
+    warnings.push(`clasificación "${classificationName}" no está registrada`);
+  }
+
+  if (!String(row.sku || "").trim()) {
+    warnings.push("sin SKU, se creará como producto nuevo");
+  }
+
+  return { errors, warnings, fieldErrors };
 }
 
 function normalizeImportCsvRow(rawRow) {
@@ -5147,6 +5360,9 @@ function normalizeImportCsvRow(rawRow) {
     return "";
   };
 
+  const expiresAt = get("caducidad", "expiresat", "expiresAt", "fecha_caducidad");
+  const listPrice = get("precio_venta", "regularprice", "regularPrice", "price", "precio");
+
   return {
     sku: get("sku"),
     name: get("name", "nombre"),
@@ -5158,12 +5374,14 @@ function normalizeImportCsvRow(rawRow) {
     minStock: get("minstock", "minStock"),
     maxStock: get("maxstock", "maxStock"),
     lot: get("lot", "lote"),
-    expiresAt: get("expiresat", "expiresAt"),
+    expiresAt,
+    caducidad: expiresAt,
     cost: get("cost", "costo"),
-    regularPrice: get("regularprice", "regularPrice", "price", "precio"),
-    price: get("price", "precio", "regularprice", "regularPrice"),
-    promotionalPrice: get("promotionalprice", "promotionalPrice", "precio_promocional"),
-    discountPrice: get("discountprice", "discountPrice"),
+    precio_venta: listPrice,
+    regularPrice: listPrice,
+    price: get("price", "precio", "precio_venta", "regularprice", "regularPrice"),
+    promotionalPrice: get("promotionalprice", "promotionalPrice", "precio_promocional", "discountprice", "discountPrice"),
+    discountPrice: get("discountprice", "discountPrice", "precio_promocional", "promotionalprice", "promotionalPrice"),
     imageUrl: get("imageurl", "imageUrl", "imagen_url"),
     status: get("status", "estado", "activo") || "Activo",
   };
@@ -5176,9 +5394,11 @@ function findProductBySku(sku) {
 }
 
 function buildImportProductPayload(row, existing, options = {}) {
+  const keepCurrentImagesWhenEmpty = options.keepCurrentImagesWhenEmpty !== false;
   const listPrice = toNumber(getImportRowPrice(row));
   const promoRaw = row.promotionalPrice || row.discountPrice;
   const promoPrice = promoRaw === "" || promoRaw == null ? null : toNumber(promoRaw);
+  const hasStock = row.stock !== "" && row.stock != null;
   const payload = {
     sku: String(row.sku || "").trim(),
     name: String(row.name || "").trim(),
@@ -5186,12 +5406,11 @@ function buildImportProductPayload(row, existing, options = {}) {
     category: String(row.category || "").trim(),
     type: String(row.classification || "").trim(),
     laboratory: String(row.laboratory || "").trim(),
-    stock: toInteger(row.stock),
     minStock: row.minStock === "" ? 0 : toInteger(row.minStock),
     maxStock: row.maxStock === "" ? 0 : toInteger(row.maxStock),
     lot: String(row.lot || "").trim(),
     lote: String(row.lot || "").trim(),
-    expiresAt: String(row.expiresAt || "").trim(),
+    expiresAt: String(row.expiresAt || row.caducidad || "").trim(),
     cost: row.cost === "" ? 0 : toNumber(row.cost),
     regularPrice: listPrice,
     price: listPrice,
@@ -5202,22 +5421,19 @@ function buildImportProductPayload(row, existing, options = {}) {
     iva: false,
   };
 
+  if (hasStock) payload.stock = toInteger(row.stock);
+  else if (!existing) payload.stock = 0;
+
   const imageUrl = String(row.imageUrl || "").trim();
   if (imageUrl) {
     payload.imageUrl = imageUrl;
-  } else if (!existing && options.overwriteEmptyImage) {
-    payload.imageUrl = "";
-  } else if (!existing) {
-    payload.imageUrl = "";
-  } else if (existing && options.overwriteEmptyImage) {
+  } else if (!keepCurrentImagesWhenEmpty) {
     payload.imageUrl = "";
   }
 
   if (existing) {
     payload.id = existing.id;
-    if (!imageUrl && !options.overwriteEmptyImage) {
-      delete payload.imageUrl;
-    }
+    if (!imageUrl && keepCurrentImagesWhenEmpty) delete payload.imageUrl;
   }
 
   return payload;
@@ -5229,16 +5445,92 @@ function resetImportProductsUi(options = {}) {
     elements.importProductsFileName.textContent = "Ningún archivo seleccionado";
   }
   if (elements.importProductsPreviewPanel) elements.importProductsPreviewPanel.hidden = true;
+  if (elements.importProductsPreviewWorkspace) elements.importProductsPreviewWorkspace.hidden = false;
+  if (elements.importProductsFinalPanel) {
+    elements.importProductsFinalPanel.hidden = true;
+    elements.importProductsFinalPanel.classList.remove("is-success", "is-partial");
+  }
+  if (elements.importProductsPreviewTable) elements.importProductsPreviewTable.innerHTML = "";
+  if (elements.importProductsStats) elements.importProductsStats.innerHTML = "";
   if (elements.confirmProductsImportButton) elements.confirmProductsImportButton.disabled = true;
+  if (elements.revalidateProductsImportButton) elements.revalidateProductsImportButton.disabled = true;
+  if (elements.importProductsWarnings) {
+    elements.importProductsWarnings.hidden = true;
+    elements.importProductsWarnings.innerHTML = "";
+  }
   if (elements.importProductsErrors) {
     elements.importProductsErrors.hidden = true;
+    elements.importProductsErrors.classList.remove("is-success");
     elements.importProductsErrors.innerHTML = "";
   }
-  if (elements.importProductsResult) {
-    elements.importProductsResult.hidden = true;
-    elements.importProductsResult.innerHTML = "";
+  if (elements.importProductsFinalErrors) {
+    elements.importProductsFinalErrors.hidden = true;
+    elements.importProductsFinalErrors.innerHTML = "";
+  }
+  if (elements.importProductsFinalSummary) elements.importProductsFinalSummary.textContent = "";
+  if (elements.importProductsFinalMessage) {
+    elements.importProductsFinalMessage.hidden = true;
+    elements.importProductsFinalMessage.textContent = "";
   }
   if (!options.keepSession) state.csvImportSession = null;
+}
+
+function showImportFinalSummary(summary) {
+  const hasRowErrors = summary.errors.length > 0;
+  const summaryLine = `Creados: ${summary.created} · Actualizados: ${summary.updated} · Errores: ${summary.errors.length}`;
+
+  if (elements.importProductsPreviewPanel) elements.importProductsPreviewPanel.hidden = false;
+  if (elements.importProductsPreviewWorkspace) elements.importProductsPreviewWorkspace.hidden = true;
+  if (elements.importProductsFinalPanel) {
+    elements.importProductsFinalPanel.hidden = false;
+    elements.importProductsFinalPanel.classList.toggle("is-success", !hasRowErrors);
+    elements.importProductsFinalPanel.classList.toggle("is-partial", hasRowErrors);
+  }
+
+  if (elements.importProductsFinalTitle) {
+    elements.importProductsFinalTitle.textContent = hasRowErrors
+      ? "Importación finalizada con errores"
+      : "Importación finalizada";
+  }
+  if (elements.importProductsFinalMessage) {
+    elements.importProductsFinalMessage.hidden = hasRowErrors;
+    elements.importProductsFinalMessage.textContent = "Importación finalizada correctamente.";
+  }
+  if (elements.importProductsFinalSummary) {
+    elements.importProductsFinalSummary.textContent = summaryLine;
+  }
+  if (elements.importProductsFinalErrors) {
+    if (hasRowErrors) {
+      elements.importProductsFinalErrors.hidden = false;
+      elements.importProductsFinalErrors.innerHTML = `
+        <p><strong>Filas con error al guardar</strong></p>
+        <ul>${summary.errors
+          .slice(0, 30)
+          .map((item) => `<li>Fila ${item.rowNumber}: ${escapeHTML(item.message)}</li>`)
+          .join("")}</ul>
+        ${summary.errors.length > 30 ? `<p>… y ${summary.errors.length - 30} errores más.</p>` : ""}
+      `;
+    } else {
+      elements.importProductsFinalErrors.hidden = true;
+      elements.importProductsFinalErrors.innerHTML = "";
+    }
+  }
+
+  if (elements.importProductsCsvFile) elements.importProductsCsvFile.value = "";
+  if (elements.importProductsFileName) {
+    elements.importProductsFileName.textContent = "Ningún archivo seleccionado";
+  }
+  state.csvImportSession = null;
+}
+
+function startAnotherProductsImport() {
+  resetImportProductsUi();
+  elements.importProductsCsvFile?.click();
+}
+
+function goToProductsListAfterImport() {
+  resetImportProductsUi();
+  showView("productos", { productsSection: "products-list" });
 }
 
 function handleImportCsvFileSelect(event) {
@@ -5246,10 +5538,11 @@ function handleImportCsvFileSelect(event) {
   if (!file) return;
 
   if (elements.importProductsFileName) elements.importProductsFileName.textContent = file.name;
-  if (elements.importProductsResult) {
-    elements.importProductsResult.hidden = true;
-    elements.importProductsResult.innerHTML = "";
+  if (elements.importProductsFinalPanel) {
+    elements.importProductsFinalPanel.hidden = true;
+    elements.importProductsFinalPanel.classList.remove("is-success", "is-partial");
   }
+  if (elements.importProductsPreviewWorkspace) elements.importProductsPreviewWorkspace.hidden = false;
 
   const reader = new FileReader();
   reader.onload = () => {
@@ -5276,79 +5569,176 @@ function parseProductsCsv(text) {
   const rows = dataRows.map((values, index) => {
     const raw = mapCsvRow(headers, values);
     const data = normalizeImportCsvRow(raw);
-    const errors = validateImportCsvRow(data);
+    const validated = validateImportCsvRow(data);
     const existing = findProductBySku(data.sku);
     return {
       rowNumber: index + 2,
       data,
-      errors,
+      errors: validated.errors,
+      warnings: validated.warnings,
+      fieldErrors: validated.fieldErrors,
       action: existing ? "update" : "create",
     };
   });
 
-  const validRows = rows.filter((row) => !row.errors.length);
-  const invalidRows = rows.filter((row) => row.errors.length);
+  const session = { rows };
+  recomputeImportSessionStats(session);
+  return session;
+}
 
-  return {
-    rows,
-    validRows,
-    invalidRows,
-    total: rows.length,
-    validCount: validRows.length,
-    errorCount: invalidRows.length,
-  };
+function revalidateImportRow(row) {
+  const validated = validateImportCsvRow(row.data);
+  row.errors = validated.errors;
+  row.warnings = validated.warnings;
+  row.fieldErrors = validated.fieldErrors;
+  row.action = findProductBySku(row.data.sku) ? "update" : "create";
+}
+
+function recomputeImportSessionStats(session) {
+  session.validRows = session.rows.filter((row) => !row.errors.length);
+  session.invalidRows = session.rows.filter((row) => row.errors.length);
+  session.warningRows = session.rows.filter((row) => row.warnings.length);
+  session.total = session.rows.length;
+  session.validCount = session.validRows.length;
+  session.errorCount = session.invalidRows.length;
+  session.createCount = session.validRows.filter((row) => row.action === "create").length;
+  session.updateCount = session.validRows.filter((row) => row.action === "update").length;
+}
+
+function revalidateImportSession(session) {
+  session.rows.forEach((row) => revalidateImportRow(row));
+  recomputeImportSessionStats(session);
+}
+
+function syncImportRowsFromDom(session) {
+  if (!elements.importProductsPreviewTable) return;
+  elements.importProductsPreviewTable.querySelectorAll("tr[data-import-row]").forEach((tr) => {
+    const rowIndex = Number(tr.dataset.importRow);
+    const row = session.rows[rowIndex];
+    if (!row) return;
+    tr.querySelectorAll("[data-import-field]").forEach((input) => {
+      applyImportFieldValue(row.data, input.dataset.importField, input.value);
+    });
+  });
+}
+
+function renderImportEditableField(row, fieldConfig) {
+  const { field, type } = fieldConfig;
+  const value = getImportFieldValue(row.data, field);
+  const invalidClass = row.fieldErrors?.[field] ? " is-invalid" : "";
+  const title = row.fieldErrors?.[field] ? escapeHTML(row.fieldErrors[field]) : "";
+
+  if (type === "status") {
+    const status = value || "Activo";
+    return `
+      <td>
+        <select class="product-import-cell-input${invalidClass}" data-import-field="${field}" title="${title}">
+          <option value="Activo" ${status === "Activo" ? "selected" : ""}>Activo</option>
+          <option value="Pausado" ${status === "Pausado" ? "selected" : ""}>Pausado</option>
+        </select>
+      </td>
+    `;
+  }
+
+  return `
+    <td>
+      <input
+        type="text"
+        class="product-import-cell-input${invalidClass}"
+        data-import-field="${field}"
+        value="${escapeHTML(value)}"
+        title="${title}"
+      />
+    </td>
+  `;
 }
 
 function renderImportProductsPreview(session) {
   if (!elements.importProductsPreviewPanel) return;
 
   elements.importProductsPreviewPanel.hidden = false;
+  if (elements.importProductsPreviewWorkspace) elements.importProductsPreviewWorkspace.hidden = false;
+  if (elements.importProductsFinalPanel) {
+    elements.importProductsFinalPanel.hidden = true;
+    elements.importProductsFinalPanel.classList.remove("is-success", "is-partial");
+  }
+  updateImportPreviewMeta(session);
+
+  if (elements.importProductsPreviewTable) {
+    elements.importProductsPreviewTable.innerHTML = session.rows.length
+      ? session.rows
+          .map((row, rowIndex) => {
+            const statusLabel = row.errors.length ? "Error" : row.action === "update" ? "Actualizar" : "Crear";
+            const statusClass = row.errors.length ? "is-error" : row.action === "update" ? "is-update" : "is-create";
+            const validationText = row.errors.length
+              ? row.errors.join("; ")
+              : row.warnings.length
+                ? row.warnings.join("; ")
+                : "OK";
+            const editableCells = PRODUCT_IMPORT_EDITABLE_FIELDS.map((fieldConfig) =>
+              renderImportEditableField(row, fieldConfig),
+            ).join("");
+            return `
+              <tr data-import-row="${rowIndex}" class="${row.errors.length ? "is-import-error-row" : ""}">
+                <td class="product-import-row-number">${row.rowNumber}</td>
+                ${editableCells}
+                <td class="product-import-action"><span class="product-io-badge ${statusClass}">${statusLabel}</span></td>
+                <td class="product-import-validation">${escapeHTML(validationText)}</td>
+              </tr>
+            `;
+          })
+          .join("")
+      : tableEmpty(PRODUCT_IMPORT_EDITABLE_FIELDS.length + 3, "Sin filas para previsualizar.");
+  }
+}
+
+function updateImportPreviewMeta(session) {
   if (elements.importProductsStats) {
     elements.importProductsStats.innerHTML = `
       <span>Total filas: <strong>${session.total}</strong></span>
       <span>Válidas: <strong>${session.validCount}</strong></span>
       <span>Con error: <strong>${session.errorCount}</strong></span>
+      <span>Crear: <strong>${session.createCount}</strong></span>
+      <span>Actualizar: <strong>${session.updateCount}</strong></span>
     `;
   }
 
-  const previewRows = session.rows.slice(0, 10);
-  if (elements.importProductsPreviewTable) {
-    elements.importProductsPreviewTable.innerHTML = previewRows.length
-      ? previewRows
-          .map((row) => {
-            const price = getImportRowPrice(row.data);
-            const statusLabel = row.errors.length ? "Error" : row.action === "update" ? "Actualizar" : "Crear";
-            const statusClass = row.errors.length ? "is-error" : row.action === "update" ? "is-update" : "is-create";
-            return `
-              <tr>
-                <td>${row.rowNumber}</td>
-                <td>${escapeHTML(row.data.sku || "—")}</td>
-                <td>${escapeHTML(row.data.name || "—")}</td>
-                <td>${escapeHTML(row.data.category || "—")}</td>
-                <td>${escapeHTML(row.data.stock)}</td>
-                <td>${escapeHTML(price)}</td>
-                <td><span class="product-io-badge ${statusClass}">${statusLabel}</span></td>
-                <td>${row.errors.length ? escapeHTML(row.errors.join("; ")) : "OK"}</td>
-              </tr>
-            `;
-          })
-          .join("")
-      : tableEmpty(8, "Sin filas para previsualizar.");
+  if (elements.importProductsWarnings) {
+    if (session.warningRows.length) {
+      elements.importProductsWarnings.hidden = false;
+      elements.importProductsWarnings.innerHTML = `
+        <p><strong>Advertencias (no bloquean la importación).</strong></p>
+        <ul>${session.warningRows
+          .slice(0, 50)
+          .map((row) => `<li>Fila ${row.rowNumber}: ${escapeHTML(row.warnings.join("; "))}</li>`)
+          .join("")}</ul>
+        ${session.warningRows.length > 50 ? `<p>… y ${session.warningRows.length - 50} filas más con advertencias.</p>` : ""}
+      `;
+    } else {
+      elements.importProductsWarnings.hidden = true;
+      elements.importProductsWarnings.innerHTML = "";
+    }
   }
 
   if (elements.importProductsErrors) {
     if (session.errorCount) {
       elements.importProductsErrors.hidden = false;
+      elements.importProductsErrors.classList.remove("is-success");
       elements.importProductsErrors.innerHTML = `
         <p><strong>Corrige los errores antes de importar.</strong></p>
         <ul>${session.invalidRows
-          .slice(0, 20)
+          .slice(0, 50)
           .map((row) => `<li>Fila ${row.rowNumber}: ${escapeHTML(row.errors.join("; "))}</li>`)
           .join("")}</ul>
-        ${session.invalidRows.length > 20 ? `<p>… y ${session.invalidRows.length - 20} filas más con error.</p>` : ""}
+        ${session.invalidRows.length > 50 ? `<p>… y ${session.invalidRows.length - 50} filas más con error.</p>` : ""}
       `;
+    } else if (session.validCount) {
+      elements.importProductsErrors.hidden = false;
+      elements.importProductsErrors.classList.add("is-success");
+      elements.importProductsErrors.innerHTML = `<p><strong>Datos válidos. Puedes confirmar la importación.</strong></p>`;
     } else {
       elements.importProductsErrors.hidden = true;
+      elements.importProductsErrors.classList.remove("is-success");
       elements.importProductsErrors.innerHTML = "";
     }
   }
@@ -5356,15 +5746,93 @@ function renderImportProductsPreview(session) {
   if (elements.confirmProductsImportButton) {
     elements.confirmProductsImportButton.disabled = session.errorCount > 0 || session.validCount === 0;
   }
+  if (elements.revalidateProductsImportButton) {
+    elements.revalidateProductsImportButton.disabled = !session.rows.length;
+  }
+}
+
+function refreshImportPreviewRowUi(session, rowIndex) {
+  const row = session.rows[rowIndex];
+  const tr = elements.importProductsPreviewTable?.querySelector(`tr[data-import-row="${rowIndex}"]`);
+  if (!row || !tr) return;
+
+  tr.classList.toggle("is-import-error-row", row.errors.length > 0);
+  tr.querySelectorAll("[data-import-field]").forEach((input) => {
+    const field = input.dataset.importField;
+    const fieldError = row.fieldErrors?.[field];
+    input.classList.toggle("is-invalid", Boolean(fieldError));
+    input.title = fieldError || "";
+    if (field === "caducidad" && row.data.caducidad && input.value !== row.data.caducidad) {
+      input.value = row.data.caducidad;
+    }
+  });
+
+  const statusLabel = row.errors.length ? "Error" : row.action === "update" ? "Actualizar" : "Crear";
+  const statusClass = row.errors.length ? "is-error" : row.action === "update" ? "is-update" : "is-create";
+  const validationText = row.errors.length
+    ? row.errors.join("; ")
+    : row.warnings.length
+      ? row.warnings.join("; ")
+      : "OK";
+
+  const badge = tr.querySelector(".product-import-action .product-io-badge");
+  if (badge) {
+    badge.className = `product-io-badge ${statusClass}`;
+    badge.textContent = statusLabel;
+  }
+  const validationCell = tr.querySelector(".product-import-validation");
+  if (validationCell) validationCell.textContent = validationText;
+}
+
+function handleImportPreviewInput(event) {
+  const input = event.target.closest("[data-import-field]");
+  if (!input || !state.csvImportSession) return;
+  const tr = input.closest("tr[data-import-row]");
+  if (!tr) return;
+  const row = state.csvImportSession.rows[Number(tr.dataset.importRow)];
+  if (!row) return;
+  applyImportFieldValue(row.data, input.dataset.importField, input.value);
+  input.classList.remove("is-invalid");
+}
+
+function handleImportPreviewBlur(event) {
+  const input = event.target.closest("[data-import-field]");
+  if (!input || !state.csvImportSession) return;
+  const tr = input.closest("tr[data-import-row]");
+  if (!tr) return;
+  const rowIndex = Number(tr.dataset.importRow);
+  const row = state.csvImportSession.rows[rowIndex];
+  if (!row) return;
+  applyImportFieldValue(row.data, input.dataset.importField, input.value);
+  revalidateImportRow(row);
+  recomputeImportSessionStats(state.csvImportSession);
+  refreshImportPreviewRowUi(state.csvImportSession, rowIndex);
+  updateImportPreviewMeta(state.csvImportSession);
+}
+
+function revalidateProductsImport() {
+  const session = state.csvImportSession;
+  if (!session) return showToast("Selecciona un archivo CSV primero");
+  syncImportRowsFromDom(session);
+  revalidateImportSession(session);
+  renderImportProductsPreview(session);
+  showToast(
+    session.errorCount
+      ? `Quedan ${session.errorCount} fila${session.errorCount === 1 ? "" : "s"} con error`
+      : "Datos válidos. Puedes confirmar la importación.",
+  );
 }
 
 async function confirmProductsImport() {
   const session = state.csvImportSession;
   if (!session) return showToast("Selecciona un archivo CSV primero");
+  syncImportRowsFromDom(session);
+  revalidateImportSession(session);
+  renderImportProductsPreview(session);
   if (session.errorCount > 0) return showToast("Corrige los errores del CSV antes de importar");
   if (!session.validCount) return showToast("No hay filas válidas para importar");
 
-  const overwriteEmptyImage = Boolean(elements.importProductsOverwriteImage?.checked);
+  const keepCurrentImagesWhenEmpty = elements.importProductsKeepCurrentImages?.checked !== false;
   const summary = { created: 0, updated: 0, errors: [] };
   const createdInBatch = new Map();
 
@@ -5377,7 +5845,7 @@ async function confirmProductsImport() {
       if (!existing && skuKey && createdInBatch.has(skuKey)) {
         existing = createdInBatch.get(skuKey);
       }
-      const payload = buildImportProductPayload(row.data, existing, { overwriteEmptyImage });
+      const payload = buildImportProductPayload(row.data, existing, { keepCurrentImagesWhenEmpty });
       if (existing) {
         const saved = await saveProductToApi({ ...existing, ...payload, id: existing.id });
         if (skuKey && saved) createdInBatch.set(skuKey, saved);
@@ -5394,27 +5862,30 @@ async function confirmProductsImport() {
 
   await loadProducts();
 
-  if (elements.importProductsResult) {
-    elements.importProductsResult.hidden = false;
-    elements.importProductsResult.innerHTML = `
-      <p><strong>Importación finalizada</strong></p>
-      <p>Creados: ${summary.created} · Actualizados: ${summary.updated} · Errores: ${summary.errors.length}</p>
-      ${
-        summary.errors.length
-          ? `<ul>${summary.errors.map((item) => `<li>Fila ${item.rowNumber}: ${escapeHTML(item.message)}</li>`).join("")}</ul>`
-          : ""
-      }
-    `;
+  const totalSuccess = summary.created + summary.updated;
+  if (totalSuccess === 0) {
+    if (elements.confirmProductsImportButton) {
+      elements.confirmProductsImportButton.disabled = false;
+    }
+    if (summary.errors.length && elements.importProductsErrors) {
+      elements.importProductsErrors.hidden = false;
+      elements.importProductsErrors.classList.remove("is-success");
+      elements.importProductsErrors.innerHTML = `
+        <p><strong>No se pudo importar ningún producto.</strong></p>
+        <ul>${summary.errors
+          .map((item) => `<li>Fila ${item.rowNumber}: ${escapeHTML(item.message)}</li>`)
+          .join("")}</ul>
+      `;
+    }
+    showToast("No se pudo importar ningún producto. Corrige los datos e intenta de nuevo.");
+    return;
   }
 
-  if (elements.confirmProductsImportButton) {
-    elements.confirmProductsImportButton.disabled = session.errorCount > 0 || session.validCount === 0;
-  }
-
+  showImportFinalSummary(summary);
   showToast(
     summary.errors.length
       ? `Importación con ${summary.errors.length} error${summary.errors.length === 1 ? "" : "es"}`
-      : "Importación completada",
+      : "Importación finalizada correctamente.",
   );
 }
 
@@ -5878,7 +6349,16 @@ function sendStoreLinkToConversation() {
 }
 
 function renderStore() {
-  const categories = ["Todas", ...new Set(state.products.map((product) => product.category))];
+  const categoryNames = [
+    "Todas",
+    ...new Set(
+      state.products
+        .filter((product) => product.status === "Activo" && isCategoryVisibleInStore(product.category))
+        .map((product) => product.category)
+        .filter(Boolean),
+    ),
+  ];
+  const categories = categoryNames;
   elements.storeCategory.innerHTML = categories
     .map((category) => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`)
     .join("");
@@ -5887,7 +6367,7 @@ function renderStore() {
     .map((category) => {
       const count =
         category === "Todas"
-          ? state.products.filter((product) => product.status === "Activo").length
+          ? state.products.filter((product) => product.status === "Activo" && isCategoryVisibleInStore(product.category)).length
           : state.products.filter((product) => product.status === "Activo" && product.category === category).length;
       return `
         <button class="${category === state.storeCategory ? "active" : ""}" type="button" data-category="${escapeHTML(category)}">
@@ -5901,7 +6381,12 @@ function renderStore() {
   const products = state.products.filter((product) => {
     const matchesCategory = state.storeCategory === "Todas" || product.category === state.storeCategory;
     const text = `${product.sku || ""} ${product.name} ${product.category} ${product.description}`.toLowerCase();
-    return product.status === "Activo" && matchesCategory && text.includes(state.storeQuery);
+    return (
+      product.status === "Activo" &&
+      isCategoryVisibleInStore(product.category) &&
+      matchesCategory &&
+      text.includes(state.storeQuery)
+    );
   });
 
   elements.storeProductGrid.innerHTML = products.length
@@ -6389,10 +6874,27 @@ async function saveCategoryToApi(category) {
   return data.category;
 }
 
-async function deactivateCategoryInApi(id) {
+async function deleteCategoryInApi(id) {
   const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.details || data.error || "No se pudo desactivar categoria");
+  if (!response.ok) {
+    const error = new Error(data.message || data.details || data.error || "No se pudo eliminar categoria");
+    error.code = data.error || "";
+    error.productCount = toInteger(data.productCount);
+    error.subcategoryCount = toInteger(data.subcategoryCount);
+    throw error;
+  }
+  return data;
+}
+
+async function patchCategoryInApi(id, patch) {
+  const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo actualizar categoria");
   return data.category;
 }
 
@@ -6410,55 +6912,280 @@ async function saveClassificationToApi(classification) {
 }
 
 async function deactivateClassificationInApi(id) {
-  const response = await fetch(`${classificationsApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const response = await fetch(`${classificationsApiUrl}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active: false }),
+  });
   const data = await response.json();
   if (!response.ok) throw new Error(data.details || data.error || "No se pudo desactivar clasificacion");
   return data.classification;
 }
 
+async function activateClassificationInApi(id) {
+  const response = await fetch(`${classificationsApiUrl}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active: true }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.details || data.error || "No se pudo activar clasificacion");
+  return data.classification;
+}
+
+async function deleteClassificationInApi(id) {
+  const response = await fetch(`${classificationsApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.message || data.details || data.error || "No se pudo eliminar clasificacion");
+    error.code = data.error || "";
+    error.productCount = toInteger(data.productCount);
+    throw error;
+  }
+  return data;
+}
+
+function getCategoryById(id) {
+  return state.categories.find((item) => item.id === id) || null;
+}
+
+function getCategoryByName(name) {
+  return state.categories.find((item) => item.name === name) || null;
+}
+
+function isCategoryVisibleInStore(categoryName) {
+  const category = getCategoryByName(categoryName);
+  if (!category) return true;
+  return category.visibleInStore !== false;
+}
+
+function sortCategoriesHierarchically(categories) {
+  const byParent = new Map();
+  categories.forEach((category) => {
+    const key = category.parentId || "";
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(category);
+  });
+  const sortByName = (left, right) => left.name.localeCompare(right.name, "es");
+  const result = [];
+  function walk(parentId, depth) {
+    const items = (byParent.get(parentId || "") || []).sort(sortByName);
+    items.forEach((category) => {
+      result.push({ ...category, depth });
+      walk(category.id, depth + 1);
+    });
+  }
+  walk("", 0);
+  return result;
+}
+
+function countCategoryProducts(category) {
+  if (!category) return 0;
+  return state.products.filter((product) => {
+    if (product.deleted || product.eliminado) return false;
+    return product.category === category.name;
+  }).length;
+}
+
+function countCategorySubcategories(categoryId) {
+  return state.categories.filter((category) => category.active && category.parentId === categoryId).length;
+}
+
+function buildCategoryDeleteBlockedMessage(category, deps) {
+  const { productCount, subcategoryCount } = deps;
+  if (productCount > 0 && subcategoryCount > 0) {
+    return `Esta categoría tiene ${productCount} productos asignados y ${subcategoryCount} subcategorías asociadas.\n\nPara evitar errores, primero mueve esos productos a otra categoría, elimina o reubica las subcategorías, o usa “Ocultar en tienda”.`;
+  }
+  if (productCount > 0) {
+    return `Esta categoría tiene ${productCount} productos asignados.\n\nPara evitar errores, primero mueve esos productos a otra categoría o usa “Ocultar en tienda”.`;
+  }
+  return `Esta categoría tiene ${subcategoryCount} subcategorías asociadas.\n\nPrimero mueve o elimina las subcategorías.`;
+}
+
+function openCategoryDeleteBlockedDialog(category, deps) {
+  return new Promise((resolve) => {
+    if (!elements.categoryDependencyDialog) {
+      resolve("close");
+      return;
+    }
+    categoryDependencyResolver = resolve;
+    elements.categoryDependencyTitle.textContent = "No se puede eliminar esta categoría";
+    elements.categoryDependencyMessage.textContent = buildCategoryDeleteBlockedMessage(category, deps);
+    if (elements.categoryDependencyHideButton) {
+      const showHide = deps.productCount > 0;
+      elements.categoryDependencyHideButton.hidden = !showHide;
+    }
+    elements.categoryDependencyDialog.showModal();
+  });
+}
+
+function handleCategoryDependencyDialogClose() {
+  const value = elements.categoryDependencyDialog?.returnValue || "close";
+  categoryDependencyResolver?.(value === "hide-store" ? "hide-store" : "close");
+  categoryDependencyResolver = null;
+}
+
+function renderCategoryActionsMarkup(category) {
+  const hiddenInStore = category.visibleInStore === false;
+  const storeLabel = hiddenInStore ? "Mostrar" : "Ocultar";
+  const storeClass = hiddenInStore ? "category-action-btn is-store-show" : "category-action-btn is-store-hide";
+  return `
+    <div class="category-admin-actions">
+      <div class="category-admin-actions-desktop">
+        <button class="category-action-btn is-neutral" type="button" data-action="edit-category" data-id="${category.id}" title="Editar categoría">Editar</button>
+        <button class="category-action-btn is-neutral" type="button" data-action="create-subcategory" data-id="${category.id}" title="Crear subcategoría">Subcategoría</button>
+        <button class="category-action-btn ${storeClass}" type="button" data-action="toggle-category-store-visibility" data-id="${category.id}" title="${hiddenInStore ? "Mostrar en la tienda" : "Ocultar en la tienda"}">${storeLabel}</button>
+        <button class="category-action-btn is-danger" type="button" data-action="delete-category" data-id="${category.id}" title="Eliminar categoría">Eliminar</button>
+      </div>
+      <div class="category-admin-actions-mobile product-list-action-menu category-list-action-menu">
+        <button class="product-list-action is-menu category-admin-menu-trigger" type="button" data-action="toggle-category-menu" data-id="${category.id}" aria-label="Acciones de categoría" aria-haspopup="menu">${productListActionIcon("more")}</button>
+        <div class="product-list-action-menu-panel category-list-action-menu-panel" role="menu" hidden>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="edit-category" data-id="${category.id}"><span class="product-list-menu-title">Editar</span></button>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="create-subcategory" data-id="${category.id}"><span class="product-list-menu-title">Subcategoría</span></button>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="toggle-category-store-visibility" data-id="${category.id}"><span class="product-list-menu-title">${storeLabel}</span></button>
+          <button class="product-list-menu-item is-danger" type="button" role="menuitem" data-action="delete-category" data-id="${category.id}"><span class="product-list-menu-title">Eliminar</span></button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCategoryActionMenuMarkup(category) {
+  return renderCategoryActionsMarkup(category);
+}
+
 function renderCategories() {
   if (!elements.categoryTable) return;
 
-  const categories = state.categories.filter((category) => {
-    if (!category.active) return false;
-    const text = `${category.name} ${category.description || ""}`.toLowerCase();
-    return text.includes(state.categoryQuery);
-  });
+  const activeCategories = state.categories.filter((category) => category.active);
+  const categories = sortCategoriesHierarchically(
+    activeCategories.filter((category) => {
+      const parent = category.parentId ? getCategoryById(category.parentId) : null;
+      const parentName = parent?.name || "";
+      const text = `${category.name} ${category.description || ""} ${parentName}`.toLowerCase();
+      return text.includes(state.categoryQuery);
+    }),
+  );
 
   if (state.categoryLoadError) {
-    elements.categoryTable.innerHTML = tableEmpty(4, state.categoryLoadError);
+    elements.categoryTable.innerHTML = tableEmpty(3, state.categoryLoadError);
     return;
   }
 
   elements.categoryTable.innerHTML = categories.length
     ? categories
         .map((category) => {
-          const statusClass = category.active ? "status-pill is-active" : "status-pill is-paused";
+          const parent = category.parentId ? getCategoryById(category.parentId) : null;
+          const isSubcategory = Boolean(category.parentId);
+          const indent = Math.min(category.depth || 0, 3) * 18;
+          const storePillClass = category.visibleInStore === false ? "category-store-pill is-hidden" : "category-store-pill is-visible";
+          const storeLabel = category.visibleInStore === false ? "Oculta" : "Visible";
+          const descriptionLine = category.description
+            ? `<span class="category-admin-description">${escapeHTML(category.description)}</span>`
+            : "";
+          const parentLine =
+            isSubcategory && parent
+              ? `<span class="category-admin-parent">Pertenece a: ${escapeHTML(parent.name)}</span>`
+              : "";
           return `
-            <tr>
-              <td><strong>${escapeHTML(category.name)}</strong></td>
-              <td>${escapeHTML(category.description || "—")}</td>
-              <td><span class="${statusClass}">${escapeHTML(category.status)}</span></td>
-              <td class="table-actions">
-                <button class="ghost-button small" type="button" data-action="edit-category" data-id="${category.id}">Editar</button>
-                ${
-                  category.active
-                    ? `<button class="ghost-button small is-danger" type="button" data-action="deactivate-category" data-id="${category.id}">Desactivar</button>`
-                    : ""
-                }
+            <tr class="category-admin-row ${isSubcategory ? "is-subcategory" : ""}">
+              <td class="category-admin-name">
+                <div class="category-admin-name-cell" style="padding-left:${indent}px">
+                  <div class="category-admin-name-line">
+                    <strong>${escapeHTML(category.name)}</strong>
+                    ${isSubcategory ? '<span class="category-badge is-sub">Subcategoría</span>' : ""}
+                  </div>
+                  ${descriptionLine}
+                  ${parentLine}
+                </div>
               </td>
+              <td class="category-admin-store"><span class="${storePillClass}">${storeLabel}</span></td>
+              <td class="category-admin-col-actions">${renderCategoryActionsMarkup(category)}</td>
             </tr>
           `;
         })
         .join("")
-    : tableEmpty(4, "No hay categorias activas. Crea la primera desde el formulario.");
+    : tableEmpty(3, "No hay categorias activas. Crea la primera desde el formulario.");
+}
+
+function getClassificationById(id) {
+  return state.classifications.find((item) => item.id === id) || null;
+}
+
+function getClassificationDisplayStatus(classification) {
+  if (!classification) return "";
+  return classification.displayStatus || (classification.active ? "Activa" : "Inactiva");
+}
+
+function countClassificationProducts(classification) {
+  if (!classification) return 0;
+  return state.products.filter((product) => {
+    if (product.deleted || product.eliminado) return false;
+    if (classification.id && product.classificationId === classification.id) return true;
+    return product.type === classification.name;
+  }).length;
+}
+
+function buildClassificationDeleteBlockedMessage(classification, productCount) {
+  return `Esta clasificación tiene ${productCount} producto${productCount === 1 ? "" : "s"} asignado${productCount === 1 ? "" : "s"}.\n\nPara evitar errores, primero cambia esos productos a otra clasificación o desactiva la clasificación.`;
+}
+
+function openClassificationDeleteBlockedDialog(classification, productCount) {
+  return new Promise((resolve) => {
+    if (!elements.classificationDependencyDialog) {
+      resolve("close");
+      return;
+    }
+    classificationDependencyResolver = resolve;
+    elements.classificationDependencyTitle.textContent = "No se puede eliminar esta clasificación";
+    elements.classificationDependencyMessage.textContent = buildClassificationDeleteBlockedMessage(
+      classification,
+      productCount,
+    );
+    if (elements.classificationDependencyDeactivateButton) {
+      elements.classificationDependencyDeactivateButton.hidden = false;
+    }
+    elements.classificationDependencyDialog.showModal();
+  });
+}
+
+function handleClassificationDependencyDialogClose() {
+  const value = elements.classificationDependencyDialog?.returnValue || "close";
+  classificationDependencyResolver?.(value === "deactivate" ? "deactivate" : "close");
+  classificationDependencyResolver = null;
+}
+
+function renderClassificationActionsMarkup(classification) {
+  const toggleLabel = classification.active ? "Desactivar" : "Activar";
+  const toggleClass = classification.active
+    ? "classification-action-btn is-toggle"
+    : "classification-action-btn is-toggle is-activate";
+  const toggleAction = classification.active ? "deactivate-classification" : "activate-classification";
+  return `
+    <div class="classification-admin-actions">
+      <div class="classification-admin-actions-desktop">
+        <button class="classification-action-btn is-neutral" type="button" data-action="edit-classification" data-id="${classification.id}" title="Editar clasificación">Editar</button>
+        <button class="${toggleClass}" type="button" data-action="${toggleAction}" data-id="${classification.id}" title="${classification.active ? "Desactivar clasificación" : "Activar clasificación"}">${toggleLabel}</button>
+        <button class="classification-action-btn is-danger" type="button" data-action="delete-classification" data-id="${classification.id}" title="Eliminar clasificación">Eliminar</button>
+      </div>
+      <div class="classification-admin-actions-mobile product-list-action-menu classification-list-action-menu">
+        <button class="product-list-action is-menu classification-admin-menu-trigger" type="button" data-action="toggle-classification-menu" data-id="${classification.id}" aria-label="Acciones de clasificación" aria-haspopup="menu">${productListActionIcon("more")}</button>
+        <div class="product-list-action-menu-panel classification-list-action-menu-panel" role="menu" hidden>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="edit-classification" data-id="${classification.id}"><span class="product-list-menu-title">Editar</span></button>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="${toggleAction}" data-id="${classification.id}"><span class="product-list-menu-title">${toggleLabel}</span></button>
+          <button class="product-list-menu-item is-danger" type="button" role="menuitem" data-action="delete-classification" data-id="${classification.id}"><span class="product-list-menu-title">Eliminar</span></button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderClassifications() {
   if (!elements.classificationTable) return;
 
   const classifications = state.classifications.filter((classification) => {
-    const text = `${classification.name} ${classification.description || ""} ${classification.status}`.toLowerCase();
+    const displayStatus = getClassificationDisplayStatus(classification);
+    const text = `${classification.name} ${classification.description || ""} ${displayStatus} ${classification.status}`.toLowerCase();
     return text.includes(state.classificationQuery);
   });
 
@@ -6470,20 +7197,23 @@ function renderClassifications() {
   elements.classificationTable.innerHTML = classifications.length
     ? classifications
         .map((classification) => {
-          const statusClass = classification.active ? "status-pill is-active" : "status-pill is-paused";
+          const displayStatus = getClassificationDisplayStatus(classification);
+          const statusClass = classification.active
+            ? "classification-status-pill is-active"
+            : "classification-status-pill is-inactive";
+          const descriptionCell = classification.description
+            ? escapeHTML(classification.description)
+            : "—";
           return `
-            <tr>
-              <td><strong>${escapeHTML(classification.name)}</strong></td>
-              <td>${escapeHTML(classification.description || "—")}</td>
-              <td><span class="${statusClass}">${escapeHTML(classification.status)}</span></td>
-              <td class="table-actions">
-                <button class="ghost-button small" type="button" data-action="edit-classification" data-id="${classification.id}">Editar</button>
-                ${
-                  classification.active
-                    ? `<button class="ghost-button small is-danger" type="button" data-action="deactivate-classification" data-id="${classification.id}">Desactivar</button>`
-                    : ""
-                }
+            <tr class="classification-admin-row ${classification.active ? "" : "is-inactive"}">
+              <td class="classification-admin-name">
+                <div class="classification-admin-name-cell">
+                  <strong>${escapeHTML(classification.name)}</strong>
+                </div>
               </td>
+              <td class="classification-admin-description-cell">${descriptionCell}</td>
+              <td class="classification-admin-col-status"><span class="${statusClass}">${escapeHTML(displayStatus)}</span></td>
+              <td class="classification-admin-col-actions">${renderClassificationActionsMarkup(classification)}</td>
             </tr>
           `;
         })
@@ -6493,6 +7223,7 @@ function renderClassifications() {
 
 function renderProductCatalogSelects() {
   const activeCategories = state.categories.filter((category) => category.active);
+  const hierarchicalCategories = sortCategoriesHierarchically(activeCategories);
   const activeClassifications = state.classifications.filter((classification) => classification.active);
   const currentCategory = elements.productCategory?.value || "";
   const currentType = elements.productType?.value || "";
@@ -6500,8 +7231,11 @@ function renderProductCatalogSelects() {
   if (elements.productCategory) {
     elements.productCategory.innerHTML =
       `<option value="">Selecciona categoría</option>` +
-      activeCategories
-        .map((category) => `<option value="${escapeHTML(category.name)}">${escapeHTML(category.name)}</option>`)
+      hierarchicalCategories
+        .map((category) => {
+          const prefix = category.depth > 0 ? `${"— ".repeat(category.depth)}` : "";
+          return `<option value="${escapeHTML(category.name)}">${escapeHTML(prefix + category.name)}</option>`;
+        })
         .join("");
     if (currentCategory) ensureSelectOption(elements.productCategory, currentCategory);
   }
@@ -6545,6 +7279,7 @@ async function saveCategory(event) {
     id: elements.categoryId.value,
     name: elements.categoryName.value.trim(),
     description: elements.categoryDescription.value.trim(),
+    parentId: elements.categoryParentId?.value || null,
   };
   if (!category.name) return showToast("El nombre es obligatorio");
 
@@ -6552,39 +7287,126 @@ async function saveCategory(event) {
     await saveCategoryToApi(category);
     await loadCategories();
     clearCategoryForm();
-    showToast("Categoria guardada");
+    showToast(category.id ? "Categoria actualizada" : "Categoria guardada");
   } catch (error) {
     showToast(error.message || "No se pudo guardar categoria");
   }
 }
 
 function editCategory(id) {
-  const category = state.categories.find((item) => item.id === id);
+  const category = getCategoryById(id);
   if (!category) return;
+  closeAllProductActionMenus();
   elements.categoryFormTitle.textContent = "Editar categoría";
   elements.categoryId.value = category.id;
   elements.categoryName.value = category.name;
   elements.categoryDescription.value = category.description || "";
+  if (elements.categoryParentId) elements.categoryParentId.value = category.parentId || "";
+  if (elements.categoryParentHint) {
+    const parent = category.parentId ? getCategoryById(category.parentId) : null;
+    if (parent) {
+      elements.categoryParentHint.textContent = `Subcategoría de ${parent.name}.`;
+      elements.categoryParentHint.hidden = false;
+    } else {
+      elements.categoryParentHint.textContent = "";
+      elements.categoryParentHint.hidden = true;
+    }
+  }
   showView("productos", { productsSection: "products-categories" });
+}
+
+function createSubcategory(parentId) {
+  const parent = getCategoryById(parentId);
+  if (!parent) return showToast("Categoría padre no encontrada");
+  closeAllProductActionMenus();
+  clearCategoryForm();
+  if (elements.categoryParentId) elements.categoryParentId.value = parentId;
+  if (elements.categoryParentHint) {
+    elements.categoryParentHint.textContent = `Se creará como subcategoría de ${parent.name}.`;
+    elements.categoryParentHint.hidden = false;
+  }
+  elements.categoryFormTitle.textContent = `Nueva subcategoría de ${parent.name}`;
+  showView("productos", { productsSection: "products-categories" });
+  elements.categoryName?.focus();
 }
 
 function clearCategoryForm() {
   elements.categoryForm.reset();
   elements.categoryId.value = "";
+  if (elements.categoryParentId) elements.categoryParentId.value = "";
+  if (elements.categoryParentHint) {
+    elements.categoryParentHint.textContent = "";
+    elements.categoryParentHint.hidden = true;
+  }
   elements.categoryFormTitle.textContent = "Nueva categoría";
 }
 
-async function deactivateCategory(id) {
-  const category = state.categories.find((item) => item.id === id);
-  if (!category || !category.active) return;
-  if (!window.confirm(`Desactivar la categoria "${category.name}"?`)) return;
+async function toggleCategoryStoreVisibility(id, options = {}) {
+  const category = getCategoryById(id);
+  if (!category) return;
+  closeAllProductActionMenus();
+  const hide = category.visibleInStore !== false;
+  if (!options.skipConfirm) {
+    const confirmed = await openProductActionDialog({
+      title: hide ? `¿Ocultar "${category.name}" en la tienda?` : `¿Volver a mostrar "${category.name}" en la tienda?`,
+      message: hide
+        ? "Seguirá disponible en el CRM."
+        : "La categoría volverá a mostrarse en la tienda online.",
+      confirmLabel: hide ? "Ocultar en la tienda" : "Mostrar en la tienda",
+      confirmClass: hide ? "primary-button" : "primary-button is-success",
+    });
+    if (!confirmed) return;
+  }
 
   try {
-    await deactivateCategoryInApi(id);
+    await patchCategoryInApi(id, { visibleInStore: !hide });
     await loadCategories();
-    showToast("Categoria desactivada");
+    renderStore();
+    showToast(hide ? "Categoría oculta en la tienda" : "Categoría visible en la tienda");
   } catch (error) {
-    showToast(error.message || "No se pudo desactivar categoria");
+    showToast(error.message || "No se pudo actualizar visibilidad");
+  }
+}
+
+async function deleteCategory(id) {
+  const category = getCategoryById(id);
+  if (!category) return;
+  closeAllProductActionMenus();
+
+  const localDeps = {
+    productCount: countCategoryProducts(category),
+    subcategoryCount: countCategorySubcategories(category.id),
+  };
+  if (localDeps.productCount > 0 || localDeps.subcategoryCount > 0) {
+    const action = await openCategoryDeleteBlockedDialog(category, localDeps);
+    if (action === "hide-store") await toggleCategoryStoreVisibility(id, { skipConfirm: true });
+    return;
+  }
+
+  const confirmed = await openProductActionDialog({
+    title: `¿Eliminar categoría "${category.name}"?`,
+    message:
+      "Esta categoría no tiene productos ni subcategorías asociadas.\nLa eliminación no afectará productos.",
+    confirmLabel: "Eliminar categoría",
+    confirmClass: "primary-button is-danger",
+  });
+  if (!confirmed) return;
+
+  try {
+    await deleteCategoryInApi(id);
+    await loadCategories();
+    renderStore();
+    showToast("Categoría eliminada");
+  } catch (error) {
+    if (error.code === "CATEGORY_HAS_DEPENDENCIES") {
+      const action = await openCategoryDeleteBlockedDialog(category, {
+        productCount: error.productCount,
+        subcategoryCount: error.subcategoryCount,
+      });
+      if (action === "hide-store") await toggleCategoryStoreVisibility(id, { skipConfirm: true });
+      return;
+    }
+    showToast(error.message || "No se pudo eliminar categoria");
   }
 }
 
@@ -6609,8 +7431,9 @@ async function saveClassification(event) {
 }
 
 function editClassification(id) {
-  const classification = state.classifications.find((item) => item.id === id);
+  const classification = getClassificationById(id);
   if (!classification) return;
+  closeAllProductActionMenus();
   elements.classificationFormTitle.textContent = "Editar clasificación";
   elements.classificationId.value = classification.id;
   elements.classificationName.value = classification.name;
@@ -6626,17 +7449,82 @@ function clearClassificationForm() {
   elements.classificationStatus.value = "Activo";
 }
 
-async function deactivateClassification(id) {
-  const classification = state.classifications.find((item) => item.id === id);
+async function deactivateClassification(id, options = {}) {
+  const classification = getClassificationById(id);
   if (!classification || !classification.active) return;
-  if (!window.confirm(`Desactivar la clasificacion "${classification.name}"?`)) return;
+  closeAllProductActionMenus();
+  if (!options.skipConfirm) {
+    const confirmed = await openProductActionDialog({
+      title: `¿Desactivar clasificación "${classification.name}"?`,
+      message:
+        "La clasificación seguirá existiendo en el CRM, pero dejará de estar disponible para nuevas asignaciones.",
+      confirmLabel: "Desactivar clasificación",
+      confirmClass: "primary-button",
+    });
+    if (!confirmed) return;
+  }
 
   try {
     await deactivateClassificationInApi(id);
     await loadClassifications();
-    showToast("Clasificacion desactivada");
+    showToast("Clasificación desactivada");
   } catch (error) {
     showToast(error.message || "No se pudo desactivar clasificacion");
+  }
+}
+
+async function activateClassification(id) {
+  const classification = getClassificationById(id);
+  if (!classification || classification.active) return;
+  closeAllProductActionMenus();
+  const confirmed = await openProductActionDialog({
+    title: `¿Activar clasificación "${classification.name}"?`,
+    message: "La clasificación volverá a estar disponible para productos.",
+    confirmLabel: "Activar clasificación",
+    confirmClass: "primary-button is-success",
+  });
+  if (!confirmed) return;
+
+  try {
+    await activateClassificationInApi(id);
+    await loadClassifications();
+    showToast("Clasificación activada");
+  } catch (error) {
+    showToast(error.message || "No se pudo activar clasificacion");
+  }
+}
+
+async function deleteClassification(id) {
+  const classification = getClassificationById(id);
+  if (!classification) return;
+  closeAllProductActionMenus();
+
+  const productCount = countClassificationProducts(classification);
+  if (productCount > 0) {
+    const action = await openClassificationDeleteBlockedDialog(classification, productCount);
+    if (action === "deactivate") await deactivateClassification(id, { skipConfirm: true });
+    return;
+  }
+
+  const confirmed = await openProductActionDialog({
+    title: `¿Eliminar clasificación "${classification.name}"?`,
+    message: "Esta clasificación no tiene productos asociados.\nLa eliminación no afectará productos.",
+    confirmLabel: "Eliminar clasificación",
+    confirmClass: "primary-button is-danger",
+  });
+  if (!confirmed) return;
+
+  try {
+    await deleteClassificationInApi(id);
+    await loadClassifications();
+    showToast("Clasificación eliminada");
+  } catch (error) {
+    if (error.code === "CLASSIFICATION_HAS_PRODUCTS") {
+      const action = await openClassificationDeleteBlockedDialog(classification, error.productCount);
+      if (action === "deactivate") await deactivateClassification(id, { skipConfirm: true });
+      return;
+    }
+    showToast(error.message || "No se pudo eliminar clasificacion");
   }
 }
 

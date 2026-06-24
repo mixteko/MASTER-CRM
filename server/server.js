@@ -119,7 +119,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.method === "DELETE" && request.url.startsWith("/api/categories/")) {
-    await handleDeactivateCategory(request, response);
+    await handleDeleteCategory(request, response);
     return;
   }
 
@@ -139,7 +139,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.method === "DELETE" && request.url.startsWith("/api/classifications/")) {
-    await handleDeactivateClassification(request, response);
+    await handleDeleteClassification(request, response);
     return;
   }
 
@@ -419,6 +419,19 @@ async function handlePermanentDeleteProduct(request, response) {
   }
 }
 
+async function fetchCategoriesFromSupabase() {
+  const fullPath =
+    "/rest/v1/categorias?select=id,nombre,descripcion,activo,parent_id,visible_en_tienda,created_at,updated_at&order=nombre.asc";
+  const legacyPath =
+    "/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&order=nombre.asc";
+  try {
+    return await supabaseRequest(fullPath);
+  } catch (error) {
+    if (!String(error.message || "").includes("400")) throw error;
+    return await supabaseRequest(legacyPath);
+  }
+}
+
 async function handleGetCategories(response) {
   if (!isSupabaseEnabled()) {
     sendJSON(response, 500, { error: "Supabase no configurado" });
@@ -426,9 +439,7 @@ async function handleGetCategories(response) {
   }
 
   try {
-    const rows = await supabaseRequest(
-      "/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&order=nombre.asc",
-    );
+    const rows = await fetchCategoriesFromSupabase();
     sendJSON(response, 200, { ok: true, categories: rows.map(mapDbCategory) });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudieron cargar categorias", details: error.message });
@@ -449,14 +460,27 @@ async function handleCreateCategory(request, response) {
       return;
     }
 
+    const parentId = String(body.parentId || body.parent_id || "").trim() || null;
+    if (parentId) {
+      const parent = await getSupabaseCategoryById(parentId);
+      if (!parent) {
+        sendJSON(response, 404, { error: "Categoría padre no encontrada" });
+        return;
+      }
+    }
+
+    const visibleInStore = readVisibleInStoreFlag(body, true);
     const created = await supabaseRequest("/rest/v1/categorias", {
       method: "POST",
       body: {
         nombre: name,
         descripcion: String(body.description || body.descripcion || "").trim() || null,
         activo: true,
+        parent_id: parentId,
+        visible_en_tienda: visibleInStore,
         updated_at: new Date().toISOString(),
       },
+      prefer: "return=representation",
     });
     sendJSON(response, 200, { ok: true, category: mapDbCategory(created[0]) });
   } catch (error) {
@@ -484,6 +508,20 @@ async function handleUpdateCategory(request, response) {
       return;
     }
 
+    if (patch.parent_id !== undefined) {
+      if (patch.parent_id === id) {
+        sendJSON(response, 400, { error: "Una categoría no puede ser su propia subcategoría" });
+        return;
+      }
+      if (patch.parent_id) {
+        const parent = await getSupabaseCategoryById(patch.parent_id);
+        if (!parent) {
+          sendJSON(response, 404, { error: "Categoría padre no encontrada" });
+          return;
+        }
+      }
+    }
+
     patch.updated_at = new Date().toISOString();
     await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -500,7 +538,25 @@ async function handleUpdateCategory(request, response) {
   }
 }
 
-async function handleDeactivateCategory(request, response) {
+async function getCategoryDeleteDependencies(categoryId) {
+  let subcategoryCount = 0;
+  try {
+    const children = await supabaseRequest(
+      `/rest/v1/categorias?select=id&parent_id=eq.${encodeURIComponent(categoryId)}`,
+    );
+    subcategoryCount = Array.isArray(children) ? children.length : 0;
+  } catch {
+    subcategoryCount = 0;
+  }
+
+  const products = await supabaseRequest(
+    `/rest/v1/productos?select=id&categoria_id=eq.${encodeURIComponent(categoryId)}`,
+  );
+  const productCount = Array.isArray(products) ? products.length : 0;
+  return { productCount, subcategoryCount };
+}
+
+async function handleDeleteCategory(request, response) {
   if (!isSupabaseEnabled()) {
     sendJSON(response, 500, { error: "Supabase no configurado" });
     return;
@@ -513,20 +569,28 @@ async function handleDeactivateCategory(request, response) {
       return;
     }
 
-    const updated = await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: {
-        activo: false,
-        updated_at: new Date().toISOString(),
-      },
-    });
-    if (!updated[0]) {
+    const existing = await getSupabaseCategoryById(id);
+    if (!existing) {
       sendJSON(response, 404, { error: "Categoria no encontrada" });
       return;
     }
-    sendJSON(response, 200, { ok: true, category: mapDbCategory(updated[0]) });
+
+    const { productCount, subcategoryCount } = await getCategoryDeleteDependencies(id);
+    if (productCount > 0 || subcategoryCount > 0) {
+      sendJSON(response, 409, {
+        ok: false,
+        error: "CATEGORY_HAS_DEPENDENCIES",
+        message: "Esta categoría tiene productos o subcategorías asociadas.",
+        productCount,
+        subcategoryCount,
+      });
+      return;
+    }
+
+    await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    sendJSON(response, 200, { ok: true, id });
   } catch (error) {
-    sendJSON(response, 500, { error: "No se pudo desactivar categoria", details: error.message });
+    sendJSON(response, 500, { error: "No se pudo eliminar categoria", details: error.message });
   }
 }
 
@@ -615,7 +679,15 @@ async function handleUpdateClassification(request, response) {
   }
 }
 
-async function handleDeactivateClassification(request, response) {
+async function getClassificationDeleteDependencies(classificationId) {
+  const products = await supabaseRequest(
+    `/rest/v1/productos?select=id&clasificacion_id=eq.${encodeURIComponent(classificationId)}`,
+  );
+  const productCount = Array.isArray(products) ? products.length : 0;
+  return { productCount };
+}
+
+async function handleDeleteClassification(request, response) {
   if (!isSupabaseEnabled()) {
     sendJSON(response, 500, { error: "Supabase no configurado" });
     return;
@@ -628,20 +700,27 @@ async function handleDeactivateClassification(request, response) {
       return;
     }
 
-    const updated = await supabaseRequest(`/rest/v1/clasificaciones?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: {
-        activo: false,
-        updated_at: new Date().toISOString(),
-      },
-    });
-    if (!updated[0]) {
+    const existing = await getSupabaseClassificationById(id);
+    if (!existing) {
       sendJSON(response, 404, { error: "Clasificacion no encontrada" });
       return;
     }
-    sendJSON(response, 200, { ok: true, classification: mapDbClassification(updated[0]) });
+
+    const { productCount } = await getClassificationDeleteDependencies(id);
+    if (productCount > 0) {
+      sendJSON(response, 409, {
+        ok: false,
+        error: "CLASSIFICATION_HAS_PRODUCTS",
+        message: "Esta clasificación tiene productos asociados.",
+        productCount,
+      });
+      return;
+    }
+
+    await supabaseRequest(`/rest/v1/clasificaciones?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    sendJSON(response, 200, { ok: true, id });
   } catch (error) {
-    sendJSON(response, 500, { error: "No se pudo desactivar clasificacion", details: error.message });
+    sendJSON(response, 500, { error: "No se pudo eliminar clasificacion", details: error.message });
   }
 }
 
@@ -785,7 +864,9 @@ async function buildCategoriesReply() {
   if (!isSupabaseEnabled()) return "Por ahora no pude consultar las categorías disponibles.";
 
   try {
-    const categories = await supabaseRequest("/rest/v1/categorias?select=nombre&activo=eq.true&order=nombre.asc&limit=20");
+    const categories = await supabaseRequest(
+      "/rest/v1/categorias?select=nombre&activo=eq.true&visible_en_tienda=eq.true&order=nombre.asc&limit=20",
+    );
     if (!categories.length) return "Por ahora no hay categorías registradas.";
     return `Categorías disponibles:\n${categories.map((category, index) => `${index + 1}. ${category.nombre}`).join("\n")}`;
   } catch (error) {
@@ -1975,16 +2056,21 @@ function mapDbCategory(row) {
     description: row.descripcion || "",
     active: Boolean(row.activo),
     status: row.activo ? "Activo" : "Pausado",
+    parentId: row.parent_id || null,
+    visibleInStore: row.visible_en_tienda !== false,
+    storeStatus: row.visible_en_tienda === false ? "Oculta" : "Visible",
   };
 }
 
 function mapDbClassification(row) {
+  const active = Boolean(row.activo);
   return {
     id: row.id,
     name: row.nombre || "",
     description: row.descripcion || "",
-    active: Boolean(row.activo),
-    status: row.activo ? "Activo" : "Pausado",
+    active,
+    status: active ? "Activo" : "Pausado",
+    displayStatus: active ? "Activa" : "Inactiva",
   };
 }
 
@@ -1999,7 +2085,20 @@ function buildCatalogPatch(body) {
   if (body.active !== undefined || body.activo !== undefined || body.status !== undefined) {
     patch.activo = readActiveFlag(body);
   }
+  if (body.parentId !== undefined || body.parent_id !== undefined) {
+    const parentId = String(body.parentId ?? body.parent_id ?? "").trim();
+    patch.parent_id = parentId || null;
+  }
+  if (body.visibleInStore !== undefined || body.visible_en_tienda !== undefined) {
+    patch.visible_en_tienda = readVisibleInStoreFlag(body);
+  }
   return patch;
+}
+
+function readVisibleInStoreFlag(body, defaultValue = undefined) {
+  if (body.visibleInStore !== undefined) return Boolean(body.visibleInStore);
+  if (body.visible_en_tienda !== undefined) return Boolean(body.visible_en_tienda);
+  return defaultValue;
 }
 
 function readActiveFlag(body) {
@@ -2022,9 +2121,15 @@ function resolveRequiresRecipe(product, recipeField) {
 }
 
 async function getSupabaseCategoryById(id) {
-  const rows = await supabaseRequest(
-    `/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`,
-  );
+  const fullPath = `/rest/v1/categorias?select=id,nombre,descripcion,activo,parent_id,visible_en_tienda,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`;
+  const legacyPath = `/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&id=eq.${encodeURIComponent(id)}&limit=1`;
+  let rows;
+  try {
+    rows = await supabaseRequest(fullPath);
+  } catch (error) {
+    if (!String(error.message || "").includes("400")) throw error;
+    rows = await supabaseRequest(legacyPath);
+  }
   return rows[0] || null;
 }
 

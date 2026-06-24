@@ -28,6 +28,12 @@
 
 **Futuro esperado:** nombre comercial, sustancia activa, laboratorio, presentación, concentración, forma farmacéutica, receta, clasificación de controlado, refrigeración e imágenes gestionadas.
 
+**Categorías (Tiendanube / US-012A):** subcategorías, ocultar en tienda, acciones visibles en escritorio, eliminación segura con conteo de productos y subcategorías; si hay productos asignados se bloquea el borrado y se ofrece ocultar en tienda. Ver `docs/DEVELOPMENT_GUIDE.md`.
+
+**Clasificaciones (US-012B):** etiquetas internas clínicas/administrativas (no se muestran en tienda); acciones visibles en escritorio; activar/desactivar sin afectar productos existentes; eliminación segura solo sin productos asociados; si hay productos asignados se bloquea el borrado y se ofrece desactivar. Ver `docs/DEVELOPMENT_GUIDE.md`.
+
+**Importar / Exportar CSV (US-013 / US-013B):** exportar catálogo activo a `master-crm-productos-YYYY-MM-DD.csv`; importar con vista previa editable, botón **Revalidar datos**, normalización de fechas y confirmación bloqueada si hay errores; tras importar se muestra resumen final y se limpia la vista previa; SKU como clave de actualización; no borra productos ausentes del CSV; conserva imágenes si `imagen_url` viene vacío y la opción está activa. Ver `docs/DEVELOPMENT_GUIDE.md`.
+
 ## Inventario
 
 **Propósito:** controlar existencias farmacéuticas por lote, caducidad, costo y condición de almacenamiento.

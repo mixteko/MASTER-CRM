@@ -504,6 +504,8 @@
                   <button class="ghost-button" type="button" id="clearCategoryForm">Limpiar</button>
                 </div>
                 <input id="categoryId" type="hidden" />
+                <input id="categoryParentId" type="hidden" />
+                <p class="category-form-parent-hint" id="categoryParentHint" hidden></p>
                 <label>Nombre <input id="categoryName" type="text" required /></label>
                 <label>Descripción <textarea id="categoryDescription" rows="2"></textarea></label>
                 <button class="primary-button" type="submit">Guardar categoría</button>
@@ -518,13 +520,12 @@
                   <input class="inline-search" id="categorySearch" type="search" placeholder="Buscar categoría" />
                 </div>
                 <div class="table-scroll">
-                  <table class="catalog-admin-table catalog-admin-table--categories">
+                  <table class="catalog-admin-table catalog-admin-table--categories category-admin-table">
                     <thead>
                       <tr>
-                        <th>Nombre</th>
-                        <th>Descripción</th>
-                        <th>Estado</th>
-                        <th>Acciones</th>
+                        <th>Categoría</th>
+                        <th class="category-admin-col-store">Tienda</th>
+                        <th class="category-admin-col-actions">Acciones</th>
                       </tr>
                     </thead>
                     <tbody id="categoryTable"></tbody>
@@ -568,18 +569,18 @@
                 <div class="panel-heading">
                   <div>
                     <p class="eyebrow">Administración</p>
-                    <h2>Clasificaciones activas</h2>
+                    <h2>Clasificaciones registradas</h2>
                   </div>
                   <input class="inline-search" id="classificationSearch" type="search" placeholder="Buscar clasificación" />
                 </div>
                 <div class="table-scroll">
-                  <table class="catalog-admin-table catalog-admin-table--classifications">
+                  <table class="catalog-admin-table catalog-admin-table--classifications classification-admin-table">
                     <thead>
                       <tr>
-                        <th>Nombre</th>
+                        <th>Clasificación</th>
                         <th>Descripción</th>
-                        <th>Estado</th>
-                        <th>Acciones</th>
+                        <th class="classification-admin-col-status">Estado</th>
+                        <th class="classification-admin-col-actions">Acciones</th>
                       </tr>
                     </thead>
                     <tbody id="classificationTable"></tbody>
@@ -601,53 +602,84 @@
             <div class="product-io-grid">
               <section class="panel-card product-io-card">
                 <p class="product-io-card-title">Exportar productos</p>
-                <p class="product-io-card-text">Descarga tu catálogo actual en formato CSV para respaldarlo o editarlo en Excel, Numbers o Google Sheets.</p>
+                <p class="product-io-card-text">Descarga tu catálogo actual en CSV para respaldo o edición en Excel, Numbers o Google Sheets.</p>
                 <button class="primary-button small" type="button" id="exportProductsCsvButton">Exportar CSV</button>
               </section>
 
               <section class="panel-card product-io-card">
                 <p class="product-io-card-title">Importar productos</p>
-                <p class="product-io-card-text">Sube un archivo CSV para agregar o actualizar productos en lote.</p>
+                <p class="product-io-card-text">Sube un archivo CSV para crear o actualizar productos en lote. Primero revisaremos el archivo antes de guardar cambios.</p>
                 <input id="importProductsCsvFile" type="file" accept=".csv,text/csv" hidden />
                 <div class="product-io-actions">
                   <button class="ghost-button small" type="button" id="importProductsCsvSelectButton">Seleccionar CSV</button>
-                  <label class="product-io-option">
-                    <input id="importProductsOverwriteImage" type="checkbox" />
-                    Sobrescribir imagen si imageUrl viene vacío
-                  </label>
                 </div>
                 <p class="product-io-file-name" id="importProductsFileName">Ningún archivo seleccionado</p>
+                <div class="product-io-image-option-wrap">
+                  <label class="product-io-option product-io-image-option">
+                    <input id="importProductsKeepCurrentImages" type="checkbox" checked />
+                    Mantener imágenes actuales si el CSV no trae imagen
+                  </label>
+                  <p class="product-io-option-help">Recomendado: evita borrar imágenes existentes cuando el CSV no incluye imagen_url.</p>
+                </div>
               </section>
             </div>
 
             <section class="panel-card product-io-preview-panel" id="importProductsPreviewPanel" hidden>
-              <div class="panel-heading product-io-preview-heading">
-                <div>
-                  <p class="eyebrow">Vista previa</p>
-                  <h3>Revisión antes de importar</h3>
+              <div id="importProductsPreviewWorkspace">
+                <div class="panel-heading product-io-preview-heading">
+                  <div>
+                    <p class="eyebrow">Vista previa</p>
+                    <h3>Revisión antes de importar</h3>
+                  </div>
                 </div>
-                <button class="primary-button small" type="button" id="confirmProductsImportButton" disabled>Confirmar importación</button>
+                <div class="product-io-stats" id="importProductsStats"></div>
+                <p class="product-io-preview-hint">Puedes corregir valores directamente en la tabla y luego usar <strong>Revalidar datos</strong>.</p>
+                <div class="table-scroll product-import-preview-scroll">
+                  <table class="product-import-preview-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>SKU</th>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Categoría</th>
+                        <th>Clasificación</th>
+                        <th>Laboratorio</th>
+                        <th>Precio venta</th>
+                        <th>Precio promo</th>
+                        <th>Costo</th>
+                        <th>Stock</th>
+                        <th>Lote</th>
+                        <th>Caducidad</th>
+                        <th>Imagen URL</th>
+                        <th>Estado</th>
+                        <th>Acción</th>
+                        <th>Validación</th>
+                      </tr>
+                    </thead>
+                    <tbody id="importProductsPreviewTable"></tbody>
+                  </table>
+                </div>
+                <div class="product-io-warnings" id="importProductsWarnings" hidden></div>
+                <div class="product-io-errors" id="importProductsErrors" hidden></div>
+                <div class="product-io-preview-actions">
+                  <button class="ghost-button small" type="button" id="cancelProductsImportButton">Cancelar</button>
+                  <button class="ghost-button small" type="button" id="revalidateProductsImportButton" disabled>Revalidar datos</button>
+                  <button class="primary-button small" type="button" id="confirmProductsImportButton" disabled>Confirmar importación</button>
+                </div>
               </div>
-              <div class="product-io-stats" id="importProductsStats"></div>
-              <div class="table-scroll product-import-preview-scroll">
-                <table class="product-import-preview-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>SKU</th>
-                      <th>Nombre</th>
-                      <th>Categoría</th>
-                      <th>Stock</th>
-                      <th>Precio</th>
-                      <th>Estado</th>
-                      <th>Validación</th>
-                    </tr>
-                  </thead>
-                  <tbody id="importProductsPreviewTable"></tbody>
-                </table>
-              </div>
-              <div class="product-io-errors" id="importProductsErrors" hidden></div>
-              <div class="product-io-result" id="importProductsResult" hidden></div>
+
+              <section class="product-io-final-panel" id="importProductsFinalPanel" hidden>
+                <p class="eyebrow">Resultado</p>
+                <h3 id="importProductsFinalTitle">Importación finalizada</h3>
+                <p class="product-io-final-message" id="importProductsFinalMessage" hidden></p>
+                <p class="product-io-final-summary" id="importProductsFinalSummary"></p>
+                <div class="product-io-final-errors" id="importProductsFinalErrors" hidden></div>
+                <div class="product-io-final-actions">
+                  <button class="ghost-button small" type="button" id="importProductsAnotherCsvButton">Importar otro CSV</button>
+                  <button class="primary-button small" type="button" id="importProductsViewProductsButton">Ver productos</button>
+                </div>
+              </section>
             </section>
           </div>
         </section>
@@ -1147,6 +1179,32 @@
         <button class="ghost-button small" type="button" data-action="close-inventory-detail">Cerrar</button>
       </div>
       <div id="inventoryDetailContent"></div>
+    </dialog>
+
+    <dialog class="product-action-dialog" id="categoryDependencyDialog">
+      <form method="dialog" class="product-action-dialog-form" id="categoryDependencyDialogForm">
+        <div class="product-action-dialog-header">
+          <h2 id="categoryDependencyTitle">No se puede eliminar esta categoría</h2>
+        </div>
+        <p class="product-action-dialog-message" id="categoryDependencyMessage"></p>
+        <div class="product-action-dialog-actions">
+          <button class="ghost-button" type="submit" value="close">Cerrar</button>
+          <button class="primary-button" type="submit" value="hide-store" id="categoryDependencyHideButton" hidden>Ocultar en tienda</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="product-action-dialog" id="classificationDependencyDialog">
+      <form method="dialog" class="product-action-dialog-form" id="classificationDependencyDialogForm">
+        <div class="product-action-dialog-header">
+          <h2 id="classificationDependencyTitle">No se puede eliminar esta clasificación</h2>
+        </div>
+        <p class="product-action-dialog-message" id="classificationDependencyMessage"></p>
+        <div class="product-action-dialog-actions">
+          <button class="ghost-button" type="submit" value="close">Cerrar</button>
+          <button class="primary-button" type="submit" value="deactivate" id="classificationDependencyDeactivateButton">Desactivar clasificación</button>
+        </div>
+      </form>
     </dialog>
 
     <dialog class="product-action-dialog" id="productActionDialog">
