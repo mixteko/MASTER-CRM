@@ -841,11 +841,13 @@ label {
 
 .category-form-parent-hint {
   margin: 0;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-radius: 6px;
+  border: 1px solid #bfdbfe;
   background: #eff6ff;
   color: #1d4ed8;
   font-size: 0.74rem;
+  font-weight: 600;
   line-height: 1.35;
 }
 

@@ -419,16 +419,37 @@ async function handlePermanentDeleteProduct(request, response) {
   }
 }
 
+function isCategoryDbRowActive(row) {
+  if (!row) return false;
+  return row.activo !== false;
+}
+
+function filterActiveCategoryRows(rows) {
+  return (Array.isArray(rows) ? rows : []).filter(isCategoryDbRowActive);
+}
+
+function filterActiveMappedCategories(categories) {
+  return (Array.isArray(categories) ? categories : []).filter(
+    (category) => category.active !== false && category.status !== "Pausado",
+  );
+}
+
 async function fetchCategoriesFromSupabase() {
-  const fullPath =
-    "/rest/v1/categorias?select=id,nombre,descripcion,activo,parent_id,visible_en_tienda,created_at,updated_at&order=nombre.asc";
-  const legacyPath =
-    "/rest/v1/categorias?select=id,nombre,descripcion,activo,created_at,updated_at&order=nombre.asc";
+  const schema = await resolveCategorySchemaSupport();
+  const selectFields = ["id", "nombre", "descripcion", "activo", "created_at", "updated_at"];
+  if (schema.parentId) selectFields.push("parent_id");
+  if (schema.visibleInStore) selectFields.push("visible_en_tienda");
+  const select = selectFields.join(",");
+  const activePath = `/rest/v1/categorias?select=${select}&activo=eq.true&order=nombre.asc`;
+  const allPath = `/rest/v1/categorias?select=${select}&order=nombre.asc`;
+
   try {
-    return await supabaseRequest(fullPath);
+    const rows = await supabaseRequest(activePath);
+    return filterActiveCategoryRows(rows);
   } catch (error) {
     if (!String(error.message || "").includes("400")) throw error;
-    return await supabaseRequest(legacyPath);
+    const rows = await supabaseRequest(allPath);
+    return filterActiveCategoryRows(rows);
   }
 }
 
@@ -439,8 +460,17 @@ async function handleGetCategories(response) {
   }
 
   try {
+    const schema = await resolveCategorySchemaSupport();
     const rows = await fetchCategoriesFromSupabase();
-    sendJSON(response, 200, { ok: true, categories: rows.map(mapDbCategory) });
+    const categories = filterActiveMappedCategories(rows.map(mapDbCategory));
+    sendJSON(response, 200, {
+      ok: true,
+      categories,
+      capabilities: {
+        parentId: schema.parentId,
+        visibleInStore: schema.visibleInStore,
+      },
+    });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudieron cargar categorias", details: error.message });
   }
@@ -460,14 +490,28 @@ async function handleCreateCategory(request, response) {
       return;
     }
 
-    const insertBody = buildCategorySupabasePayload({ ...body, name });
+    const schema = await resolveCategorySchemaSupport();
+    const parentId = String(body.parentId || body.parent_id || "").trim();
+    if (parentId && schema.parentId) {
+      const parent = await getSupabaseCategoryById(parentId);
+      if (!parent) {
+        sendJSON(response, 404, { error: "Categoría padre no encontrada" });
+        return;
+      }
+    }
+
+    const insertBody = buildCategorySupabasePayload({ ...body, name }, schema);
     if (insertBody.activo === undefined) insertBody.activo = true;
 
-    const created = await writeCategoryToSupabase("/rest/v1/categorias", {
-      method: "POST",
-      body: insertBody,
-      prefer: "return=representation",
-    });
+    const created = await writeCategoryToSupabase(
+      "/rest/v1/categorias",
+      {
+        method: "POST",
+        body: insertBody,
+        prefer: "return=representation",
+      },
+      schema,
+    );
     sendJSON(response, 200, { ok: true, category: mapDbCategory(created[0]) });
   } catch (error) {
     sendJSON(response, 500, { error: "No se pudo crear categoria", details: error.message });
@@ -488,16 +532,34 @@ async function handleUpdateCategory(request, response) {
     }
 
     const body = await readJSONBody(request);
-    const patch = buildCategorySupabasePayload(body);
+    const schema = await resolveCategorySchemaSupport();
+    const patch = buildCategorySupabasePayload(body, schema);
     if (!Object.keys(patch).length) {
       sendJSON(response, 400, { error: "No hay campos para actualizar" });
       return;
     }
 
-    await writeCategoryToSupabase(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: patch,
-    });
+    const parentId = String(body.parentId || body.parent_id || "").trim();
+    if (parentId && schema.parentId) {
+      if (parentId === id) {
+        sendJSON(response, 400, { error: "Una categoría no puede ser su propia subcategoría" });
+        return;
+      }
+      const parent = await getSupabaseCategoryById(parentId);
+      if (!parent) {
+        sendJSON(response, 404, { error: "Categoría padre no encontrada" });
+        return;
+      }
+    }
+
+    await writeCategoryToSupabase(
+      `/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: patch,
+      },
+      schema,
+    );
     const category = await getSupabaseCategoryById(id);
     if (!category) {
       sendJSON(response, 404, { error: "Categoria no encontrada" });
@@ -510,20 +572,39 @@ async function handleUpdateCategory(request, response) {
 }
 
 async function getCategoryDeleteDependencies(categoryId) {
+  const schema = await resolveCategorySchemaSupport();
   let subcategoryCount = 0;
-  try {
-    const children = await supabaseRequest(
-      `/rest/v1/categorias?select=id&parent_id=eq.${encodeURIComponent(categoryId)}`,
-    );
-    subcategoryCount = Array.isArray(children) ? children.length : 0;
-  } catch {
-    subcategoryCount = 0;
+
+  if (schema.parentId) {
+    try {
+      const children = await supabaseRequest(
+        `/rest/v1/categorias?select=id&parent_id=eq.${encodeURIComponent(categoryId)}&activo=eq.true`,
+      );
+      subcategoryCount = Array.isArray(children) ? children.length : 0;
+    } catch (error) {
+      console.error("Error contando subcategorías activas:", error.message);
+      subcategoryCount = 0;
+    }
   }
 
-  const products = await supabaseRequest(
-    `/rest/v1/productos?select=id&categoria_id=eq.${encodeURIComponent(categoryId)}`,
-  );
-  const productCount = Array.isArray(products) ? products.length : 0;
+  let productCount = 0;
+  try {
+    const products = await supabaseRequest(
+      `/rest/v1/productos?select=id&categoria_id=eq.${encodeURIComponent(categoryId)}&activo=eq.true&eliminado=eq.false`,
+    );
+    productCount = Array.isArray(products) ? products.length : 0;
+  } catch (error) {
+    try {
+      const products = await supabaseRequest(
+        `/rest/v1/productos?select=id&categoria_id=eq.${encodeURIComponent(categoryId)}&activo=eq.true`,
+      );
+      productCount = Array.isArray(products) ? products.length : 0;
+    } catch (fallbackError) {
+      console.error("Error contando productos de categoría:", fallbackError.message);
+      productCount = 0;
+    }
+  }
+
   return { productCount, subcategoryCount };
 }
 
@@ -535,6 +616,7 @@ async function handleDeleteCategory(request, response) {
 
   try {
     const id = getResourceIdFromUrl(request.url, "/api/categories/");
+    console.log("[category delete] id recibido:", id);
     if (!id) {
       sendJSON(response, 400, { error: "ID de categoria requerido" });
       return;
@@ -547,20 +629,39 @@ async function handleDeleteCategory(request, response) {
     }
 
     const { productCount, subcategoryCount } = await getCategoryDeleteDependencies(id);
-    if (productCount > 0 || subcategoryCount > 0) {
+    console.log("[category delete] dependencias:", { id, productCount, subcategoryCount });
+
+    if (subcategoryCount > 0) {
       sendJSON(response, 409, {
         ok: false,
-        error: "CATEGORY_HAS_DEPENDENCIES",
-        message: "Esta categoría tiene productos o subcategorías asociadas.",
+        error: "CATEGORY_HAS_SUBCATEGORIES",
+        message: "Esta categoría tiene subcategorías. Primero elimina o reasigna sus subcategorías.",
+        productCount,
+        subcategoryCount,
+      });
+      return;
+    }
+    if (productCount > 0) {
+      sendJSON(response, 409, {
+        ok: false,
+        error: "CATEGORY_HAS_PRODUCTS",
+        message: "Esta categoría tiene productos asignados. Primero mueve esos productos a otra categoría.",
         productCount,
         subcategoryCount,
       });
       return;
     }
 
-    await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+    const patchResult = await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: { activo: false },
+      prefer: "return=representation",
+    });
+    console.log("[category delete] PATCH Supabase ok:", Array.isArray(patchResult) ? patchResult.length : patchResult);
+
     sendJSON(response, 200, { ok: true, id });
   } catch (error) {
+    console.error("[category delete] error Supabase:", error.message);
     sendJSON(response, 500, { error: "No se pudo eliminar categoria", details: error.message });
   }
 }
@@ -2021,12 +2122,13 @@ function getResourceIdFromUrl(url, prefix) {
 }
 
 function mapDbCategory(row) {
+  const active = row.activo !== false;
   return {
     id: row.id,
     name: row.nombre || "",
     description: row.descripcion || "",
-    active: Boolean(row.activo),
-    status: row.activo ? "Activo" : "Pausado",
+    active,
+    status: active ? "Activo" : "Pausado",
     parentId: row.parent_id || null,
     visibleInStore: row.visible_en_tienda !== false,
     storeStatus: row.visible_en_tienda === false ? "Oculta" : "Visible",
@@ -2045,17 +2147,49 @@ function mapDbClassification(row) {
   };
 }
 
-const CATEGORY_SUPABASE_FIELDS = new Set(["nombre", "descripcion", "activo", "visible_en_tienda"]);
+const CATEGORY_BASE_FIELDS = new Set(["nombre", "descripcion", "activo"]);
+let categorySchemaSupport = null;
 
-function sanitizeCategorySupabaseBody(body) {
+async function resolveCategorySchemaSupport(force = false) {
+  if (categorySchemaSupport && !force) return categorySchemaSupport;
+
+  const support = { parentId: false, visibleInStore: false };
+  if (!isSupabaseEnabled()) {
+    categorySchemaSupport = support;
+    return support;
+  }
+
+  try {
+    await supabaseRequest("/rest/v1/categorias?select=parent_id&limit=1");
+    support.parentId = true;
+  } catch (error) {
+    if (!String(error.message || "").includes("400")) throw error;
+  }
+
+  try {
+    await supabaseRequest("/rest/v1/categorias?select=visible_en_tienda&limit=1");
+    support.visibleInStore = true;
+  } catch (error) {
+    if (!String(error.message || "").includes("400")) throw error;
+  }
+
+  categorySchemaSupport = support;
+  return support;
+}
+
+function sanitizeCategorySupabaseBody(body, schema = {}) {
+  const allowed = new Set(CATEGORY_BASE_FIELDS);
+  if (schema.visibleInStore) allowed.add("visible_en_tienda");
+  if (schema.parentId) allowed.add("parent_id");
+
   const sanitized = {};
-  for (const key of CATEGORY_SUPABASE_FIELDS) {
+  for (const key of allowed) {
     if (body[key] !== undefined) sanitized[key] = body[key];
   }
   return sanitized;
 }
 
-function buildCategorySupabasePayload(body) {
+function buildCategorySupabasePayload(body, schema = {}) {
   const raw = {};
   if (body.name !== undefined || body.nombre !== undefined) {
     raw.nombre = String(body.name || body.nombre || "").trim();
@@ -2069,7 +2203,11 @@ function buildCategorySupabasePayload(body) {
   if (body.visibleInStore !== undefined || body.visible_en_tienda !== undefined) {
     raw.visible_en_tienda = readVisibleInStoreFlag(body);
   }
-  return sanitizeCategorySupabaseBody(raw);
+  const parentId = String(body.parentId || body.parent_id || "").trim();
+  if (parentId && schema.parentId) {
+    raw.parent_id = parentId;
+  }
+  return sanitizeCategorySupabaseBody(raw, schema);
 }
 
 function buildCatalogPatch(body) {
@@ -2086,19 +2224,21 @@ function buildCatalogPatch(body) {
   return patch;
 }
 
-function stripCategoryExtensionFields(body) {
-  const legacy = sanitizeCategorySupabaseBody(body);
+function stripCategoryLegacyFields(body) {
+  const legacy = { ...body };
+  delete legacy.parent_id;
   delete legacy.visible_en_tienda;
-  return legacy;
+  return sanitizeCategorySupabaseBody(legacy, { parentId: false, visibleInStore: false });
 }
 
-async function writeCategoryToSupabase(path, options = {}) {
-  const body = sanitizeCategorySupabaseBody(options.body || {});
+async function writeCategoryToSupabase(path, options = {}, schema = null) {
+  const support = schema || (await resolveCategorySchemaSupport());
+  const body = sanitizeCategorySupabaseBody(options.body || {}, support);
   try {
     return await supabaseRequest(path, { ...options, body });
   } catch (error) {
     if (!String(error.message || "").includes("400")) throw error;
-    const legacyBody = stripCategoryExtensionFields(body);
+    const legacyBody = stripCategoryLegacyFields(body);
     if (JSON.stringify(legacyBody) === JSON.stringify(body)) throw error;
     return await supabaseRequest(path, { ...options, body: legacyBody });
   }

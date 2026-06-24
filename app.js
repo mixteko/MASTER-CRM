@@ -4289,6 +4289,8 @@ const state = {
   categoryQuery: "",
   classificationQuery: "",
   categoryLoadError: "",
+  categoryCapabilities: { parentId: false, visibleInStore: false },
+  selectedParentCategoryId: "",
   classificationLoadError: "",
   productsSection: "products-list",
   expirationFilter: null,
@@ -4982,7 +4984,10 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "edit-category") editCategory(id);
   if (action.dataset.action === "create-subcategory") createSubcategory(id);
   if (action.dataset.action === "toggle-category-store-visibility") toggleCategoryStoreVisibility(id);
-  if (action.dataset.action === "delete-category") deleteCategory(id);
+  if (action.dataset.action === "delete-category") {
+    closeAllProductActionMenus();
+    deleteCategory(id);
+  }
   if (action.dataset.action === "toggle-category-menu") toggleProductActionMenu(action);
   if (action.dataset.action === "edit-classification") editClassification(id);
   if (action.dataset.action === "deactivate-classification") deactivateClassification(id);
@@ -6876,6 +6881,12 @@ function classificationRequiresRecipe(name) {
   return /receta/i.test(String(name || ""));
 }
 
+function getActiveCategories(categories = state.categories) {
+  return (Array.isArray(categories) ? categories : []).filter(
+    (category) => category.active !== false && category.status !== "Pausado",
+  );
+}
+
 async function loadCategories(options = {}) {
   try {
     const response = await fetch(categoriesApiUrl);
@@ -6884,13 +6895,15 @@ async function loadCategories(options = {}) {
     const data = await response.json();
     if (!Array.isArray(data.categories)) throw new Error("Respuesta invalida");
 
-    state.categories = data.categories;
+    state.categories = getActiveCategories(data.categories);
+    state.categoryCapabilities = data.capabilities || { parentId: false, visibleInStore: false };
     state.categoryLoadError = "";
     renderCategories();
     renderProductCatalogSelects();
     if (options.manual) showToast("Categorias actualizadas");
   } catch {
     state.categories = [];
+    state.categoryCapabilities = { parentId: false, visibleInStore: false };
     state.categoryLoadError = "No se pudieron cargar categorias desde Supabase.";
     renderCategories();
     renderProductCatalogSelects();
@@ -6927,6 +6940,9 @@ async function saveCategoryToApi(category) {
     name: category.name,
     description: category.description,
   };
+  if (!isUpdate && category.parentId && state.categoryCapabilities?.parentId) {
+    payload.parentId = category.parentId;
+  }
 
   const response = await fetch(url, {
     method: isUpdate ? "PATCH" : "POST",
@@ -6942,8 +6958,15 @@ async function saveCategoryToApi(category) {
 }
 
 async function deleteCategoryInApi(id) {
+  console.log("[category delete] DELETE /api/categories/", id);
   const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
-  const data = await response.json();
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (parseError) {
+    console.error("[category delete] respuesta no JSON:", response.status, parseError);
+  }
+  console.log("[category delete] respuesta API:", response.status, data);
   if (!response.ok) {
     const error = new Error(data.message || data.details || data.error || "No se pudo eliminar categoria");
     error.code = data.error || "";
@@ -7059,23 +7082,31 @@ function countCategoryProducts(category) {
   if (!category) return 0;
   return state.products.filter((product) => {
     if (product.deleted || product.eliminado) return false;
+    if (product.status && product.status !== "Activo") return false;
+    if (category.id && product.categoryId && product.categoryId === category.id) return true;
     return product.category === category.name;
   }).length;
 }
 
 function countCategorySubcategories(categoryId) {
-  return state.categories.filter((category) => category.active && category.parentId === categoryId).length;
+  if (!categoryId) return 0;
+  return getActiveCategories(state.categories).filter(
+    (category) => category.parentId && category.parentId === categoryId,
+  ).length;
 }
 
 function buildCategoryDeleteBlockedMessage(category, deps) {
   const { productCount, subcategoryCount } = deps;
+  if (subcategoryCount > 0 && productCount <= 0) {
+    return "Esta categoría tiene subcategorías. Primero elimina o reasigna sus subcategorías.";
+  }
   if (productCount > 0 && subcategoryCount > 0) {
-    return `Esta categoría tiene ${productCount} productos asignados y ${subcategoryCount} subcategorías asociadas.\n\nPara evitar errores, primero mueve esos productos a otra categoría, elimina o reubica las subcategorías, o usa “Ocultar en tienda”.`;
+    return `Esta categoría tiene ${productCount} productos asignados y ${subcategoryCount} subcategorías asociadas.\n\nPrimero mueve esos productos, elimina o reasigna las subcategorías, o usa “Ocultar en tienda”.`;
   }
   if (productCount > 0) {
     return `Esta categoría tiene ${productCount} productos asignados.\n\nPara evitar errores, primero mueve esos productos a otra categoría o usa “Ocultar en tienda”.`;
   }
-  return `Esta categoría tiene ${subcategoryCount} subcategorías asociadas.\n\nPrimero mueve o elimina las subcategorías.`;
+  return "Esta categoría tiene subcategorías. Primero elimina o reasigna sus subcategorías.";
 }
 
 function openCategoryDeleteBlockedDialog(category, deps) {
@@ -7133,7 +7164,7 @@ function renderCategoryActionMenuMarkup(category) {
 function renderCategories() {
   if (!elements.categoryTable) return;
 
-  const activeCategories = state.categories.filter((category) => category.active);
+  const activeCategories = getActiveCategories(state.categories);
   const categories = sortCategoriesHierarchically(
     activeCategories.filter((category) => {
       const parent = category.parentId ? getCategoryById(category.parentId) : null;
@@ -7161,7 +7192,7 @@ function renderCategories() {
             : "";
           const parentLine =
             isSubcategory && parent
-              ? `<span class="category-admin-parent">Pertenece a: ${escapeHTML(parent.name)}</span>`
+              ? `<span class="category-admin-parent">Subcategoría de: ${escapeHTML(parent.name)}</span>`
               : "";
           return `
             <tr class="category-admin-row ${isSubcategory ? "is-subcategory" : ""}">
@@ -7298,7 +7329,7 @@ function renderClassifications() {
 }
 
 function renderProductCatalogSelects() {
-  const activeCategories = state.categories.filter((category) => category.active);
+  const activeCategories = getActiveCategories(state.categories);
   const hierarchicalCategories = sortCategoriesHierarchically(activeCategories);
   const activeClassifications = state.classifications.filter((classification) => classification.active);
   const currentCategory = elements.productCategory?.value || "";
@@ -7352,18 +7383,26 @@ function ensureSelectOption(select, value) {
 async function saveCategory(event) {
   event.preventDefault();
   const id = elements.categoryId.value.trim();
+  const parentId = state.selectedParentCategoryId || elements.categoryParentId?.value?.trim() || "";
   const category = {
     name: elements.categoryName.value.trim(),
     description: elements.categoryDescription.value.trim(),
   };
   if (id) category.id = id;
+  if (!id && parentId) {
+    if (state.categoryCapabilities?.parentId) {
+      category.parentId = parentId;
+    } else {
+      showToast("Subcategorías requieren la migración SQL en Supabase (server/sql/categorias_subcategorias.sql). Se guardará como categoría principal.");
+    }
+  }
   if (!category.name) return showToast("El nombre es obligatorio");
 
   try {
     await saveCategoryToApi(category);
     await loadCategories();
     clearCategoryForm();
-    showToast(id ? "Categoria actualizada" : "Categoria guardada");
+    showToast(id ? "Categoria actualizada" : category.parentId ? "Subcategoría guardada" : "Categoria guardada");
   } catch (error) {
     showToast(error.message || "No se pudo guardar categoria");
   }
@@ -7378,10 +7417,11 @@ function editCategory(id) {
   elements.categoryName.value = category.name;
   elements.categoryDescription.value = category.description || "";
   if (elements.categoryParentId) elements.categoryParentId.value = category.parentId || "";
+  state.selectedParentCategoryId = "";
   if (elements.categoryParentHint) {
     const parent = category.parentId ? getCategoryById(category.parentId) : null;
     if (parent) {
-      elements.categoryParentHint.textContent = `Subcategoría de ${parent.name}.`;
+      elements.categoryParentHint.textContent = `Subcategoría de: ${parent.name}`;
       elements.categoryParentHint.hidden = false;
     } else {
       elements.categoryParentHint.textContent = "";
@@ -7396,12 +7436,16 @@ function createSubcategory(parentId) {
   if (!parent) return showToast("Categoría padre no encontrada");
   closeAllProductActionMenus();
   clearCategoryForm();
+  state.selectedParentCategoryId = parentId;
   if (elements.categoryParentId) elements.categoryParentId.value = parentId;
   if (elements.categoryParentHint) {
-    elements.categoryParentHint.textContent = `Se creará como subcategoría de ${parent.name}.`;
+    elements.categoryParentHint.textContent = `Nueva subcategoría de: ${parent.name}`;
     elements.categoryParentHint.hidden = false;
   }
-  elements.categoryFormTitle.textContent = `Nueva subcategoría de ${parent.name}`;
+  elements.categoryFormTitle.textContent = `Nueva subcategoría de: ${parent.name}`;
+  if (!state.categoryCapabilities?.parentId) {
+    showToast("Aplica server/sql/categorias_subcategorias.sql en Supabase para vincular subcategorías.");
+  }
   showView("productos", { productsSection: "products-categories" });
   elements.categoryName?.focus();
 }
@@ -7409,6 +7453,7 @@ function createSubcategory(parentId) {
 function clearCategoryForm() {
   elements.categoryForm.reset();
   elements.categoryId.value = "";
+  state.selectedParentCategoryId = "";
   if (elements.categoryParentId) elements.categoryParentId.value = "";
   if (elements.categoryParentHint) {
     elements.categoryParentHint.textContent = "";
@@ -7440,46 +7485,61 @@ async function toggleCategoryStoreVisibility(id, options = {}) {
     renderStore();
     showToast(hide ? "Categoría oculta en la tienda" : "Categoría visible en la tienda");
   } catch (error) {
+    console.error("Error cambiando visibilidad de categoría:", error);
     showToast(error.message || "No se pudo actualizar visibilidad");
   }
 }
 
 async function deleteCategory(id) {
   const category = getCategoryById(id);
-  if (!category) return;
+  if (!category) {
+    showToast("Categoría no encontrada");
+    return;
+  }
+  console.log("[category delete]", category);
   closeAllProductActionMenus();
 
-  const localDeps = {
-    productCount: countCategoryProducts(category),
-    subcategoryCount: countCategorySubcategories(category.id),
-  };
-  if (localDeps.productCount > 0 || localDeps.subcategoryCount > 0) {
-    const action = await openCategoryDeleteBlockedDialog(category, localDeps);
-    if (action === "hide-store") await toggleCategoryStoreVisibility(id, { skipConfirm: true });
+  const subcategoryCount = countCategorySubcategories(category.id);
+  if (subcategoryCount > 0) {
+    await openCategoryDeleteBlockedDialog(category, { productCount: 0, subcategoryCount });
+    showToast("Esta categoría tiene subcategorías. Primero elimina o reasigna sus subcategorías.");
     return;
   }
 
   const confirmed = await openProductActionDialog({
     title: `¿Eliminar categoría "${category.name}"?`,
-    message:
-      "Esta categoría no tiene productos ni subcategorías asociadas.\nLa eliminación no afectará productos.",
+    message: category.parentId
+      ? "Esta subcategoría se desactivará en el CRM. La categoría padre no se verá afectada."
+      : "Esta categoría se desactivará y dejará de mostrarse en la lista.",
     confirmLabel: "Eliminar categoría",
     confirmClass: "primary-button is-danger",
   });
   if (!confirmed) return;
 
   try {
+    console.log("[category delete] llamando API con id:", id);
+    const wasSubcategory = Boolean(category.parentId);
     await deleteCategoryInApi(id);
     await loadCategories();
     renderStore();
-    showToast("Categoría eliminada");
+    showToast(wasSubcategory ? "Subcategoría eliminada" : "Categoría eliminada");
   } catch (error) {
-    if (error.code === "CATEGORY_HAS_DEPENDENCIES") {
+    console.error("[category delete] error:", error);
+    if (error.code === "CATEGORY_HAS_SUBCATEGORIES" || error.code === "CATEGORY_HAS_DEPENDENCIES") {
+      await openCategoryDeleteBlockedDialog(category, {
+        productCount: error.productCount,
+        subcategoryCount: error.subcategoryCount,
+      });
+      showToast(error.message || "Esta categoría tiene subcategorías. Primero elimina o reasigna sus subcategorías.");
+      return;
+    }
+    if (error.code === "CATEGORY_HAS_PRODUCTS") {
       const action = await openCategoryDeleteBlockedDialog(category, {
         productCount: error.productCount,
         subcategoryCount: error.subcategoryCount,
       });
       if (action === "hide-store") await toggleCategoryStoreVisibility(id, { skipConfirm: true });
+      else showToast(error.message || "Esta categoría tiene productos asignados.");
       return;
     }
     showToast(error.message || "No se pudo eliminar categoria");
