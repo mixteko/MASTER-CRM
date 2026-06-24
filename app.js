@@ -6923,13 +6923,21 @@ async function loadClassifications(options = {}) {
 async function saveCategoryToApi(category) {
   const isUpdate = Boolean(category.id);
   const url = isUpdate ? `${categoriesApiUrl}/${encodeURIComponent(category.id)}` : categoriesApiUrl;
+  const payload = {
+    name: category.name,
+    description: category.description,
+  };
+
   const response = await fetch(url, {
     method: isUpdate ? "PATCH" : "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(category),
+    body: JSON.stringify(payload),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.details || data.error || "No se pudo guardar categoria");
+  if (!response.ok) {
+    console.error("Error guardando categoría:", response.status, data);
+    throw new Error(data.details || data.error || "No se pudo guardar categoria");
+  }
   return data.category;
 }
 
@@ -6947,13 +6955,22 @@ async function deleteCategoryInApi(id) {
 }
 
 async function patchCategoryInApi(id, patch) {
+  const payload = {};
+  if (patch.visibleInStore !== undefined) payload.visibleInStore = patch.visibleInStore;
+  if (patch.name !== undefined) payload.name = patch.name;
+  if (patch.description !== undefined) payload.description = patch.description;
+  if (patch.active !== undefined) payload.active = patch.active;
+
   const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
+    body: JSON.stringify(payload),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.details || data.error || "No se pudo actualizar categoria");
+  if (!response.ok) {
+    console.error("Error actualizando categoría:", response.status, data);
+    throw new Error(data.details || data.error || "No se pudo actualizar categoria");
+  }
   return data.category;
 }
 
@@ -7334,19 +7351,19 @@ function ensureSelectOption(select, value) {
 
 async function saveCategory(event) {
   event.preventDefault();
+  const id = elements.categoryId.value.trim();
   const category = {
-    id: elements.categoryId.value,
     name: elements.categoryName.value.trim(),
     description: elements.categoryDescription.value.trim(),
-    parentId: elements.categoryParentId?.value || null,
   };
+  if (id) category.id = id;
   if (!category.name) return showToast("El nombre es obligatorio");
 
   try {
     await saveCategoryToApi(category);
     await loadCategories();
     clearCategoryForm();
-    showToast(category.id ? "Categoria actualizada" : "Categoria guardada");
+    showToast(id ? "Categoria actualizada" : "Categoria guardada");
   } catch (error) {
     showToast(error.message || "No se pudo guardar categoria");
   }

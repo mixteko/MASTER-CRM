@@ -460,26 +460,12 @@ async function handleCreateCategory(request, response) {
       return;
     }
 
-    const parentId = String(body.parentId || body.parent_id || "").trim() || null;
-    if (parentId) {
-      const parent = await getSupabaseCategoryById(parentId);
-      if (!parent) {
-        sendJSON(response, 404, { error: "Categoría padre no encontrada" });
-        return;
-      }
-    }
+    const insertBody = buildCategorySupabasePayload({ ...body, name });
+    if (insertBody.activo === undefined) insertBody.activo = true;
 
-    const visibleInStore = readVisibleInStoreFlag(body, true);
-    const created = await supabaseRequest("/rest/v1/categorias", {
+    const created = await writeCategoryToSupabase("/rest/v1/categorias", {
       method: "POST",
-      body: {
-        nombre: name,
-        descripcion: String(body.description || body.descripcion || "").trim() || null,
-        activo: true,
-        parent_id: parentId,
-        visible_en_tienda: visibleInStore,
-        updated_at: new Date().toISOString(),
-      },
+      body: insertBody,
       prefer: "return=representation",
     });
     sendJSON(response, 200, { ok: true, category: mapDbCategory(created[0]) });
@@ -502,28 +488,13 @@ async function handleUpdateCategory(request, response) {
     }
 
     const body = await readJSONBody(request);
-    const patch = buildCatalogPatch(body);
+    const patch = buildCategorySupabasePayload(body);
     if (!Object.keys(patch).length) {
       sendJSON(response, 400, { error: "No hay campos para actualizar" });
       return;
     }
 
-    if (patch.parent_id !== undefined) {
-      if (patch.parent_id === id) {
-        sendJSON(response, 400, { error: "Una categoría no puede ser su propia subcategoría" });
-        return;
-      }
-      if (patch.parent_id) {
-        const parent = await getSupabaseCategoryById(patch.parent_id);
-        if (!parent) {
-          sendJSON(response, 404, { error: "Categoría padre no encontrada" });
-          return;
-        }
-      }
-    }
-
-    patch.updated_at = new Date().toISOString();
-    await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
+    await writeCategoryToSupabase(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: patch,
     });
@@ -2074,6 +2045,33 @@ function mapDbClassification(row) {
   };
 }
 
+const CATEGORY_SUPABASE_FIELDS = new Set(["nombre", "descripcion", "activo", "visible_en_tienda"]);
+
+function sanitizeCategorySupabaseBody(body) {
+  const sanitized = {};
+  for (const key of CATEGORY_SUPABASE_FIELDS) {
+    if (body[key] !== undefined) sanitized[key] = body[key];
+  }
+  return sanitized;
+}
+
+function buildCategorySupabasePayload(body) {
+  const raw = {};
+  if (body.name !== undefined || body.nombre !== undefined) {
+    raw.nombre = String(body.name || body.nombre || "").trim();
+  }
+  if (body.description !== undefined || body.descripcion !== undefined) {
+    raw.descripcion = String(body.description || body.descripcion || "").trim() || null;
+  }
+  if (body.active !== undefined || body.activo !== undefined || body.status !== undefined) {
+    raw.activo = readActiveFlag(body);
+  }
+  if (body.visibleInStore !== undefined || body.visible_en_tienda !== undefined) {
+    raw.visible_en_tienda = readVisibleInStoreFlag(body);
+  }
+  return sanitizeCategorySupabaseBody(raw);
+}
+
 function buildCatalogPatch(body) {
   const patch = {};
   if (body.name !== undefined || body.nombre !== undefined) {
@@ -2085,14 +2083,25 @@ function buildCatalogPatch(body) {
   if (body.active !== undefined || body.activo !== undefined || body.status !== undefined) {
     patch.activo = readActiveFlag(body);
   }
-  if (body.parentId !== undefined || body.parent_id !== undefined) {
-    const parentId = String(body.parentId ?? body.parent_id ?? "").trim();
-    patch.parent_id = parentId || null;
-  }
-  if (body.visibleInStore !== undefined || body.visible_en_tienda !== undefined) {
-    patch.visible_en_tienda = readVisibleInStoreFlag(body);
-  }
   return patch;
+}
+
+function stripCategoryExtensionFields(body) {
+  const legacy = sanitizeCategorySupabaseBody(body);
+  delete legacy.visible_en_tienda;
+  return legacy;
+}
+
+async function writeCategoryToSupabase(path, options = {}) {
+  const body = sanitizeCategorySupabaseBody(options.body || {});
+  try {
+    return await supabaseRequest(path, { ...options, body });
+  } catch (error) {
+    if (!String(error.message || "").includes("400")) throw error;
+    const legacyBody = stripCategoryExtensionFields(body);
+    if (JSON.stringify(legacyBody) === JSON.stringify(body)) throw error;
+    return await supabaseRequest(path, { ...options, body: legacyBody });
+  }
 }
 
 function readVisibleInStoreFlag(body, defaultValue = undefined) {
@@ -2498,7 +2507,14 @@ async function supabaseRequest(path, options = {}) {
   console.log("STATUS HTTP de Supabase:", response.status);
 
   if (!response.ok) {
-    throw new Error(`Supabase respondio con estado ${response.status}`);
+    const detail =
+      data?.message ||
+      data?.hint ||
+      data?.details ||
+      (Array.isArray(data) && data[0]?.message) ||
+      (data ? JSON.stringify(data) : text);
+    console.error("SUPABASE ERROR BODY:", response.status, detail || data || text);
+    throw new Error(`Supabase respondio con estado ${response.status}${detail ? `: ${detail}` : ""}`);
   }
 
   return data || [];
