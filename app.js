@@ -4357,6 +4357,31 @@ const productsSectionTitles = {
   "products-import-export": "Importar / Exportar",
 };
 
+const viewDescriptions = {
+  dashboard: "Resumen operativo de pedidos, ventas, inventario y alertas del negocio.",
+  clientes: "Registra clientes, consulta su historial y mantén datos de contacto actualizados.",
+  pedidos: "Gestiona el flujo completo desde pedido nuevo hasta entrega.",
+  ventas: "Consulta ventas confirmadas y tickets cerrados.",
+  pagos: "Controla cobros pendientes y métodos de pago.",
+  envios: "Seguimiento de entregas locales y nacionales.",
+  canales: "Tienda online y puntos de venta digital.",
+  "whatsapp-manager": "Atiende conversaciones y automatiza respuestas de WhatsApp.",
+  configuracion: "Plantillas y personalización del negocio.",
+  whatsapp: "Atiende conversaciones y automatiza respuestas de WhatsApp.",
+  cobros: "Controla cobros pendientes y métodos de pago.",
+  tienda: "Tienda online y puntos de venta digital.",
+  productos: "Administra catálogo, stock y reglas comerciales.",
+  "product-form": "Formulario de alta y edición de producto.",
+};
+
+const productsSectionDescriptions = {
+  "products-list": "Consulta, filtra y administra el catálogo de productos activos.",
+  "products-inventory": "Consulta existencias, lotes, caducidades y valor del inventario.",
+  "products-categories": "Define tipos de producto y controla su visibilidad en tienda.",
+  "products-classifications": "Define cómo debe manejarse cada producto en farmacia.",
+  "products-import-export": "Respaldá o actualizá tu catálogo en lote mediante archivos CSV.",
+};
+
 const viewAliases = {
   pagos: "cobros",
   canales: "tienda",
@@ -4427,6 +4452,8 @@ const $$ = (selector) => document.querySelectorAll(selector);
 
 const elements = {
   viewTitle: $("#viewTitle"),
+  viewDescription: $("#viewDescription"),
+  dashboardQuickSummary: $("#dashboardQuickSummary"),
   todayLabel: $("#todayLabel"),
   toast: $("#toast"),
   metricOpenOrders: $("#metricOpenOrders"),
@@ -4997,13 +5024,30 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "close-inventory-detail") elements.inventoryDetailDialog.close();
 }
 
+function isNavItemActive(navView, viewId, targetViewId) {
+  if (targetViewId === "productos") return navView === "productos";
+  const alias = viewAliases[navView];
+  if (alias === targetViewId || alias === viewId) return true;
+  return navView === viewId || navView === targetViewId;
+}
+
+function updateViewHeader(title, description) {
+  elements.viewTitle.textContent = title;
+  if (elements.viewDescription) {
+    elements.viewDescription.textContent = description || "";
+  }
+}
+
 function showView(viewId, options = {}) {
   if (!viewId) return;
 
   if (viewId === "product-form") {
     $$(".view").forEach((view) => view.classList.toggle("active", view.id === "product-form"));
     $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === "productos"));
-    elements.viewTitle.textContent = elements.productFormTitle.textContent || "Producto";
+    updateViewHeader(
+      elements.productFormTitle.textContent || "Producto",
+      viewDescriptions["product-form"],
+    );
     scrollWorkspaceToTop();
     return;
   }
@@ -5017,7 +5061,9 @@ function showView(viewId, options = {}) {
   if (productsSection) state.productsSection = productsSection;
 
   $$(".view").forEach((view) => view.classList.toggle("active", view.id === targetViewId));
-  $$(".nav-item").forEach((item) => item.classList.toggle("active", targetViewId === "productos" && item.dataset.view === "productos"));
+  $$(".nav-item").forEach((item) =>
+    item.classList.toggle("active", isNavItemActive(item.dataset.view, viewId, targetViewId)),
+  );
 
   if (targetViewId === "productos") {
     showProductsSection(state.productsSection || "products-list");
@@ -5026,7 +5072,11 @@ function showView(viewId, options = {}) {
     return;
   }
 
-  elements.viewTitle.textContent = viewTitles[viewId] || viewTitles[targetViewId];
+  updateViewHeader(
+    viewTitles[viewId] || viewTitles[targetViewId],
+    viewDescriptions[viewId] || viewDescriptions[targetViewId] || "",
+  );
+  scrollWorkspaceToTop();
 }
 
 function showProductsSection(sectionId) {
@@ -5890,7 +5940,11 @@ async function confirmProductsImport() {
 }
 
 function updateProductsModuleTitle() {
-  elements.viewTitle.textContent = `Productos · ${productsSectionTitles[state.productsSection] || "Lista de productos"}`;
+  const section = state.productsSection || "products-list";
+  updateViewHeader(
+    `Productos · ${productsSectionTitles[section] || "Lista de productos"}`,
+    productsSectionDescriptions[section] || viewDescriptions.productos,
+  );
 }
 
 function openProductForm() {
@@ -6026,6 +6080,11 @@ function renderDashboard() {
   elements.metricProducts.textContent = String(state.products.filter((product) => product.status === "Activo").length);
   elements.metricLowStock.textContent = `${lowStock.length} con stock bajo`;
   if (elements.navOrdersBadge) elements.navOrdersBadge.textContent = String(openOrders.length);
+
+  if (elements.dashboardQuickSummary) {
+    const activeProducts = state.products.filter((product) => product.status === "Activo").length;
+    elements.dashboardQuickSummary.textContent = `Productos ${activeProducts} · Clientes ${state.customers.length} · Canales 3 · Pedidos hoy ${openOrders.length} · Ventas hoy ${currency.format(salesTotal)}`;
+  }
 
   renderDashboardExpirationAlerts();
 

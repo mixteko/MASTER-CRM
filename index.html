@@ -48,9 +48,10 @@
 
       <main class="workspace">
         <header class="workspace-header">
-          <div>
-            <p class="eyebrow">MASTER CRM</p>
+          <div class="page-hero">
+            <p class="eyebrow penpot-eyebrow">MASTER CRM</p>
             <h1 id="viewTitle">Dashboard</h1>
+            <p class="page-intro penpot-page-intro" id="viewDescription">Resumen operativo de pedidos, ventas, inventario y alertas del negocio.</p>
           </div>
           <div class="header-actions">
             <span class="status-pill" id="todayLabel">Live commerce</span>
@@ -61,51 +62,71 @@
         <section class="view active" id="dashboard">
           <div class="metric-grid">
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">🛒</span>
               <span>Pedidos abiertos</span>
               <strong id="metricOpenOrders">0</strong>
               <small id="metricPendingPayments">0 por cobrar</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">💰</span>
               <span>Ventas del dia</span>
               <strong id="metricSalesToday">$0</strong>
               <small id="metricSalesCount">0 tickets</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">🚚</span>
               <span>Envios activos</span>
               <strong id="metricShipments">0</strong>
               <small id="metricNationalShipments">0 nacionales</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">📦</span>
               <span>Productos activos</span>
               <strong id="metricProducts">0</strong>
               <small id="metricLowStock">0 con stock bajo</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">💊</span>
               <span>Tipo de negocio</span>
               <strong>Farmacia</strong>
               <small>Plantilla activa</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">🌐</span>
               <span>Canales activos</span>
               <strong>3</strong>
               <small>Web · WhatsApp · Mostrador</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">🏷️</span>
               <span>Versión actual</span>
               <strong>v0.4.1</strong>
               <small>Rebranding definitivo</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">⚙️</span>
               <span>Estado del sistema</span>
               <strong>● Desarrollo</strong>
               <small>Entorno activo</small>
             </article>
             <article class="metric-card">
+              <span class="metric-card__icon" aria-hidden="true">🖥️</span>
               <span>Backend</span>
               <strong>Local</strong>
               <small>Configuración actual</small>
             </article>
           </div>
+
+          <section class="panel-card penpot-quick-summary" id="dashboardQuickSummaryPanel">
+            <div class="penpot-quick-summary-head">
+              <div>
+                <p class="eyebrow penpot-eyebrow">Resumen</p>
+                <h2>Resumen rápido</h2>
+                <p class="penpot-card-lead">Información clave de tu operación.</p>
+              </div>
+            </div>
+            <p class="penpot-quick-summary-line" id="dashboardQuickSummary">—</p>
+          </section>
 
           <section class="panel-card expiration-alerts-panel">
             <div class="panel-heading">
