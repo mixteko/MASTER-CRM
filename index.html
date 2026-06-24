@@ -374,35 +374,149 @@
         </section>
 
         <section class="view" id="clientes">
-          <div class="module-grid">
-            <form class="panel-card form-panel" id="customerForm">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Registro</p>
-                  <h2 id="customerFormTitle">Nuevo cliente</h2>
-                </div>
-                <button class="ghost-button" type="button" id="clearCustomerForm">Limpiar</button>
-              </div>
-              <input id="customerId" type="hidden" />
-              <label>Nombre <input id="customerName" type="text" required /></label>
-              <div class="form-row">
-                <label>Telefono <input id="customerPhone" type="tel" required /></label>
-                <label>Correo <input id="customerEmail" type="email" /></label>
-              </div>
-              <label>Direccion <textarea id="customerAddress" rows="3"></textarea></label>
-              <button class="primary-button" type="submit">Guardar cliente</button>
-            </form>
+          <div class="customers-page-heading">
+            <div>
+              <p class="eyebrow">MASTER CRM</p>
+              <h2>Clientes</h2>
+              <p class="customers-page-lead">Gestiona clientes, historial de compra y datos de contacto.</p>
+            </div>
+            <button class="primary-button customer-add-btn" type="button" data-action="open-customer-form">Agregar cliente</button>
+          </div>
 
-            <section class="panel-card table-panel">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">CRM</p>
-                  <h2>Clientes</h2>
-                </div>
-                <input class="inline-search" id="customerSearch" type="search" placeholder="Buscar cliente" />
+          <section class="panel-card penpot-card table-panel customer-list-panel">
+            <div class="customer-list-toolbar">
+              <input class="inline-search customer-list-search" id="customerSearch" type="search" placeholder="Buscar por nombre, teléfono o correo" autocomplete="off" />
+              <span class="customer-list-count" id="customerListCount">0 clientes</span>
+            </div>
+            <div class="table-scroll customer-list-scroll">
+              <table class="customer-list-table">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Teléfono</th>
+                    <th>Correo</th>
+                    <th>Estado</th>
+                    <th>Última compra</th>
+                    <th>Total consumido</th>
+                    <th class="customer-col-actions">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="customerTable"></tbody>
+              </table>
+            </div>
+            <p class="customer-list-footer" id="customerListFooter">Mostrando 0 clientes</p>
+          </section>
+        </section>
+
+        <section class="view" id="customer-form">
+          <div class="customer-form-page">
+            <div class="customer-form-page-header">
+              <button class="ghost-button customer-form-back" type="button" data-action="back-to-customer-list">← Volver a clientes</button>
+              <div class="customer-form-page-title">
+                <p class="eyebrow">Clientes</p>
+                <h2 id="customerFormTitle">Agregar cliente</h2>
               </div>
-              <div class="customer-grid" id="customerCards"></div>
-            </section>
+            </div>
+
+            <form class="customer-form-page-body" id="customerForm">
+              <input id="customerId" type="hidden" />
+
+              <section class="panel-card penpot-card customer-form-section-card">
+                <h3 class="customer-form-section-title">Datos personales</h3>
+                <div class="customer-form-grid customer-form-grid--1">
+                  <label>Nombre y apellido <input id="customerName" type="text" required autocomplete="name" /></label>
+                </div>
+                <div class="customer-form-grid customer-form-grid--2">
+                  <label>Teléfono <input id="customerPhone" type="tel" required autocomplete="tel" /></label>
+                  <label>Correo electrónico <input id="customerEmail" type="email" autocomplete="email" /></label>
+                </div>
+              </section>
+
+              <details class="panel-card customer-form-section-card customer-form-collapsible" open>
+                <summary class="customer-form-section-title">Datos de envío</summary>
+                <div class="customer-form-grid customer-form-grid--1">
+                  <label>Calle <input id="customerStreet" type="text" autocomplete="address-line1" /></label>
+                </div>
+                <div class="customer-form-grid customer-form-grid--2">
+                  <label>Número exterior <input id="customerStreetNumber" type="text" /></label>
+                  <label>Dirección adicional / interior <input id="customerAddressLine2" type="text" autocomplete="address-line2" /></label>
+                </div>
+                <div class="customer-form-grid customer-form-grid--2">
+                  <label>Código postal <input id="customerPostalCode" type="text" inputmode="numeric" autocomplete="postal-code" /></label>
+                  <label>Colonia / barrio <input id="customerNeighborhood" type="text" /></label>
+                </div>
+                <div class="customer-form-grid customer-form-grid--2">
+                  <label>Ciudad <input id="customerCity" type="text" autocomplete="address-level2" /></label>
+                  <label>Estado <input id="customerState" type="text" autocomplete="address-level1" /></label>
+                </div>
+                <div class="customer-form-grid customer-form-grid--1">
+                  <label>País <input id="customerCountry" type="text" value="México" autocomplete="country-name" /></label>
+                </div>
+              </details>
+
+              <section class="panel-card penpot-card customer-form-section-card">
+                <h3 class="customer-form-section-title">Perfil comercial</h3>
+                <div class="customer-form-grid customer-form-grid--2">
+                  <label>
+                    Perfil comercial
+                    <select id="customerType"></select>
+                  </label>
+                  <div class="customer-form-field-spacer">
+                    <button class="ghost-button customer-manage-profiles-btn" type="button" id="manageCommercialProfilesButton" data-action="open-commercial-profiles-dialog">Gestionar perfiles</button>
+                  </div>
+                </div>
+                <div class="commercial-profile-info" id="commercialProfileInfo" hidden>
+                  <p class="commercial-profile-info-title">Condiciones del perfil seleccionado</p>
+                  <div class="commercial-profile-info-grid">
+                    <div class="commercial-profile-info-item">
+                      <span>Descuento</span>
+                      <strong id="commercialProfileInfoDiscount">—</strong>
+                    </div>
+                    <div class="commercial-profile-info-item">
+                      <span>Crédito permitido</span>
+                      <strong id="commercialProfileInfoCredit">—</strong>
+                    </div>
+                    <div class="commercial-profile-info-item">
+                      <span>Límite de crédito</span>
+                      <strong id="commercialProfileInfoCreditLimit">—</strong>
+                    </div>
+                  </div>
+                  <div class="commercial-profile-info-rules">
+                    <span>Reglas del perfil</span>
+                    <p id="commercialProfileInfoRules">—</p>
+                  </div>
+                </div>
+                <p class="customer-form-section-help" id="commercialProfileHint" hidden></p>
+                <div class="customer-form-grid customer-form-grid--1">
+                  <label>RFC <input id="customerRfc" type="text" placeholder="Opcional" /></label>
+                </div>
+              </section>
+
+              <section class="panel-card penpot-card customer-form-section-card">
+                <h3 class="customer-form-section-title">Contacto y notas</h3>
+                <div class="customer-form-grid customer-form-grid--2">
+                  <label>
+                    Preferencia de contacto
+                    <select id="customerContactPreference">
+                      <option value="WhatsApp">WhatsApp</option>
+                      <option value="Teléfono">Teléfono</option>
+                      <option value="Correo">Correo</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="customer-form-grid customer-form-grid--1">
+                  <label>Notas del cliente <textarea id="customerInternalNotes" rows="3" placeholder="Notas internas del cliente"></textarea></label>
+                </div>
+              </section>
+
+              <div class="customer-form-page-footer" id="customerFormFooter">
+                <button class="ghost-button" type="button" id="clearCustomerForm">Limpiar</button>
+                <div class="customer-form-page-actions">
+                  <button class="ghost-button" type="button" data-action="back-to-customer-list">Cancelar</button>
+                  <button class="primary-button customer-save-btn" type="submit" id="saveCustomerFormButton">Guardar cliente</button>
+                </div>
+              </div>
+            </form>
           </div>
         </section>
 
@@ -516,7 +630,7 @@
               </div>
             </div>
             <div class="module-grid">
-              <form class="panel-card form-panel" id="categoryForm">
+              <form class="panel-card penpot-card form-panel" id="categoryForm">
                 <div class="panel-heading">
                   <div>
                     <p class="eyebrow">Catálogo</p>
@@ -532,7 +646,7 @@
                 <button class="primary-button" type="submit">Guardar categoría</button>
               </form>
 
-              <section class="panel-card table-panel">
+              <section class="panel-card penpot-card table-panel">
                 <div class="panel-heading">
                   <div>
                     <p class="eyebrow">Administración</p>
@@ -566,7 +680,7 @@
               </div>
             </div>
             <div class="module-grid">
-              <form class="panel-card form-panel" id="classificationForm">
+              <form class="panel-card penpot-card form-panel" id="classificationForm">
                 <div class="panel-heading">
                   <div>
                     <p class="eyebrow">Reglas de manejo</p>
@@ -587,7 +701,7 @@
                 <button class="primary-button" type="submit">Guardar clasificación</button>
               </form>
 
-              <section class="panel-card table-panel">
+              <section class="panel-card penpot-card table-panel">
                 <div class="panel-heading">
                   <div>
                     <p class="eyebrow">Administración</p>
@@ -1276,6 +1390,80 @@
           <button class="primary-button is-critical" type="submit" id="productLotDeleteConfirm">Eliminar lote</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="product-action-dialog customer-contact-dialog" id="customerContactDialog">
+      <div class="customer-contact-dialog-body">
+        <div class="product-action-dialog-header">
+          <h2 id="customerContactDialogTitle">Contactar cliente</h2>
+        </div>
+        <div class="customer-contact-summary" id="customerContactSummary"></div>
+        <p class="customer-contact-error" id="customerContactError" hidden></p>
+        <div class="customer-contact-actions">
+          <button class="customer-contact-option" type="button" data-action="customer-contact-email">Enviar correo</button>
+          <button class="customer-contact-option is-whatsapp" type="button" data-action="customer-contact-whatsapp">WhatsApp</button>
+          <button class="customer-contact-option" type="button" data-action="customer-contact-call">Llamar</button>
+        </div>
+        <div class="product-action-dialog-actions">
+          <button class="ghost-button" type="button" data-action="close-customer-contact-dialog">Cerrar</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="customer-profiles-dialog" id="customerCommercialProfilesDialog">
+      <div class="customer-profiles-dialog-shell">
+        <header class="customer-profiles-dialog-header">
+          <div>
+            <h2>Perfiles comerciales</h2>
+            <p class="customer-form-section-help">Catálogo editable de perfiles. Los clientes conservan el nombre del perfil aunque edites las reglas.</p>
+          </div>
+          <button class="dialog-close-btn" type="button" data-action="close-commercial-profiles-dialog" aria-label="Cerrar">×</button>
+        </header>
+        <p class="commercial-profile-feedback" id="commercialProfileFeedback" role="status" aria-live="polite" hidden></p>
+        <div class="customer-profiles-dialog-scroll">
+          <div class="customer-profiles-dialog-grid">
+            <aside class="commercial-profiles-panel">
+              <div class="commercial-profiles-panel-header">
+                <p class="commercial-profiles-panel-title">Perfiles existentes</p>
+                <button class="ghost-button commercial-profiles-new-btn" type="button" data-action="new-commercial-profile">Nuevo perfil</button>
+              </div>
+              <div class="commercial-profiles-list" id="commercialProfilesList"></div>
+            </aside>
+            <div class="commercial-profiles-form-panel">
+          <form class="commercial-profile-form" id="commercialProfileForm">
+            <input id="commercialProfileId" type="hidden" />
+            <p class="commercial-profile-form-title" id="commercialProfileFormTitle">Nuevo perfil</p>
+            <div class="customer-form-grid customer-form-grid--1">
+              <label>Nombre del perfil <input id="commercialProfileName" type="text" required /></label>
+            </div>
+            <div class="customer-form-grid customer-form-grid--2">
+              <label>Compra mínima ($) <input id="commercialProfileMinPurchase" type="number" min="0" step="0.01" placeholder="0" /></label>
+              <label>Piezas mínimas <input id="commercialProfileMinPieces" type="number" min="0" step="1" placeholder="0" /></label>
+            </div>
+            <div class="customer-form-grid customer-form-grid--2">
+              <label>Descuento % <input id="commercialProfileSuggestedDiscount" type="number" min="0" max="100" step="0.01" placeholder="0" /></label>
+              <label class="commercial-profile-checkbox">
+                <input id="commercialProfileCreditAllowed" type="checkbox" />
+                Crédito permitido
+              </label>
+            </div>
+            <div class="customer-form-grid customer-form-grid--1">
+              <label>Límite de crédito <input id="commercialProfileSuggestedCreditLimit" type="number" min="0" step="0.01" placeholder="Opcional" /></label>
+            </div>
+            <div class="customer-form-grid customer-form-grid--1">
+              <label>Reglas / restricciones <textarea id="commercialProfileNotes" rows="3" placeholder="Condiciones comerciales del perfil"></textarea></label>
+            </div>
+          </form>
+            </div>
+          </div>
+        </div>
+        <footer class="customer-profiles-dialog-footer">
+          <div class="customer-profiles-dialog-footer-actions">
+            <button class="ghost-button" type="button" data-action="close-commercial-profiles-dialog">Cancelar</button>
+            <button class="primary-button customer-save-btn" type="submit" form="commercialProfileForm">Guardar perfil</button>
+          </div>
+        </footer>
+      </div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

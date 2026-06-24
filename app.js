@@ -1,6 +1,7 @@
 const storageKeys = {
   products: "minifarmacia_crm_products",
   customers: "minifarmacia_crm_customers",
+  commercialProfiles: "minifarmacia_crm_commercial_profiles",
   orders: "minifarmacia_crm_orders",
   payments: "minifarmacia_crm_payments",
   shipments: "minifarmacia_crm_shipments",
@@ -15,6 +16,8 @@ const PRODUCT_CATALOG_VERSION = "pdv-2026-06-11";
 let productImagePendingFile = null;
 let productImageObjectUrl = "";
 let productActionDialogResolver = null;
+let customerFormMode = "create";
+let customerContactContext = null;
 let productPermanentDeleteResolver = null;
 let productLotDeleteResolver = null;
 let productLotDeleteContext = null;
@@ -4231,6 +4234,12 @@ const initialCustomers = [
     phone: "81 2200 1840",
     email: "laura@email.com",
     address: "Monterrey, NL",
+    city: "Monterrey",
+    state: "Nuevo León",
+    country: "México",
+    customerType: "Frecuente",
+    contactPreference: "WhatsApp",
+    active: true,
     createdAt: new Date().toISOString(),
   },
   {
@@ -4239,9 +4248,172 @@ const initialCustomers = [
     phone: "81 1500 9000",
     email: "paciente@correo.com",
     address: "San Nicolas, NL",
+    city: "San Nicolás de los Garza",
+    state: "Nuevo León",
+    country: "México",
+    customerType: "General",
+    contactPreference: "Correo",
+    active: true,
     createdAt: new Date().toISOString(),
   },
 ];
+
+const initialCommercialProfiles = [
+  {
+    id: "prof-general",
+    name: "General",
+    minPurchase: 0,
+    minPieces: 0,
+    suggestedDiscount: 0,
+    creditAllowed: false,
+    suggestedCreditLimit: null,
+    notes: "Cliente estándar sin condiciones especiales.",
+  },
+  {
+    id: "prof-frecuente",
+    name: "Frecuente",
+    minPurchase: 500,
+    minPieces: 0,
+    suggestedDiscount: 5,
+    creditAllowed: false,
+    suggestedCreditLimit: null,
+    notes: "Cliente recurrente con compras frecuentes.",
+  },
+  {
+    id: "prof-mayorista",
+    name: "Mayorista",
+    minPurchase: 2000,
+    minPieces: 10,
+    suggestedDiscount: 10,
+    creditAllowed: true,
+    suggestedCreditLimit: 5000,
+    notes: "Compra mínima $2,000 o 10 piezas.",
+  },
+  {
+    id: "prof-medico",
+    name: "Médico / clínica",
+    minPurchase: 0,
+    minPieces: 0,
+    suggestedDiscount: 8,
+    creditAllowed: true,
+    suggestedCreditLimit: 3000,
+    notes: "Profesional de la salud o clínica con convenio.",
+  },
+  {
+    id: "prof-convenio",
+    name: "Convenio",
+    minPurchase: 1000,
+    minPieces: 0,
+    suggestedDiscount: 12,
+    creditAllowed: true,
+    suggestedCreditLimit: 8000,
+    notes: "Empresa o institución con convenio activo.",
+  },
+];
+
+function normalizeCommercialProfile(profile = {}) {
+  return {
+    id: profile.id || createId("prof"),
+    name: String(profile.name || "").trim() || "Perfil sin nombre",
+    minPurchase: toNumber(profile.minPurchase) || 0,
+    minPieces: Math.max(0, Math.round(toNumber(profile.minPieces) || 0)),
+    suggestedDiscount: Math.min(100, Math.max(0, toNumber(profile.suggestedDiscount) || 0)),
+    creditAllowed: Boolean(profile.creditAllowed),
+    suggestedCreditLimit:
+      profile.suggestedCreditLimit != null && profile.suggestedCreditLimit !== ""
+        ? toNumber(profile.suggestedCreditLimit)
+        : null,
+    notes: profile.notes || "",
+  };
+}
+
+function getCommercialProfileByName(name) {
+  const target = String(name || "").trim().toLowerCase();
+  if (!target) return null;
+  return (
+    state.commercialProfiles.find((profile) => profile.name.trim().toLowerCase() === target) || null
+  );
+}
+
+function getCommercialProfileById(id) {
+  return state.commercialProfiles.find((profile) => profile.id === id) || null;
+}
+
+function buildCustomerAddress(customer, fallbackAddress = "") {
+  const parts = [
+    [customer.street, customer.streetNumber].filter(Boolean).join(" ").trim(),
+    customer.addressLine2,
+    customer.neighborhood,
+    [customer.postalCode, customer.city].filter(Boolean).join(" ").trim(),
+    customer.state,
+    customer.country,
+  ].filter((part) => String(part || "").trim());
+  const composed = parts.join(", ");
+  return composed || String(fallbackAddress || customer.address || "").trim();
+}
+
+function normalizeCustomer(customer = {}) {
+  const rawNotes = String(customer.internalNotes || "").trim();
+  const legacyParts = [customer.alertsRestrictions, customer.allergies]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const internalNotes = rawNotes || legacyParts.join("\n");
+
+  const normalized = {
+    id: customer.id,
+    name: customer.name || "",
+    phone: customer.phone || "",
+    email: customer.email || "",
+    active: customer.active !== false,
+    createdAt: customer.createdAt || new Date().toISOString(),
+    street: customer.street || "",
+    streetNumber: customer.streetNumber || "",
+    addressLine2: customer.addressLine2 || "",
+    postalCode: customer.postalCode || "",
+    neighborhood: customer.neighborhood || "",
+    city: customer.city || "",
+    state: customer.state || "",
+    country: customer.country || "México",
+    customerType: String(customer.customerType || "General").trim() || "General",
+    discountPercent: toNumber(customer.discountPercent) || 0,
+    creditLimit:
+      customer.creditLimit != null && customer.creditLimit !== "" ? toNumber(customer.creditLimit) : null,
+    rfc: customer.rfc || "",
+    internalNotes,
+    contactPreference: customer.contactPreference || "WhatsApp",
+  };
+  normalized.address = buildCustomerAddress(normalized, customer.address);
+  return normalized;
+}
+
+function getActiveCustomers(customers = state.customers) {
+  return (Array.isArray(customers) ? customers : []).filter((customer) => customer.active !== false);
+}
+
+function getCustomerSearchText(customer) {
+  return [
+    customer.name,
+    customer.phone,
+    customer.email,
+    customer.address,
+    customer.street,
+    customer.city,
+    customer.customerType,
+    customer.rfc,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function getCustomerOrderStats(customerId) {
+  const orders = state.orders.filter((order) => order.customerId === customerId);
+  const total = orders.reduce((sum, order) => sum + toNumber(order.total), 0);
+  let lastOrder = null;
+  orders.forEach((order) => {
+    if (!lastOrder || new Date(order.createdAt) > new Date(lastOrder.createdAt)) lastOrder = order;
+  });
+  return { orders, total, lastOrder };
+}
 
 const initialConversations = [
   {
@@ -4256,7 +4428,10 @@ const initialConversations = [
 
 const state = {
   products: [],
-  customers: readJSON(storageKeys.customers, initialCustomers),
+  customers: readJSON(storageKeys.customers, initialCustomers).map(normalizeCustomer),
+  commercialProfiles: readJSON(storageKeys.commercialProfiles, initialCommercialProfiles).map(
+    normalizeCommercialProfile,
+  ),
   orders: readJSON(storageKeys.orders, []),
   payments: readJSON(storageKeys.payments, []),
   shipments: readJSON(storageKeys.shipments, []),
@@ -4345,6 +4520,7 @@ const viewTitles = {
   cobros: "Cobros",
   inventario: "Inventario",
   "product-form": "Producto",
+  "customer-form": "Cliente",
   pagos: "Pagos",
   canales: "Canales",
   "whatsapp-manager": "WhatsApp Manager",
@@ -4374,6 +4550,7 @@ const viewDescriptions = {
   tienda: "Tienda online y puntos de venta digital.",
   productos: "Administra catálogo, stock y reglas comerciales.",
   "product-form": "Formulario de alta y edición de producto.",
+  "customer-form": "Registra y actualiza datos de contacto, envío y perfil comercial del cliente.",
 };
 
 const productsSectionDescriptions = {
@@ -4515,14 +4692,53 @@ const elements = {
   showLoginButton: $("#showLoginButton"),
   customerForm: $("#customerForm"),
   customerFormTitle: $("#customerFormTitle"),
+  customerFormFooter: $("#customerFormFooter"),
+  saveCustomerFormButton: $("#saveCustomerFormButton"),
   customerId: $("#customerId"),
   customerName: $("#customerName"),
   customerPhone: $("#customerPhone"),
   customerEmail: $("#customerEmail"),
-  customerAddress: $("#customerAddress"),
+  customerStreet: $("#customerStreet"),
+  customerStreetNumber: $("#customerStreetNumber"),
+  customerAddressLine2: $("#customerAddressLine2"),
+  customerPostalCode: $("#customerPostalCode"),
+  customerNeighborhood: $("#customerNeighborhood"),
+  customerCity: $("#customerCity"),
+  customerState: $("#customerState"),
+  customerCountry: $("#customerCountry"),
+  customerType: $("#customerType"),
+  customerRfc: $("#customerRfc"),
+  customerInternalNotes: $("#customerInternalNotes"),
+  customerContactPreference: $("#customerContactPreference"),
+  manageCommercialProfilesButton: $("#manageCommercialProfilesButton"),
+  commercialProfileInfo: $("#commercialProfileInfo"),
+  commercialProfileInfoDiscount: $("#commercialProfileInfoDiscount"),
+  commercialProfileInfoCredit: $("#commercialProfileInfoCredit"),
+  commercialProfileInfoCreditLimit: $("#commercialProfileInfoCreditLimit"),
+  commercialProfileInfoRules: $("#commercialProfileInfoRules"),
+  commercialProfileHint: $("#commercialProfileHint"),
   customerSearch: $("#customerSearch"),
-  customerCards: $("#customerCards"),
+  customerTable: $("#customerTable"),
+  customerListCount: $("#customerListCount"),
+  customerListFooter: $("#customerListFooter"),
   clearCustomerForm: $("#clearCustomerForm"),
+  customerContactDialog: $("#customerContactDialog"),
+  customerContactTitle: $("#customerContactDialogTitle"),
+  customerContactSummary: $("#customerContactSummary"),
+  customerContactError: $("#customerContactError"),
+  customerCommercialProfilesDialog: $("#customerCommercialProfilesDialog"),
+  commercialProfilesList: $("#commercialProfilesList"),
+  commercialProfileForm: $("#commercialProfileForm"),
+  commercialProfileFeedback: $("#commercialProfileFeedback"),
+  commercialProfileFormTitle: $("#commercialProfileFormTitle"),
+  commercialProfileId: $("#commercialProfileId"),
+  commercialProfileName: $("#commercialProfileName"),
+  commercialProfileMinPurchase: $("#commercialProfileMinPurchase"),
+  commercialProfileMinPieces: $("#commercialProfileMinPieces"),
+  commercialProfileSuggestedDiscount: $("#commercialProfileSuggestedDiscount"),
+  commercialProfileCreditAllowed: $("#commercialProfileCreditAllowed"),
+  commercialProfileSuggestedCreditLimit: $("#commercialProfileSuggestedCreditLimit"),
+  commercialProfileNotes: $("#commercialProfileNotes"),
   ordersBoard: $("#ordersBoard"),
   productForm: $("#productForm"),
   productFormTitle: $("#productFormTitle"),
@@ -4785,6 +5001,8 @@ function bindEvents() {
 
   elements.customerForm.addEventListener("submit", saveCustomer);
   elements.clearCustomerForm.addEventListener("click", clearCustomerForm);
+  elements.customerType?.addEventListener("change", handleCustomerProfileSelection);
+  elements.commercialProfileForm?.addEventListener("submit", saveCommercialProfile);
   elements.customerSearch.addEventListener("input", (event) => {
     state.customerQuery = event.target.value.trim().toLowerCase();
     renderCustomers();
@@ -5023,7 +5241,24 @@ function handleDocumentAction(event) {
   const id = action.dataset.id;
   if (action.dataset.action === "add-store-item") addStoreItem(id);
   if (action.dataset.action === "remove-store-item") removeStoreItem(id);
-  if (action.dataset.action === "edit-customer") editCustomer(id);
+  if (action.dataset.action === "edit-customer") {
+    event.preventDefault();
+    editCustomer(id);
+  }
+  if (action.dataset.action === "contact-customer") openCustomerContactDialog(id);
+  if (action.dataset.action === "customer-contact-email") handleCustomerContactEmail();
+  if (action.dataset.action === "customer-contact-whatsapp") handleCustomerContactWhatsApp();
+  if (action.dataset.action === "customer-contact-call") handleCustomerContactCall();
+  if (action.dataset.action === "close-customer-contact-dialog") elements.customerContactDialog?.close();
+  if (action.dataset.action === "deactivate-customer") deactivateCustomer(id);
+  if (action.dataset.action === "reactivate-customer") reactivateCustomer(id);
+  if (action.dataset.action === "open-customer-form") openCustomerForm();
+  if (action.dataset.action === "back-to-customer-list") closeCustomerForm();
+  if (action.dataset.action === "open-commercial-profiles-dialog") openCommercialProfilesDialog();
+  if (action.dataset.action === "close-commercial-profiles-dialog") closeCommercialProfilesDialog();
+  if (action.dataset.action === "edit-commercial-profile") editCommercialProfile(id);
+  if (action.dataset.action === "delete-commercial-profile") deleteCommercialProfile(id);
+  if (action.dataset.action === "new-commercial-profile") clearCommercialProfileForm();
   if (action.dataset.action === "edit-product") editProduct(id);
   if (action.dataset.action === "duplicate-product") duplicateProduct(id);
   if (action.dataset.action === "pause-product") pauseProduct(id);
@@ -5103,6 +5338,14 @@ function showView(viewId, options = {}) {
       elements.productFormTitle.textContent || "Producto",
       viewDescriptions["product-form"],
     );
+    scrollWorkspaceToTop();
+    return;
+  }
+
+  if (viewId === "customer-form") {
+    $$(".view").forEach((view) => view.classList.toggle("active", view.id === "customer-form"));
+    $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === "clientes"));
+    updateViewHeader(elements.customerFormTitle.textContent || "Cliente", viewDescriptions["customer-form"]);
     scrollWorkspaceToTop();
     return;
   }
@@ -6029,6 +6272,7 @@ function renderAll() {
   renderConversations();
   renderStore();
   renderCustomers();
+  renderCommercialProfileSelect(elements.customerType?.value || "General");
   renderOrders();
   renderProducts();
   renderCategories();
@@ -6138,7 +6382,7 @@ function renderDashboard() {
 
   if (elements.dashboardQuickSummary) {
     const activeProducts = state.products.filter((product) => product.status === "Activo").length;
-    elements.dashboardQuickSummary.textContent = `Productos ${activeProducts} · Clientes ${state.customers.length} · Canales 3 · Pedidos hoy ${openOrders.length} · Ventas hoy ${currency.format(salesTotal)}`;
+    elements.dashboardQuickSummary.textContent = `Productos ${activeProducts} · Clientes ${getActiveCustomers().length} · Canales 3 · Pedidos hoy ${openOrders.length} · Ventas hoy ${currency.format(salesTotal)}`;
   }
 
   renderDashboardExpirationAlerts();
@@ -6717,7 +6961,7 @@ function saveStoreCustomer(event) {
   const confirmPassword = elements.storeRegisterConfirmPassword.value.trim();
   if (password !== confirmPassword) return showToast("Las contrasenas no coinciden");
   if (!elements.storeRegisterRobot.checked) return showToast("Confirma la verificacion de cuenta");
-  const customer = {
+  const customer = normalizeCustomer({
     id: createId("cust"),
     name: elements.storeRegisterName.value.trim(),
     phone: elements.storeRegisterPhone.value.trim(),
@@ -6725,7 +6969,7 @@ function saveStoreCustomer(event) {
     address: elements.storeRegisterAddress.value.trim(),
     account: true,
     createdAt: new Date().toISOString(),
-  };
+  });
   state.customers.unshift(customer);
   persist(storageKeys.customers, state.customers);
   elements.customerDialog.close();
@@ -6737,77 +6981,572 @@ function saveStoreCustomer(event) {
 }
 
 function renderCustomerSelects() {
-  const options = state.customers.map((customer) => `<option value="${customer.id}">${escapeHTML(customer.name)}</option>`).join("");
+  const options = getActiveCustomers()
+    .map((customer) => `<option value="${customer.id}">${escapeHTML(customer.name)}</option>`)
+    .join("");
   elements.storeCustomer.innerHTML = options || '<option value="">Sin clientes</option>';
 }
 
-function renderCustomers() {
-  const customers = state.customers.filter((customer) => {
-    const text = `${customer.name} ${customer.phone} ${customer.email} ${customer.address}`.toLowerCase();
-    return text.includes(state.customerQuery);
-  });
-  elements.customerCards.innerHTML = customers.length
-    ? customers
-        .map((customer) => {
-          const orders = state.orders.filter((order) => order.customerId === customer.id);
-          const total = orders.reduce((sum, order) => sum + order.total, 0);
+function renderCommercialProfileSelect(selectedName = "General") {
+  if (!elements.customerType) return;
+  const selected = String(selectedName || "General").trim();
+  const knownNames = new Set(state.commercialProfiles.map((profile) => profile.name));
+  const options = state.commercialProfiles
+    .map(
+      (profile) =>
+        `<option value="${escapeHTML(profile.name)}"${profile.name === selected ? " selected" : ""}>${escapeHTML(profile.name)}</option>`,
+    )
+    .join("");
+  const orphanOption =
+    selected && !knownNames.has(selected)
+      ? `<option value="${escapeHTML(selected)}" selected>${escapeHTML(selected)} (perfil anterior)</option>`
+      : "";
+  elements.customerType.innerHTML = orphanOption + options;
+  renderCommercialProfileInfo(selected);
+}
+
+function resolveCustomerCommercialTerms(customerType, existingCustomer = null) {
+  const profile = getCommercialProfileByName(customerType);
+  if (profile) {
+    return {
+      discountPercent: profile.suggestedDiscount,
+      creditLimit: profile.creditAllowed ? profile.suggestedCreditLimit : null,
+    };
+  }
+  return {
+    discountPercent: existingCustomer?.discountPercent ?? 0,
+    creditLimit: existingCustomer?.creditLimit ?? null,
+  };
+}
+
+function renderCommercialProfileInfo(profileName) {
+  const profile = getCommercialProfileByName(profileName);
+  const hasName = Boolean(String(profileName || "").trim());
+
+  if (elements.commercialProfileInfo) {
+    elements.commercialProfileInfo.hidden = !profile;
+  }
+  if (elements.commercialProfileHint) {
+    if (!profile && hasName) {
+      elements.commercialProfileHint.textContent =
+        "Perfil guardado previamente. Puedes mantenerlo o elegir otro del catálogo.";
+      elements.commercialProfileHint.hidden = false;
+    } else {
+      elements.commercialProfileHint.textContent = "";
+      elements.commercialProfileHint.hidden = true;
+    }
+  }
+
+  if (!profile) return;
+
+  if (elements.commercialProfileInfoDiscount) {
+    elements.commercialProfileInfoDiscount.textContent =
+      profile.suggestedDiscount > 0 ? `${profile.suggestedDiscount}%` : "Sin descuento";
+  }
+  if (elements.commercialProfileInfoCredit) {
+    elements.commercialProfileInfoCredit.textContent = profile.creditAllowed ? "Sí" : "No";
+  }
+  if (elements.commercialProfileInfoCreditLimit) {
+    elements.commercialProfileInfoCreditLimit.textContent =
+      profile.creditAllowed && profile.suggestedCreditLimit != null
+        ? currency.format(profile.suggestedCreditLimit)
+        : "—";
+  }
+
+  const extraRules = [];
+  if (profile.minPurchase > 0) extraRules.push(`Compra mínima ${currency.format(profile.minPurchase)}`);
+  if (profile.minPieces > 0) extraRules.push(`${profile.minPieces} piezas mínimas`);
+  const rulesText = [profile.notes, extraRules.join(" · ")].filter(Boolean).join(" · ") || "Sin reglas definidas";
+
+  if (elements.commercialProfileInfoRules) {
+    elements.commercialProfileInfoRules.textContent = rulesText;
+  }
+}
+
+function handleCustomerProfileSelection() {
+  renderCommercialProfileInfo(elements.customerType?.value || "General");
+}
+
+function formatCommercialProfileRulesSummary(profile) {
+  const parts = [];
+  if (profile.minPurchase > 0) parts.push(`Compra mín. ${currency.format(profile.minPurchase)}`);
+  if (profile.minPieces > 0) parts.push(`${profile.minPieces} pzas mín.`);
+  parts.push(profile.suggestedDiscount > 0 ? `Descuento ${profile.suggestedDiscount}%` : "Sin descuento");
+  parts.push(profile.creditAllowed ? "Crédito sí" : "Crédito no");
+  if (profile.creditAllowed && profile.suggestedCreditLimit != null) {
+    parts.push(`Límite ${currency.format(profile.suggestedCreditLimit)}`);
+  }
+  return parts.join(" · ");
+}
+
+function getCustomersByCommercialProfile(profileName) {
+  const target = String(profileName || "")
+    .trim()
+    .toLowerCase();
+  if (!target) return [];
+  return (Array.isArray(state.customers) ? state.customers : []).filter(
+    (customer) => String(customer.customerType || "").trim().toLowerCase() === target,
+  );
+}
+
+function ensureDefaultCommercialProfile() {
+  if (state.commercialProfiles.length > 0) return;
+  const general = normalizeCommercialProfile(initialCommercialProfiles[0]);
+  state.commercialProfiles.push(general);
+  persist(storageKeys.commercialProfiles, state.commercialProfiles);
+}
+
+function setCommercialProfileFormMode(mode = "new") {
+  if (elements.commercialProfileFormTitle) {
+    elements.commercialProfileFormTitle.textContent = mode === "edit" ? "Editar perfil" : "Nuevo perfil";
+  }
+}
+
+function renderCommercialProfilesList() {
+  if (!elements.commercialProfilesList) return;
+  const selectedId = elements.commercialProfileId?.value || "";
+  elements.commercialProfilesList.innerHTML = state.commercialProfiles.length
+    ? state.commercialProfiles
+        .map((profile) => {
+          const selectedClass = profile.id === selectedId ? " is-selected" : "";
           return `
-            <article class="customer-card">
-              <div class="avatar">${escapeHTML(initials(customer.name))}</div>
+            <article class="commercial-profile-item${selectedClass}">
               <div>
-                <h3>${escapeHTML(customer.name)}</h3>
-                <p>${escapeHTML(customer.phone)}</p>
-                <p>${escapeHTML(customer.email || "Sin correo")}</p>
-                <small>${escapeHTML(customer.address || "Sin direccion")}</small>
-                <div class="customer-meta">
-                  <span>${orders.length} pedidos</span>
-                  <span>${currency.format(total)}</span>
-                </div>
-                <button class="ghost-button small" type="button" data-action="edit-customer" data-id="${customer.id}">Editar</button>
+                <strong>${escapeHTML(profile.name)}</strong>
+                <span>${escapeHTML(formatCommercialProfileRulesSummary(profile))}</span>
+              </div>
+              <div class="commercial-profile-item-actions">
+                <button class="customer-action-btn is-neutral" type="button" data-action="edit-commercial-profile" data-id="${escapeHTML(profile.id)}">Editar</button>
+                <button class="customer-action-btn is-danger commercial-profile-delete-btn" type="button" data-action="delete-commercial-profile" data-id="${escapeHTML(profile.id)}">Eliminar</button>
               </div>
             </article>
           `;
         })
         .join("")
-    : emptyState("No hay clientes.");
+    : emptyState("No hay perfiles comerciales.");
+}
+
+function clearCommercialProfileForm() {
+  elements.commercialProfileForm?.reset();
+  if (elements.commercialProfileId) elements.commercialProfileId.value = "";
+  if (elements.commercialProfileCreditAllowed) elements.commercialProfileCreditAllowed.checked = false;
+  setCommercialProfileFormMode("new");
+  renderCommercialProfilesList();
+}
+
+function populateCommercialProfileForm(profile) {
+  const normalized = normalizeCommercialProfile(profile);
+  elements.commercialProfileId.value = normalized.id;
+  elements.commercialProfileName.value = normalized.name;
+  elements.commercialProfileMinPurchase.value =
+    normalized.minPurchase > 0 ? String(normalized.minPurchase) : "";
+  elements.commercialProfileMinPieces.value =
+    normalized.minPieces > 0 ? String(normalized.minPieces) : "";
+  elements.commercialProfileSuggestedDiscount.value =
+    normalized.suggestedDiscount > 0 ? String(normalized.suggestedDiscount) : "";
+  elements.commercialProfileCreditAllowed.checked = normalized.creditAllowed;
+  elements.commercialProfileSuggestedCreditLimit.value =
+    normalized.suggestedCreditLimit != null ? String(normalized.suggestedCreditLimit) : "";
+  elements.commercialProfileNotes.value = normalized.notes;
+  setCommercialProfileFormMode("edit");
+  renderCommercialProfilesList();
+}
+
+function openCommercialProfilesDialog() {
+  renderCommercialProfilesList();
+  clearCommercialProfileForm();
+  setCommercialProfileFormMode("new");
+  elements.customerCommercialProfilesDialog?.showModal();
+}
+
+function closeCommercialProfilesDialog() {
+  elements.customerCommercialProfilesDialog?.close();
+  clearCommercialProfileForm();
+  hideCommercialProfileFeedback();
+}
+
+function hideCommercialProfileFeedback() {
+  if (!elements.commercialProfileFeedback) return;
+  elements.commercialProfileFeedback.hidden = true;
+  elements.commercialProfileFeedback.classList.remove("is-visible");
+  elements.commercialProfileFeedback.textContent = "";
+  window.clearTimeout(showCommercialProfileFeedback.timeout);
+}
+
+function editCommercialProfile(id) {
+  const profile = getCommercialProfileById(id);
+  if (!profile) return showToast("Perfil comercial no encontrado");
+  populateCommercialProfileForm(profile);
+}
+
+async function deleteCommercialProfile(id) {
+  const profile = getCommercialProfileById(id);
+  if (!profile) return showToast("Perfil comercial no encontrado");
+
+  const associatedCustomers = getCustomersByCommercialProfile(profile.name);
+  if (associatedCustomers.length > 0) {
+    await openProductActionDialog({
+      title: "No se puede eliminar este perfil",
+      message:
+        "No se puede eliminar este perfil porque tiene clientes asociados. Cambia primero el perfil de esos clientes y vuelve a intentarlo.\n\n" +
+        `Clientes asociados: ${associatedCustomers.length}`,
+      confirmLabel: "Entendido",
+      confirmClass: "primary-button",
+    });
+    return;
+  }
+
+  const confirmed = await openProductActionDialog({
+    title: "Eliminar perfil comercial",
+    message: `¿Eliminar el perfil comercial "${profile.name}"? Esta acción no afectará clientes porque no hay clientes asociados.`,
+    confirmLabel: "Eliminar perfil",
+    confirmClass: "primary-button is-danger",
+  });
+  if (!confirmed) return;
+
+  const wasEditingDeleted = elements.commercialProfileId?.value === profile.id;
+  state.commercialProfiles = state.commercialProfiles.filter((item) => item.id !== profile.id);
+  ensureDefaultCommercialProfile();
+  persist(storageKeys.commercialProfiles, state.commercialProfiles);
+  renderCommercialProfilesList();
+  renderCommercialProfileSelect(elements.customerType?.value || "General");
+
+  if (wasEditingDeleted) {
+    clearCommercialProfileForm();
+  }
+
+  showToast(`Perfil "${profile.name}" eliminado`);
+}
+
+function saveCommercialProfile(event) {
+  event.preventDefault();
+  const id = elements.commercialProfileId.value || createId("prof");
+  const name = elements.commercialProfileName.value.trim();
+  if (!name) return showToast("El nombre del perfil es obligatorio");
+  const duplicate = state.commercialProfiles.find(
+    (profile) => profile.name.trim().toLowerCase() === name.toLowerCase() && profile.id !== id,
+  );
+  if (duplicate) return showToast("Ya existe un perfil con ese nombre");
+
+  const profile = normalizeCommercialProfile({
+    id,
+    name,
+    minPurchase: elements.commercialProfileMinPurchase.value,
+    minPieces: elements.commercialProfileMinPieces.value,
+    suggestedDiscount: elements.commercialProfileSuggestedDiscount.value,
+    creditAllowed: elements.commercialProfileCreditAllowed.checked,
+    suggestedCreditLimit: elements.commercialProfileSuggestedCreditLimit.value,
+    notes: elements.commercialProfileNotes.value.trim(),
+  });
+
+  const index = state.commercialProfiles.findIndex((item) => item.id === id);
+  if (index >= 0) state.commercialProfiles[index] = profile;
+  else state.commercialProfiles.push(profile);
+
+  persist(storageKeys.commercialProfiles, state.commercialProfiles);
+  renderCommercialProfilesList();
+  renderCommercialProfileSelect(elements.customerType?.value || profile.name);
+  populateCommercialProfileForm(profile);
+  showToast(index >= 0 ? "Perfil comercial actualizado" : "Perfil comercial agregado");
+}
+
+function cleanPhoneDigits(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function cleanPhoneForWhatsApp(phone) {
+  const digits = cleanPhoneDigits(phone);
+  if (digits.length === 10) return `52${digits}`;
+  return digits;
+}
+
+function showCustomerContactError(message) {
+  if (!elements.customerContactError) return;
+  if (!message) {
+    elements.customerContactError.hidden = true;
+    elements.customerContactError.textContent = "";
+    return;
+  }
+  elements.customerContactError.hidden = false;
+  elements.customerContactError.textContent = message;
+}
+
+function openCustomerContactDialog(id) {
+  const customer = getCustomer(id);
+  if (!customer) return showToast("Cliente no encontrado");
+  customerContactContext = customer;
+  showCustomerContactError("");
+  if (elements.customerContactTitle) {
+    elements.customerContactTitle.textContent = `Contactar a ${customer.name || "cliente"}`;
+  }
+  if (elements.customerContactSummary) {
+    elements.customerContactSummary.innerHTML = `
+      <div class="customer-contact-summary-row"><span>Nombre</span><strong>${escapeHTML(customer.name || "No informado")}</strong></div>
+      <div class="customer-contact-summary-row"><span>Teléfono</span><strong>${escapeHTML(customer.phone || "—")}</strong></div>
+      <div class="customer-contact-summary-row"><span>Correo</span><strong>${escapeHTML(customer.email || "—")}</strong></div>
+      <div class="customer-contact-summary-row"><span>Preferencia</span><strong>${escapeHTML(customer.contactPreference || "—")}</strong></div>
+    `;
+  }
+  elements.customerContactDialog?.showModal();
+}
+
+function handleCustomerContactEmail() {
+  const customer = customerContactContext;
+  if (!customer) return;
+  const email = String(customer.email || "").trim();
+  if (!email) {
+    showCustomerContactError("Este cliente no tiene correo registrado.");
+    return;
+  }
+  showCustomerContactError("");
+  const subject = encodeURIComponent("Contacto farmacia");
+  const body = encodeURIComponent(
+    `Hola ${customer.name || ""}, te contactamos de la farmacia. ¿En qué podemos ayudarte?`,
+  );
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`, "_self");
+}
+
+function handleCustomerContactWhatsApp() {
+  const customer = customerContactContext;
+  if (!customer) return;
+  const digits = cleanPhoneForWhatsApp(customer.phone);
+  if (!digits) {
+    showCustomerContactError("Este cliente no tiene teléfono registrado.");
+    return;
+  }
+  showCustomerContactError("");
+  const message = encodeURIComponent(
+    `Hola ${customer.name || ""}, te contactamos de la farmacia.`,
+  );
+  window.open(`https://wa.me/${digits}?text=${message}`, "_blank", "noopener,noreferrer");
+}
+
+function handleCustomerContactCall() {
+  const customer = customerContactContext;
+  if (!customer) return;
+  const phone = String(customer.phone || "").trim();
+  if (!phone) {
+    showCustomerContactError("Este cliente no tiene teléfono registrado.");
+    return;
+  }
+  showCustomerContactError("");
+  window.location.href = `tel:${phone.replace(/\s+/g, "")}`;
+}
+
+function renderCustomerStatusBadge(customer) {
+  const isActive = customer.active !== false;
+  return `<span class="customer-status-badge ${isActive ? "is-active" : "is-inactive"}">${isActive ? "Activo" : "Inactivo"}</span>`;
+}
+
+function renderCustomerActionsMarkup(customer) {
+  const customerId = escapeHTML(customer.id);
+  const isActive = customer.active !== false;
+  const toggleAction = isActive ? "deactivate-customer" : "reactivate-customer";
+  const toggleLabel = isActive ? "Desactivar" : "Reactivar";
+  const toggleClass = isActive ? "is-danger" : "is-success";
+  const toggleTitle = isActive ? "Desactivar cliente" : "Reactivar cliente";
+  return `
+    <div class="customer-admin-actions">
+      <button class="customer-action-btn is-neutral" type="button" data-action="edit-customer" data-id="${customerId}" title="Editar cliente">Editar</button>
+      <button class="customer-action-btn is-contact" type="button" data-action="contact-customer" data-id="${customerId}" title="Contactar cliente">Contactar</button>
+      <button class="customer-action-btn ${toggleClass}" type="button" data-action="${toggleAction}" data-id="${customerId}" title="${toggleTitle}">${toggleLabel}</button>
+    </div>
+  `;
+}
+
+function renderCustomerLastPurchaseCell(lastOrder) {
+  if (!lastOrder) return '<span class="customer-muted">Sin compras</span>';
+  const date = formatShortDate(lastOrder.createdAt) || "—";
+  return `<div class="customer-last-order"><strong>${escapeHTML(lastOrder.id)}</strong><span>${escapeHTML(date)}</span></div>`;
+}
+
+function renderCustomers() {
+  if (!elements.customerTable) return;
+
+  const customers = state.customers.filter((customer) =>
+    getCustomerSearchText(customer).includes(state.customerQuery),
+  );
+
+  if (elements.customerListCount) {
+    elements.customerListCount.textContent = `${customers.length} cliente${customers.length === 1 ? "" : "s"}`;
+  }
+
+  if (elements.customerListFooter) {
+    if (!customers.length) {
+      elements.customerListFooter.textContent = "Mostrando 0 clientes";
+    } else {
+      elements.customerListFooter.textContent = `Mostrando 1-${customers.length} clientes de ${customers.length}`;
+    }
+  }
+
+  elements.customerTable.innerHTML = customers.length
+    ? customers
+        .map((customer) => {
+          const { total, lastOrder } = getCustomerOrderStats(customer.id);
+          const rowClass = customer.active === false ? "customer-admin-row is-inactive" : "customer-admin-row";
+          return `
+            <tr class="${rowClass}">
+              <td class="customer-col-name"><a class="customer-name-link" href="#" data-action="edit-customer" data-id="${escapeHTML(customer.id)}">${escapeHTML(customer.name || "No informado")}</a></td>
+              <td>${escapeHTML(customer.phone || "—")}</td>
+              <td>${escapeHTML(customer.email || "—")}</td>
+              <td>${renderCustomerStatusBadge(customer)}</td>
+              <td>${renderCustomerLastPurchaseCell(lastOrder)}</td>
+              <td class="customer-col-total"><strong>${currency.format(total || 0)}</strong></td>
+              <td class="customer-col-actions">${renderCustomerActionsMarkup(customer)}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : tableEmpty(7, "No hay clientes registrados. Usa «Agregar cliente» para crear el primero.");
+}
+
+function readCustomerFormValues() {
+  return {
+    name: elements.customerName?.value.trim() || "",
+    phone: elements.customerPhone?.value.trim() || "",
+    email: elements.customerEmail?.value.trim() || "",
+    street: elements.customerStreet?.value.trim() || "",
+    streetNumber: elements.customerStreetNumber?.value.trim() || "",
+    addressLine2: elements.customerAddressLine2?.value.trim() || "",
+    postalCode: elements.customerPostalCode?.value.trim() || "",
+    neighborhood: elements.customerNeighborhood?.value.trim() || "",
+    city: elements.customerCity?.value.trim() || "",
+    state: elements.customerState?.value.trim() || "",
+    country: elements.customerCountry?.value.trim() || "México",
+    customerType: elements.customerType?.value || "General",
+    rfc: elements.customerRfc?.value.trim() || "",
+    internalNotes: elements.customerInternalNotes?.value.trim() || "",
+    contactPreference: elements.customerContactPreference?.value || "WhatsApp",
+  };
+}
+
+function populateCustomerForm(customer) {
+  const normalized = normalizeCustomer(customer);
+  elements.customerId.value = normalized.id || "";
+  elements.customerName.value = normalized.name;
+  elements.customerPhone.value = normalized.phone;
+  elements.customerEmail.value = normalized.email;
+  elements.customerStreet.value = normalized.street;
+  elements.customerStreetNumber.value = normalized.streetNumber;
+  elements.customerAddressLine2.value = normalized.addressLine2;
+  elements.customerPostalCode.value = normalized.postalCode;
+  elements.customerNeighborhood.value = normalized.neighborhood;
+  elements.customerCity.value = normalized.city;
+  elements.customerState.value = normalized.state;
+  elements.customerCountry.value = normalized.country || "México";
+  renderCommercialProfileSelect(normalized.customerType);
+  elements.customerRfc.value = normalized.rfc;
+  elements.customerInternalNotes.value = normalized.internalNotes;
+  elements.customerContactPreference.value = normalized.contactPreference || "WhatsApp";
+}
+
+function setCustomerFormMode(mode) {
+  customerFormMode = mode;
+  elements.customerForm?.querySelectorAll("input, select, textarea, button").forEach((field) => {
+    if (field.id === "customerId") return;
+    if (field.id === "manageCommercialProfilesButton") return;
+    if (field.type === "submit") return;
+    field.disabled = false;
+  });
+  if (elements.saveCustomerFormButton) elements.saveCustomerFormButton.hidden = false;
+  if (elements.clearCustomerForm) elements.clearCustomerForm.hidden = false;
+  if (elements.manageCommercialProfilesButton) elements.manageCommercialProfilesButton.disabled = false;
+}
+
+function openCustomerForm(customer = null, options = {}) {
+  clearCustomerForm();
+  if (customer) populateCustomerForm(customer);
+  elements.customerFormTitle.textContent = customer ? "Editar cliente" : "Agregar cliente";
+  setCustomerFormMode(customer ? "edit" : "create");
+  showView("customer-form");
+}
+
+function closeCustomerForm() {
+  clearCustomerForm();
+  showView("clientes");
 }
 
 function saveCustomer(event) {
   event.preventDefault();
+
   const id = elements.customerId.value || createId("cust");
-  const customer = {
+  const existing = getCustomer(id);
+  const formValues = readCustomerFormValues();
+  const commercialTerms = resolveCustomerCommercialTerms(formValues.customerType, existing);
+  const customer = normalizeCustomer({
     id,
-    name: elements.customerName.value.trim(),
-    phone: elements.customerPhone.value.trim(),
-    email: elements.customerEmail.value.trim(),
-    address: elements.customerAddress.value.trim(),
-    createdAt: getCustomer(id)?.createdAt || new Date().toISOString(),
-  };
+    ...formValues,
+    discountPercent: commercialTerms.discountPercent,
+    creditLimit: commercialTerms.creditLimit,
+    active: existing?.active !== false,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+  });
+
+  if (!customer.name) return showToast("El nombre es obligatorio");
+  if (!customer.phone) return showToast("El teléfono es obligatorio");
+
   const index = state.customers.findIndex((item) => item.id === id);
   if (index >= 0) state.customers[index] = customer;
   else state.customers.unshift(customer);
+
   persist(storageKeys.customers, state.customers);
   clearCustomerForm();
-  renderAll();
-  showToast("Cliente guardado");
+  renderCustomers();
+  renderCustomerSelects();
+  showView("clientes");
+  showToast(existing ? "Cliente actualizado" : "Cliente guardado");
 }
 
 function editCustomer(id) {
   const customer = getCustomer(id);
-  if (!customer) return;
-  elements.customerFormTitle.textContent = "Editar cliente";
-  elements.customerId.value = customer.id;
-  elements.customerName.value = customer.name;
-  elements.customerPhone.value = customer.phone;
-  elements.customerEmail.value = customer.email;
-  elements.customerAddress.value = customer.address;
-  showView("clientes");
+  if (!customer) return showToast("Cliente no encontrado");
+  openCustomerForm(customer);
+}
+
+function deactivateCustomer(id) {
+  const customer = getCustomer(id);
+  if (!customer) return showToast("Cliente no encontrado");
+  if (customer.active === false) return showToast("Este cliente ya está inactivo");
+  const orders = getCustomerOrderStats(id).orders.length;
+  customer.active = false;
+  const index = state.customers.findIndex((item) => item.id === id);
+  if (index >= 0) state.customers[index] = customer;
+  persist(storageKeys.customers, state.customers);
+  renderCustomers();
+  renderCustomerSelects();
+  showToast(
+    orders > 0
+      ? "Cliente desactivado. Sigue visible en la lista con estado Inactivo."
+      : "Cliente desactivado",
+  );
+}
+
+function reactivateCustomer(id) {
+  const customer = getCustomer(id);
+  if (!customer) return showToast("Cliente no encontrado");
+  if (customer.active !== false) return showToast("Este cliente ya está activo");
+  customer.active = true;
+  const index = state.customers.findIndex((item) => item.id === id);
+  if (index >= 0) state.customers[index] = customer;
+  persist(storageKeys.customers, state.customers);
+  renderCustomers();
+  renderCustomerSelects();
+  showToast("Cliente reactivado");
 }
 
 function clearCustomerForm() {
-  elements.customerForm.reset();
+  elements.customerForm?.reset();
   elements.customerId.value = "";
-  elements.customerFormTitle.textContent = "Nuevo cliente";
+  if (elements.customerCountry) elements.customerCountry.value = "México";
+  renderCommercialProfileSelect("General");
+  if (elements.customerContactPreference) elements.customerContactPreference.value = "WhatsApp";
+  if (elements.commercialProfileHint) {
+    elements.commercialProfileHint.textContent = "";
+    elements.commercialProfileHint.hidden = true;
+  }
+  if (elements.commercialProfileInfo) elements.commercialProfileInfo.hidden = true;
+  elements.customerFormTitle.textContent = "Agregar cliente";
+  setCustomerFormMode("create");
 }
 
 function renderOrders() {
@@ -6905,7 +7644,7 @@ async function saveProductToApi(product) {
     body: JSON.stringify(product),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.details || data.error || "No se pudo guardar producto");
+  if (!response.ok) throw new Error(data.error || data.details || "No se pudo guardar producto");
   return data.product;
 }
 
@@ -7962,17 +8701,31 @@ async function handleProductPriceInputBlur(input) {
   }
 }
 
+function formatDuplicateTimestamp(date = new Date()) {
+  const pad = (value, length = 2) => String(value).padStart(length, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function generateDuplicateSku(originalSku = "") {
+  const stamp = formatDuplicateTimestamp();
+  const base = String(originalSku || "").trim();
+  return base ? `${base}-COPY-${stamp}` : `COPY-${stamp}`;
+}
+
 async function duplicateProduct(id) {
   const product = getProduct(id);
   if (!product) return;
 
+  const suggestedSku = generateDuplicateSku(product.sku);
   const copy = {
-    sku: product.sku ? `${product.sku}-COPY` : "",
+    duplicateMode: true,
+    sourceProductId: id,
     name: `${product.name} (copia)`,
     laboratory: product.laboratory || product.laboratorio || "",
     category: product.category,
     description: product.description,
     substance: product.substance,
+    presentation: product.presentation || product.presentacion || "",
     expiresAt: product.expiresAt,
     stock: product.stock,
     minStock: product.minStock,
@@ -7986,13 +8739,17 @@ async function duplicateProduct(id) {
     classificationId: product.classificationId || "",
     requiresRecipe: product.requiresRecipe,
     iva: product.iva,
-    status: "Activo",
+    status: product.status === "Pausado" ? "Pausado" : "Activo",
   };
 
   try {
-    await saveProductToApi(copy);
+    const saved = await saveProductToApi(copy);
     await loadProducts();
-    showToast("Producto duplicado");
+    showToast("Producto duplicado. Revisa SKU y código de barras.");
+    if (saved?.id) {
+      editProduct(saved.id);
+      if (elements.productSku) elements.productSku.value = suggestedSku;
+    }
   } catch (error) {
     showToast(error.message || "No se pudo duplicar producto");
   }
@@ -9878,7 +10635,8 @@ function stockStatus(product) {
 function resetDemoData() {
   if (!window.confirm("Reiniciar demo de MASTER CRM?")) return;
   state.products = [];
-  state.customers = initialCustomers.map((item) => ({ ...item }));
+  state.customers = initialCustomers.map(normalizeCustomer);
+  state.commercialProfiles = initialCommercialProfiles.map(normalizeCommercialProfile);
   state.orders = [];
   state.payments = [];
   state.shipments = [];
@@ -9899,6 +10657,7 @@ function syncProductCatalog() {
 
 function persistAll() {
   persist(storageKeys.customers, state.customers);
+  persist(storageKeys.commercialProfiles, state.commercialProfiles);
   persist(storageKeys.orders, state.orders);
   persist(storageKeys.payments, state.payments);
   persist(storageKeys.shipments, state.shipments);
@@ -9977,7 +10736,24 @@ function initials(name) {
     .toUpperCase();
 }
 
+function showCommercialProfileFeedback(message) {
+  const feedback = elements.commercialProfileFeedback;
+  if (!feedback) return false;
+  feedback.textContent = message;
+  feedback.hidden = false;
+  feedback.classList.add("is-visible");
+  window.clearTimeout(showCommercialProfileFeedback.timeout);
+  showCommercialProfileFeedback.timeout = window.setTimeout(() => {
+    feedback.classList.remove("is-visible");
+    feedback.hidden = true;
+  }, 2800);
+  return true;
+}
+
 function showToast(message) {
+  if (elements.customerCommercialProfilesDialog?.open && showCommercialProfileFeedback(message)) {
+    return;
+  }
   elements.toast.textContent = message;
   elements.toast.classList.add("visible");
   window.clearTimeout(showToast.timeout);

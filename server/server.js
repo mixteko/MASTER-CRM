@@ -267,7 +267,7 @@ async function handleCreateProduct(request, response) {
   }
 
   try {
-    const product = await readJSONBody(request);
+    const product = sanitizeProductCreatePayload(await readJSONBody(request));
     const validationError = validateProductPayload(product);
     if (validationError) {
       sendJSON(response, 400, { error: validationError });
@@ -276,6 +276,13 @@ async function handleCreateProduct(request, response) {
     const created = await createSupabaseProduct(product);
     sendJSON(response, 200, { ok: true, product: created });
   } catch (error) {
+    if (isBarcodeDuplicateError(error)) {
+      sendJSON(response, 409, {
+        error: "El código de barras ya existe. Borra o cambia el código de barras antes de guardar.",
+        details: error.message,
+      });
+      return;
+    }
     sendJSON(response, 500, { error: "No se pudo crear producto", details: error.message });
   }
 }
@@ -1142,10 +1149,11 @@ async function getProductsFromSupabase() {
 }
 
 async function createSupabaseProduct(product) {
-  const categoryField = readProductField(product, ["category", "categoria"]);
+  const payload = sanitizeProductCreatePayload(product);
+  const categoryField = readProductField(payload, ["category", "categoria"]);
   const categoriaId = await findOrCreateCategoriaId(categoryField.value);
-  const body = mapProductToDb(product, categoriaId);
-  const clasificacionId = await resolveClasificacionId(product);
+  const body = mapProductToDb(payload, categoriaId);
+  const clasificacionId = await resolveClasificacionId(payload);
   if (clasificacionId !== undefined) body.clasificacion_id = clasificacionId;
 
   let created;
@@ -1156,6 +1164,7 @@ async function createSupabaseProduct(product) {
       prefer: "return=representation",
     });
   } catch (error) {
+    if (isBarcodeDuplicateError(error)) throw error;
     const retryBody = { ...body };
     if (retryBody.precio_promocional !== undefined) delete retryBody.precio_promocional;
     if (retryBody.clasificacion_id !== undefined) delete retryBody.clasificacion_id;
@@ -1167,7 +1176,7 @@ async function createSupabaseProduct(product) {
     });
   }
   const dbProduct = created[0];
-  await upsertProductInventory(dbProduct.id, product);
+  await upsertProductInventory(dbProduct.id, payload);
   return (await getSupabaseProductById(dbProduct.id)) || mapDbProduct(dbProduct);
 }
 
@@ -2109,6 +2118,45 @@ function readProductField(product, aliases) {
     if (Object.prototype.hasOwnProperty.call(product, key)) return { provided: true, key, value: product[key] };
   }
   return { provided: false, key: "", value: undefined };
+}
+
+const PRODUCT_UNIQUE_CREATE_FIELDS = [
+  "id",
+  "sku",
+  "codigo_barras",
+  "barcode",
+  "created_at",
+  "updated_at",
+  "createdAt",
+  "updatedAt",
+];
+
+function isBarcodeDuplicateError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("409") && (message.includes("codigo_barras") || message.includes("barcode"));
+}
+
+function sanitizeProductCreatePayload(product = {}) {
+  if (!product || typeof product !== "object" || Array.isArray(product)) return product;
+
+  const payload = { ...product };
+  const duplicateMode = Boolean(payload.duplicateMode);
+  const sourceProductId = payload.sourceProductId;
+
+  delete payload.duplicateMode;
+  delete payload.sourceProductId;
+
+  PRODUCT_UNIQUE_CREATE_FIELDS.forEach((field) => {
+    delete payload[field];
+  });
+
+  if (duplicateMode || sourceProductId) {
+    payload.sku = null;
+    payload.codigo_barras = null;
+    payload.barcode = null;
+  }
+
+  return payload;
 }
 
 function validateProductPayload(product, options = {}) {
