@@ -813,6 +813,23 @@ label {
   border: 1px solid #fde68a;
 }
 
+.category-admin-table-hint {
+  margin: 4px 0 0;
+  max-width: 520px;
+  color: var(--master-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.category-admin-row.is-store-hidden {
+  background: #fffdf5;
+}
+
+.category-admin-row.is-store-hidden .category-admin-name-line strong {
+  color: #78350f;
+}
+
 .category-admin-row.is-subcategory {
   background: #fcfdff;
 }

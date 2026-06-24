@@ -526,20 +526,25 @@ async function handleUpdateCategory(request, response) {
 
   try {
     const id = getResourceIdFromUrl(request.url, "/api/categories/");
+    const body = await readJSONBody(request);
+    console.log("[category PATCH] método:", request.method, "id recibido:", id, "body recibido:", body);
+
     if (!id) {
       sendJSON(response, 400, { error: "ID de categoria requerido" });
       return;
     }
 
-    const body = await readJSONBody(request);
+    const apiBody = sanitizeCategoryApiBody(body);
     const schema = await resolveCategorySchemaSupport();
-    const patch = buildCategorySupabasePayload(body, schema);
+    const patch = buildCategorySupabasePayload(apiBody, schema);
+    console.log("[category PATCH] payload final Supabase:", patch);
+
     if (!Object.keys(patch).length) {
       sendJSON(response, 400, { error: "No hay campos para actualizar" });
       return;
     }
 
-    const parentId = String(body.parentId || body.parent_id || "").trim();
+    const parentId = String(apiBody.parentId || "").trim();
     if (parentId && schema.parentId) {
       if (parentId === id) {
         sendJSON(response, 400, { error: "Una categoría no puede ser su propia subcategoría" });
@@ -552,21 +557,30 @@ async function handleUpdateCategory(request, response) {
       }
     }
 
-    await writeCategoryToSupabase(
+    const rows = await writeCategoryToSupabase(
       `/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`,
       {
         method: "PATCH",
         body: patch,
+        prefer: "return=representation",
       },
       schema,
     );
-    const category = await getSupabaseCategoryById(id);
-    if (!category) {
+    const rowCount = Array.isArray(rows) ? rows.length : 0;
+    console.log("[category PATCH] respuesta Supabase filas afectadas:", rowCount, "datos:", rows);
+
+    const updatedRow = Array.isArray(rows) ? rows[0] : null;
+    if (!updatedRow) {
       sendJSON(response, 404, { error: "Categoria no encontrada" });
       return;
     }
-    sendJSON(response, 200, { ok: true, category: mapDbCategory(category) });
+    if (updatedRow.activo === false) {
+      sendJSON(response, 200, { ok: true, category: mapDbCategory(updatedRow), deleted: true });
+      return;
+    }
+    sendJSON(response, 200, { ok: true, category: mapDbCategory(updatedRow) });
   } catch (error) {
+    console.error("[category PATCH] error:", error.message);
     sendJSON(response, 500, { error: "No se pudo actualizar categoria", details: error.message });
   }
 }
@@ -616,7 +630,14 @@ async function handleDeleteCategory(request, response) {
 
   try {
     const id = getResourceIdFromUrl(request.url, "/api/categories/");
-    console.log("[category delete] id recibido:", id);
+    let body = {};
+    try {
+      body = await readJSONBody(request);
+    } catch {
+      body = {};
+    }
+    console.log("[category DELETE] método:", request.method, "id recibido:", id, "body recibido:", body);
+
     if (!id) {
       sendJSON(response, 400, { error: "ID de categoria requerido" });
       return;
@@ -629,7 +650,7 @@ async function handleDeleteCategory(request, response) {
     }
 
     const { productCount, subcategoryCount } = await getCategoryDeleteDependencies(id);
-    console.log("[category delete] dependencias:", { id, productCount, subcategoryCount });
+    console.log("[category DELETE] dependencias:", { id, productCount, subcategoryCount });
 
     if (subcategoryCount > 0) {
       sendJSON(response, 409, {
@@ -652,16 +673,20 @@ async function handleDeleteCategory(request, response) {
       return;
     }
 
+    const supabasePayload = { activo: false };
+    console.log("[category DELETE] payload final Supabase:", supabasePayload);
+
     const patchResult = await supabaseRequest(`/rest/v1/categorias?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH",
-      body: { activo: false },
+      body: supabasePayload,
       prefer: "return=representation",
     });
-    console.log("[category delete] PATCH Supabase ok:", Array.isArray(patchResult) ? patchResult.length : patchResult);
+    const rowCount = Array.isArray(patchResult) ? patchResult.length : 0;
+    console.log("[category DELETE] respuesta Supabase filas afectadas:", rowCount, "datos:", patchResult);
 
-    sendJSON(response, 200, { ok: true, id });
+    sendJSON(response, 200, { ok: true, deleted: true, id });
   } catch (error) {
-    console.error("[category delete] error Supabase:", error.message);
+    console.error("[category DELETE] error Supabase:", error.message);
     sendJSON(response, 500, { error: "No se pudo eliminar categoria", details: error.message });
   }
 }
@@ -2175,6 +2200,29 @@ async function resolveCategorySchemaSupport(force = false) {
 
   categorySchemaSupport = support;
   return support;
+}
+
+function sanitizeCategoryApiBody(body = {}) {
+  const sanitized = {};
+  if (body.name !== undefined || body.nombre !== undefined) {
+    sanitized.name = body.name !== undefined ? body.name : body.nombre;
+  }
+  if (body.description !== undefined || body.descripcion !== undefined) {
+    sanitized.description = body.description !== undefined ? body.description : body.descripcion;
+  }
+  if (body.active !== undefined || body.activo !== undefined || body.status !== undefined) {
+    if (body.active !== undefined) sanitized.active = body.active;
+    else if (body.activo !== undefined) sanitized.active = body.activo;
+    else sanitized.status = body.status;
+  }
+  if (body.visibleInStore !== undefined || body.visible_en_tienda !== undefined) {
+    sanitized.visibleInStore =
+      body.visibleInStore !== undefined ? body.visibleInStore : body.visible_en_tienda;
+  }
+  if (body.parentId !== undefined || body.parent_id !== undefined) {
+    sanitized.parentId = body.parentId !== undefined ? body.parentId : body.parent_id;
+  }
+  return sanitized;
 }
 
 function sanitizeCategorySupabaseBody(body, schema = {}) {

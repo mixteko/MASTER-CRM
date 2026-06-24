@@ -4931,7 +4931,7 @@ function bindEvents() {
     if (value && value !== "Otro") elements.stockAdjustmentNewLotReason.value = value;
     if (value === "Otro") elements.stockAdjustmentNewLotReason.value = "";
   });
-  elements.productActionDialogForm?.addEventListener("close", handleProductActionDialogClose);
+  elements.productActionDialog?.addEventListener("close", handleProductActionDialogClose);
   elements.productPermanentDeleteForm?.addEventListener("submit", handleProductPermanentDeleteSubmit);
   elements.productPermanentDeleteDialog?.addEventListener("close", () => {
     if (productPermanentDeleteResolver) {
@@ -4947,8 +4947,8 @@ function bindEvents() {
       productLotDeleteContext = null;
     }
   });
-  elements.categoryDependencyDialogForm?.addEventListener("close", handleCategoryDependencyDialogClose);
-  elements.classificationDependencyDialogForm?.addEventListener("close", handleClassificationDependencyDialogClose);
+  elements.categoryDependencyDialog?.addEventListener("close", handleCategoryDependencyDialogClose);
+  elements.classificationDependencyDialog?.addEventListener("close", handleClassificationDependencyDialogClose);
 
   document.addEventListener("click", handleDocumentAction);
   document.addEventListener("click", (event) => {
@@ -4958,9 +4958,67 @@ function bindEvents() {
   });
 }
 
+const CATEGORY_DOCUMENT_ACTIONS = new Set([
+  "edit-category",
+  "create-subcategory",
+  "hide-category-store",
+  "show-category-store",
+  "delete-category",
+  "toggle-category-menu",
+]);
+
+function resolveCategoryActionId(action) {
+  return String(action.dataset.id || action.getAttribute("data-id") || "").trim() || null;
+}
+
+function handleCategoryDocumentAction(event, action) {
+  const actionName = action.dataset.action;
+  const id = resolveCategoryActionId(action);
+  const category = id ? getCategoryById(id) : null;
+  console.log("[category action]", actionName, id, category?.name || "(no encontrada)");
+
+  event.preventDefault();
+  event.stopPropagation();
+  closeAllProductActionMenus();
+
+  if (!id) {
+    showToast("ID de categoría no válido");
+    return;
+  }
+
+  if (actionName === "edit-category") {
+    editCategory(id);
+    return;
+  }
+  if (actionName === "create-subcategory") {
+    createSubcategory(id);
+    return;
+  }
+  if (actionName === "hide-category-store") {
+    void setCategoryStoreVisibility(id, false);
+    return;
+  }
+  if (actionName === "show-category-store") {
+    void setCategoryStoreVisibility(id, true);
+    return;
+  }
+  if (actionName === "delete-category") {
+    void deleteCategory(id);
+    return;
+  }
+  if (actionName === "toggle-category-menu") {
+    toggleProductActionMenu(action);
+  }
+}
+
 function handleDocumentAction(event) {
   const action = event.target.closest("[data-action]");
   if (!action) return;
+
+  if (CATEGORY_DOCUMENT_ACTIONS.has(action.dataset.action)) {
+    handleCategoryDocumentAction(event, action);
+    return;
+  }
 
   const id = action.dataset.id;
   if (action.dataset.action === "add-store-item") addStoreItem(id);
@@ -4981,14 +5039,6 @@ function handleDocumentAction(event) {
   }
   if (action.dataset.action === "close-permanent-delete-dialog") elements.productPermanentDeleteDialog?.close("cancel");
   if (action.dataset.action === "close-lot-delete-dialog") elements.productLotDeleteDialog?.close("cancel");
-  if (action.dataset.action === "edit-category") editCategory(id);
-  if (action.dataset.action === "create-subcategory") createSubcategory(id);
-  if (action.dataset.action === "toggle-category-store-visibility") toggleCategoryStoreVisibility(id);
-  if (action.dataset.action === "delete-category") {
-    closeAllProductActionMenus();
-    deleteCategory(id);
-  }
-  if (action.dataset.action === "toggle-category-menu") toggleProductActionMenu(action);
   if (action.dataset.action === "edit-classification") editClassification(id);
   if (action.dataset.action === "deactivate-classification") deactivateClassification(id);
   if (action.dataset.action === "activate-classification") activateClassification(id);
@@ -6882,14 +6932,44 @@ function classificationRequiresRecipe(name) {
 }
 
 function getActiveCategories(categories = state.categories) {
-  return (Array.isArray(categories) ? categories : []).filter(
+  const active = (Array.isArray(categories) ? categories : []).filter(
     (category) => category.active !== false && category.status !== "Pausado",
   );
+  const activeIds = new Set(active.map((category) => category.id));
+  return active.filter((category) => !category.parentId || activeIds.has(category.parentId));
+}
+
+function isCategoryHiddenInStore(category) {
+  return category && category.visibleInStore === false;
+}
+
+function removeCategoryFromState(id) {
+  if (!id) return;
+  state.categories = state.categories.filter((category) => category.id !== id);
+  renderCategories();
+  renderProductCatalogSelects();
+}
+
+function applyCategoryPatchToState(updated) {
+  if (!updated?.id) return;
+  if (updated.active === false || updated.status === "Pausado") {
+    removeCategoryFromState(updated.id);
+    return;
+  }
+  const index = state.categories.findIndex((category) => category.id === updated.id);
+  if (index >= 0) state.categories[index] = updated;
+  else state.categories.push(updated);
+  state.categories = getActiveCategories(state.categories);
+  renderCategories();
+  renderProductCatalogSelects();
 }
 
 async function loadCategories(options = {}) {
   try {
-    const response = await fetch(categoriesApiUrl);
+    const response = await fetch(`${categoriesApiUrl}?_=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
     if (!response.ok) throw new Error("Backend no disponible");
 
     const data = await response.json();
@@ -6958,17 +7038,17 @@ async function saveCategoryToApi(category) {
 }
 
 async function deleteCategoryInApi(id) {
-  console.log("[category delete] DELETE /api/categories/", id);
+  console.log("[category UI] DELETE /api/categories/:id", id);
   const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
   let data = {};
   try {
     data = await response.json();
-  } catch (parseError) {
-    console.error("[category delete] respuesta no JSON:", response.status, parseError);
+  } catch {
+    data = {};
   }
-  console.log("[category delete] respuesta API:", response.status, data);
+  console.log("[category UI] DELETE respuesta", response.status, data);
   if (!response.ok) {
-    const error = new Error(data.message || data.details || data.error || "No se pudo eliminar categoria");
+    const error = new Error(data.error || data.message || data.details || "Error al eliminar categoría");
     error.code = data.error || "";
     error.productCount = toInteger(data.productCount);
     error.subcategoryCount = toInteger(data.subcategoryCount);
@@ -6984,15 +7064,17 @@ async function patchCategoryInApi(id, patch) {
   if (patch.description !== undefined) payload.description = patch.description;
   if (patch.active !== undefined) payload.active = patch.active;
 
+  console.log("[category UI] PATCH /api/categories/:id", id, payload);
   const response = await fetch(`${categoriesApiUrl}/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   const data = await response.json();
+  console.log("[category UI] PATCH respuesta", response.status, data);
   if (!response.ok) {
     console.error("Error actualizando categoría:", response.status, data);
-    throw new Error(data.details || data.error || "No se pudo actualizar categoria");
+    throw new Error(data.error || data.message || data.details || "Error al actualizar categoría");
   }
   return data.category;
 }
@@ -7133,24 +7215,29 @@ function handleCategoryDependencyDialogClose() {
 }
 
 function renderCategoryActionsMarkup(category) {
-  const hiddenInStore = category.visibleInStore === false;
+  const hiddenInStore = isCategoryHiddenInStore(category);
+  const storeAction = hiddenInStore ? "show-category-store" : "hide-category-store";
   const storeLabel = hiddenInStore ? "Mostrar" : "Ocultar";
   const storeClass = hiddenInStore ? "category-action-btn is-store-show" : "category-action-btn is-store-hide";
+  const storeTitle = hiddenInStore
+    ? "Mostrar en la tienda online (sigue activa en el CRM)"
+    : "Ocultar en la tienda online (sigue en este listado)";
+  const categoryId = escapeHTML(category.id);
   return `
     <div class="category-admin-actions">
       <div class="category-admin-actions-desktop">
-        <button class="category-action-btn is-neutral" type="button" data-action="edit-category" data-id="${category.id}" title="Editar categoría">Editar</button>
-        <button class="category-action-btn is-neutral" type="button" data-action="create-subcategory" data-id="${category.id}" title="Crear subcategoría">Subcategoría</button>
-        <button class="category-action-btn ${storeClass}" type="button" data-action="toggle-category-store-visibility" data-id="${category.id}" title="${hiddenInStore ? "Mostrar en la tienda" : "Ocultar en la tienda"}">${storeLabel}</button>
-        <button class="category-action-btn is-danger" type="button" data-action="delete-category" data-id="${category.id}" title="Eliminar categoría">Eliminar</button>
+        <button class="category-action-btn is-neutral" type="button" data-action="edit-category" data-id="${categoryId}" title="Editar categoría">Editar</button>
+        <button class="category-action-btn is-neutral" type="button" data-action="create-subcategory" data-id="${categoryId}" title="Crear subcategoría">Subcategoría</button>
+        <button class="category-action-btn ${storeClass}" type="button" data-action="${storeAction}" data-id="${categoryId}" title="${storeTitle}">${storeLabel}</button>
+        <button class="category-action-btn is-danger" type="button" data-action="delete-category" data-id="${categoryId}" title="Eliminar del catálogo (desactivar, no ocultar en tienda)">Eliminar</button>
       </div>
       <div class="category-admin-actions-mobile product-list-action-menu category-list-action-menu">
-        <button class="product-list-action is-menu category-admin-menu-trigger" type="button" data-action="toggle-category-menu" data-id="${category.id}" aria-label="Acciones de categoría" aria-haspopup="menu">${productListActionIcon("more")}</button>
+        <button class="product-list-action is-menu category-admin-menu-trigger" type="button" data-action="toggle-category-menu" data-id="${categoryId}" aria-label="Acciones de categoría" aria-haspopup="menu">${productListActionIcon("more")}</button>
         <div class="product-list-action-menu-panel category-list-action-menu-panel" role="menu" hidden>
-          <button class="product-list-menu-item" type="button" role="menuitem" data-action="edit-category" data-id="${category.id}"><span class="product-list-menu-title">Editar</span></button>
-          <button class="product-list-menu-item" type="button" role="menuitem" data-action="create-subcategory" data-id="${category.id}"><span class="product-list-menu-title">Subcategoría</span></button>
-          <button class="product-list-menu-item" type="button" role="menuitem" data-action="toggle-category-store-visibility" data-id="${category.id}"><span class="product-list-menu-title">${storeLabel}</span></button>
-          <button class="product-list-menu-item is-danger" type="button" role="menuitem" data-action="delete-category" data-id="${category.id}"><span class="product-list-menu-title">Eliminar</span></button>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="edit-category" data-id="${categoryId}"><span class="product-list-menu-title">Editar</span></button>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="create-subcategory" data-id="${categoryId}"><span class="product-list-menu-title">Subcategoría</span></button>
+          <button class="product-list-menu-item" type="button" role="menuitem" data-action="${storeAction}" data-id="${categoryId}"><span class="product-list-menu-title">${storeLabel}</span></button>
+          <button class="product-list-menu-item is-danger" type="button" role="menuitem" data-action="delete-category" data-id="${categoryId}"><span class="product-list-menu-title">Eliminar</span></button>
         </div>
       </div>
     </div>
@@ -7185,8 +7272,19 @@ function renderCategories() {
           const parent = category.parentId ? getCategoryById(category.parentId) : null;
           const isSubcategory = Boolean(category.parentId);
           const indent = Math.min(category.depth || 0, 3) * 18;
-          const storePillClass = category.visibleInStore === false ? "category-store-pill is-hidden" : "category-store-pill is-visible";
-          const storeLabel = category.visibleInStore === false ? "Oculta" : "Visible";
+          const hiddenInStore = isCategoryHiddenInStore(category);
+          const rowClass = [
+            "category-admin-row",
+            isSubcategory ? "is-subcategory" : "",
+            hiddenInStore ? "is-store-hidden" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const storePillClass = hiddenInStore ? "category-store-pill is-hidden" : "category-store-pill is-visible";
+          const storeLabel = hiddenInStore ? "Oculta" : "Visible";
+          const storePillTitle = hiddenInStore
+            ? "Oculta en la tienda online · activa en administración"
+            : "Visible en la tienda online";
           const descriptionLine = category.description
             ? `<span class="category-admin-description">${escapeHTML(category.description)}</span>`
             : "";
@@ -7195,7 +7293,7 @@ function renderCategories() {
               ? `<span class="category-admin-parent">Subcategoría de: ${escapeHTML(parent.name)}</span>`
               : "";
           return `
-            <tr class="category-admin-row ${isSubcategory ? "is-subcategory" : ""}">
+            <tr class="${rowClass}">
               <td class="category-admin-name">
                 <div class="category-admin-name-cell" style="padding-left:${indent}px">
                   <div class="category-admin-name-line">
@@ -7206,7 +7304,7 @@ function renderCategories() {
                   ${parentLine}
                 </div>
               </td>
-              <td class="category-admin-store"><span class="${storePillClass}">${storeLabel}</span></td>
+              <td class="category-admin-store"><span class="${storePillClass}" title="${storePillTitle}">${storeLabel}</span></td>
               <td class="category-admin-col-actions">${renderCategoryActionsMarkup(category)}</td>
             </tr>
           `;
@@ -7410,7 +7508,11 @@ async function saveCategory(event) {
 
 function editCategory(id) {
   const category = getCategoryById(id);
-  if (!category) return;
+  console.log("[category action]", "edit-category", id, category?.name || "(no encontrada)");
+  if (!category) {
+    showToast("Categoría no encontrada");
+    return;
+  }
   closeAllProductActionMenus();
   elements.categoryFormTitle.textContent = "Editar categoría";
   elements.categoryId.value = category.id;
@@ -7433,6 +7535,7 @@ function editCategory(id) {
 
 function createSubcategory(parentId) {
   const parent = getCategoryById(parentId);
+  console.log("[category action]", "create-subcategory", parentId, parent?.name || "(no encontrada)");
   if (!parent) return showToast("Categoría padre no encontrada");
   closeAllProductActionMenus();
   clearCategoryForm();
@@ -7462,41 +7565,52 @@ function clearCategoryForm() {
   elements.categoryFormTitle.textContent = "Nueva categoría";
 }
 
-async function toggleCategoryStoreVisibility(id, options = {}) {
+async function setCategoryStoreVisibility(id, visibleInStore, options = {}) {
   const category = getCategoryById(id);
-  if (!category) return;
+  console.log(
+    "[category action]",
+    visibleInStore ? "show-category-store" : "hide-category-store",
+    id,
+    category?.name || "(no encontrada)",
+  );
+  if (!category) {
+    showToast("Categoría no encontrada");
+    return;
+  }
   closeAllProductActionMenus();
-  const hide = category.visibleInStore !== false;
+
   if (!options.skipConfirm) {
     const confirmed = await openProductActionDialog({
-      title: hide ? `¿Ocultar "${category.name}" en la tienda?` : `¿Volver a mostrar "${category.name}" en la tienda?`,
-      message: hide
-        ? "Seguirá disponible en el CRM."
-        : "La categoría volverá a mostrarse en la tienda online.",
-      confirmLabel: hide ? "Ocultar en la tienda" : "Mostrar en la tienda",
-      confirmClass: hide ? "primary-button" : "primary-button is-success",
+      title: visibleInStore
+        ? `¿Mostrar "${category.name}" en la tienda?`
+        : `¿Ocultar "${category.name}" en la tienda?`,
+      message: visibleInStore
+        ? "Volverá a mostrarse en la tienda online. No cambia su estado en administración."
+        : "Seguirá en este listado del CRM. Solo dejará de mostrarse en la tienda online.",
+      confirmLabel: visibleInStore ? "Mostrar en tienda" : "Ocultar en tienda",
+      confirmClass: visibleInStore ? "primary-button is-success" : "primary-button",
     });
     if (!confirmed) return;
   }
 
   try {
-    await patchCategoryInApi(id, { visibleInStore: !hide });
+    const updated = await patchCategoryInApi(id, { visibleInStore });
+    if (updated) applyCategoryPatchToState(updated);
     await loadCategories();
-    renderStore();
-    showToast(hide ? "Categoría oculta en la tienda" : "Categoría visible en la tienda");
+    renderCategories();
+    showToast(visibleInStore ? "Categoría visible en la tienda" : "Categoría oculta en la tienda");
   } catch (error) {
-    console.error("Error cambiando visibilidad de categoría:", error);
-    showToast(error.message || "No se pudo actualizar visibilidad");
+    showToast(error.message || "Error al actualizar categoría");
   }
 }
 
 async function deleteCategory(id) {
   const category = getCategoryById(id);
+  console.log("[category action]", "delete-category", id, category?.name || "(no encontrada)");
   if (!category) {
     showToast("Categoría no encontrada");
     return;
   }
-  console.log("[category delete]", category);
   closeAllProductActionMenus();
 
   const subcategoryCount = countCategorySubcategories(category.id);
@@ -7507,24 +7621,23 @@ async function deleteCategory(id) {
   }
 
   const confirmed = await openProductActionDialog({
-    title: `¿Eliminar categoría "${category.name}"?`,
+    title: `¿Eliminar ${category.parentId ? "subcategoría" : "categoría"} "${category.name}"?`,
     message: category.parentId
-      ? "Esta subcategoría se desactivará en el CRM. La categoría padre no se verá afectada."
-      : "Esta categoría se desactivará y dejará de mostrarse en la lista.",
-    confirmLabel: "Eliminar categoría",
+      ? "Se desactivará y dejará de aparecer en este listado. La categoría padre no se verá afectada."
+      : "Se desactivará y dejará de aparecer en este listado. No es lo mismo que «Ocultar en tienda».",
+    confirmLabel: "Eliminar",
     confirmClass: "primary-button is-danger",
   });
   if (!confirmed) return;
 
   try {
-    console.log("[category delete] llamando API con id:", id);
     const wasSubcategory = Boolean(category.parentId);
     await deleteCategoryInApi(id);
+    removeCategoryFromState(id);
     await loadCategories();
-    renderStore();
+    renderCategories();
     showToast(wasSubcategory ? "Subcategoría eliminada" : "Categoría eliminada");
   } catch (error) {
-    console.error("[category delete] error:", error);
     if (error.code === "CATEGORY_HAS_SUBCATEGORIES" || error.code === "CATEGORY_HAS_DEPENDENCIES") {
       await openCategoryDeleteBlockedDialog(category, {
         productCount: error.productCount,
@@ -7538,11 +7651,11 @@ async function deleteCategory(id) {
         productCount: error.productCount,
         subcategoryCount: error.subcategoryCount,
       });
-      if (action === "hide-store") await toggleCategoryStoreVisibility(id, { skipConfirm: true });
-      else showToast(error.message || "Esta categoría tiene productos asignados.");
+      if (action === "hide-store") await setCategoryStoreVisibility(id, false, { skipConfirm: true });
+      else showToast(error.message || "Error al actualizar categoría");
       return;
     }
-    showToast(error.message || "No se pudo eliminar categoria");
+    showToast(error.message || "Error al actualizar categoría");
   }
 }
 
