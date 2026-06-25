@@ -521,14 +521,41 @@
         </section>
 
         <section class="view" id="pedidos">
-          <div class="panel-heading">
+          <div class="orders-page-heading">
             <div>
-              <p class="eyebrow">Operacion</p>
+              <p class="eyebrow">Operación</p>
               <h2>Pedidos</h2>
+              <p class="orders-page-lead">Gestiona pedidos de tienda, WhatsApp, teléfono y mostrador.</p>
             </div>
-            <button class="primary-button" type="button" data-view="tienda">Crear desde tienda</button>
+            <button class="primary-button" type="button" id="openOrderDialogButton">Crear pedido</button>
           </div>
-          <div class="kanban-grid" id="ordersBoard"></div>
+
+          <section class="panel-card penpot-card table-panel orders-list-panel">
+            <div class="orders-list-toolbar">
+              <input class="inline-search orders-list-search" id="orderSearch" type="search" placeholder="Buscar por pedido, cliente u origen" autocomplete="off" />
+              <span class="orders-list-count" id="orderListCount">0 pedidos</span>
+            </div>
+            <div class="orders-filter-chips" id="orderStatusFilters" aria-label="Filtrar pedidos por estado"></div>
+            <div class="table-scroll orders-list-scroll">
+              <table class="orders-list-table">
+                <thead>
+                  <tr>
+                    <th>Pedido</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Origen</th>
+                    <th>Total</th>
+                    <th>Pago</th>
+                    <th>Envío / entrega</th>
+                    <th>Estado</th>
+                    <th class="orders-col-actions">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="ordersTable"></tbody>
+              </table>
+            </div>
+            <p class="orders-list-footer" id="orderListFooter">Mostrando 0 pedidos</p>
+          </section>
         </section>
 
         <section class="view" id="productos">
@@ -1001,29 +1028,57 @@
           </div>
         </section>
         <section class="view" id="ventas">
-          <div class="panel-card">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Historial</p>
-                <h2>Ventas confirmadas</h2>
-              </div>
+          <div class="sales-page-heading">
+            <div>
+              <p class="eyebrow">Historial económico</p>
+              <h2>Ventas</h2>
+              <p class="sales-page-lead">Consulta cuánto vendiste, cobraste y la ganancia estimada por rango.</p>
             </div>
-            <div class="table-scroll">
-              <table>
+            <div class="sales-page-actions">
+              <button class="ghost-button" type="button" id="exportSalesButton">Exportar lista</button>
+              <button class="primary-button" type="button" id="openSaleDialogButton">Crear venta</button>
+            </div>
+          </div>
+
+          <section class="sales-summary-panel penpot-card" id="salesSummaryPanel">
+            <div class="sales-summary-cards" id="salesSummaryCards"></div>
+            <p class="sales-profit-notice" id="salesProfitNotice" hidden></p>
+          </section>
+
+          <section class="panel-card penpot-card table-panel sales-list-panel">
+            <div class="sales-list-toolbar">
+              <input class="inline-search sales-list-search" id="saleSearch" type="search" placeholder="Buscar por venta, cliente u origen" autocomplete="off" />
+              <span class="sales-list-count" id="saleListCount">0 ventas</span>
+            </div>
+            <div class="sales-filter-chips sales-range-filters" id="saleRangeFilters" aria-label="Filtrar ventas por rango"></div>
+            <div class="sales-custom-range" id="salesCustomRange" hidden>
+              <label>Fecha inicio <input id="saleDateFrom" type="date" /></label>
+              <label>Fecha fin <input id="saleDateTo" type="date" /></label>
+              <button class="ghost-button small" type="button" data-action="apply-sale-date-range">Aplicar filtro</button>
+            </div>
+            <div class="sales-filter-chips sales-status-filters" id="saleStatusFilters" aria-label="Filtrar ventas por estado"></div>
+            <div class="table-scroll sales-list-scroll">
+              <table class="sales-list-table">
                 <thead>
                   <tr>
                     <th>Venta</th>
-                    <th>Pedido</th>
-                    <th>Cliente</th>
-                    <th>Pago</th>
-                    <th>Total</th>
                     <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Total</th>
+                    <th>Ganancia</th>
+                    <th>Productos</th>
+                    <th>Pago</th>
+                    <th>Entrega</th>
+                    <th>Origen</th>
+                    <th>Estado</th>
+                    <th class="sales-col-actions">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="salesTable"></tbody>
               </table>
             </div>
-          </div>
+            <p class="sales-list-footer" id="saleListFooter">Mostrando 0 ventas</p>
+          </section>
         </section>
 
         <section class="view" id="envios">
@@ -1408,6 +1463,173 @@
           <button class="ghost-button" type="button" data-action="close-customer-contact-dialog">Cerrar</button>
         </div>
       </div>
+    </dialog>
+
+    <dialog class="order-dialog" id="orderDialog">
+      <form class="order-dialog-shell" id="orderForm">
+        <header class="order-dialog-header">
+          <div>
+            <h2 id="orderDialogTitle">Crear pedido</h2>
+            <p class="order-dialog-help">Registra pedidos manuales de WhatsApp, teléfono o mostrador.</p>
+          </div>
+          <button class="dialog-close-btn" type="button" data-action="close-order-dialog" aria-label="Cerrar">×</button>
+        </header>
+        <div class="order-dialog-body">
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Cliente
+              <select id="orderCustomerSelect"></select>
+            </label>
+            <label>Origen
+              <select id="orderOriginSelect">
+                <option value="whatsapp">WhatsApp</option>
+                <option value="telefono">Teléfono</option>
+                <option value="mostrador">Mostrador</option>
+                <option value="manual">Manual</option>
+                <option value="tienda_en_linea">Tienda en línea</option>
+              </select>
+            </label>
+          </div>
+          <div class="order-products-panel">
+            <label class="order-product-search-label">Agregar producto
+              <input id="orderProductSearch" type="search" placeholder="Buscar por nombre o SKU" autocomplete="off" />
+            </label>
+            <div class="order-product-results" id="orderProductResults" hidden></div>
+            <div class="table-scroll order-lines-scroll">
+              <table class="order-lines-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Cant.</th>
+                    <th>Precio unit.</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="orderLineItems"></tbody>
+              </table>
+            </div>
+            <p class="order-lines-empty" id="orderLinesEmpty">Agrega al menos un producto al pedido.</p>
+          </div>
+          <div class="customer-form-grid customer-form-grid--3">
+            <label>Descuento ($) <input id="orderDiscount" type="number" min="0" step="0.01" value="0" /></label>
+            <label>Envío ($) <input id="orderShipping" type="number" min="0" step="0.01" value="0" /></label>
+            <label>Pago
+              <select id="orderPaymentStatus">
+                <option value="pendiente">Pendiente</option>
+                <option value="pagado">Pagado</option>
+                <option value="vencido">Vencido</option>
+              </select>
+            </label>
+          </div>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Método de pago
+              <select id="orderPaymentMethod">
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="mercado_pago">Mercado Pago</option>
+                <option value="clip">Clip</option>
+                <option value="otro">Otro</option>
+              </select>
+            </label>
+            <label>Entrega
+              <select id="orderDeliveryType">
+                <option value="venta_directa">Venta directa / sin entrega</option>
+                <option value="recoger_tienda">Recoger en tienda</option>
+                <option value="envio_local">Envío local</option>
+                <option value="paqueteria">Paquetería</option>
+                <option value="pendiente">Pendiente definir</option>
+              </select>
+            </label>
+          </div>
+          <div class="order-summary-box">
+            <div><span>Subtotal</span><strong id="orderSubtotalPreview">$0.00</strong></div>
+            <div><span>Descuento</span><strong id="orderDiscountPreview">$0.00</strong></div>
+            <div><span>Envío</span><strong id="orderShippingPreview">$0.00</strong></div>
+            <div class="order-summary-total"><span>Total</span><strong id="orderTotalPreview">$0.00</strong></div>
+          </div>
+          <label>Notas internas <textarea id="orderNotes" rows="2" placeholder="Instrucciones, referencias o comentarios"></textarea></label>
+        </div>
+        <footer class="order-dialog-footer">
+          <button class="ghost-button" type="button" data-action="close-order-dialog">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar pedido</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog class="order-dialog sale-dialog" id="saleDialog">
+      <form class="order-dialog-shell" id="saleForm">
+        <header class="order-dialog-header">
+          <div>
+            <h2 id="saleDialogTitle">Crear venta</h2>
+            <p class="order-dialog-help">Registra una venta rápida de mostrador o canal manual.</p>
+          </div>
+          <button class="dialog-close-btn" type="button" data-action="close-sale-dialog" aria-label="Cerrar">×</button>
+        </header>
+        <div class="order-dialog-body">
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Cliente
+              <select id="saleCustomerSelect"></select>
+            </label>
+            <label>Origen
+              <select id="saleOriginSelect">
+                <option value="mostrador">Mostrador</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="telefono">Teléfono</option>
+                <option value="manual">Manual</option>
+                <option value="tienda_en_linea">Tienda en línea</option>
+              </select>
+            </label>
+          </div>
+          <div class="order-products-panel">
+            <label class="order-product-search-label">Agregar producto
+              <input id="saleProductSearch" type="search" placeholder="Buscar por nombre o SKU" autocomplete="off" />
+            </label>
+            <div class="order-product-results" id="saleProductResults" hidden></div>
+            <div class="table-scroll order-lines-scroll">
+              <table class="order-lines-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Cant.</th>
+                    <th>Precio unit.</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="saleLineItems"></tbody>
+              </table>
+            </div>
+            <p class="order-lines-empty" id="saleLinesEmpty">Agrega al menos un producto.</p>
+          </div>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Método de pago
+              <select id="salePaymentMethod">
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="mercado_pago">Mercado Pago</option>
+                <option value="clip">Clip</option>
+                <option value="otro">Otro</option>
+              </select>
+            </label>
+            <label>Estado de pago
+              <select id="salePaymentStatus">
+                <option value="pagado">Pagado</option>
+                <option value="pendiente">Pendiente</option>
+              </select>
+            </label>
+          </div>
+          <div class="order-summary-box">
+            <div class="order-summary-total"><span>Total</span><strong id="saleTotalPreview">$0.00</strong></div>
+          </div>
+          <label>Notas <textarea id="saleNotes" rows="2" placeholder="Comentarios de la venta"></textarea></label>
+        </div>
+        <footer class="order-dialog-footer">
+          <button class="ghost-button" type="button" data-action="close-sale-dialog">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar venta</button>
+        </footer>
+      </form>
     </dialog>
 
     <dialog class="customer-profiles-dialog" id="customerCommercialProfilesDialog">

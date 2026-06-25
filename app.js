@@ -6,6 +6,8 @@ const storageKeys = {
   payments: "minifarmacia_crm_payments",
   shipments: "minifarmacia_crm_shipments",
   sales: "minifarmacia_crm_sales",
+  orderSeq: "minifarmacia_crm_order_seq",
+  saleSeq: "minifarmacia_crm_sale_seq",
   conversations: "minifarmacia_crm_conversations",
   settings: "minifarmacia_crm_settings",
   catalogVersion: "minifarmacia_product_catalog_version",
@@ -4473,6 +4475,13 @@ const state = {
   stockAdjustmentAction: "add",
   stockAdjustmentMode: "existing",
   stockAdjustmentProductId: null,
+  orderQuery: "",
+  orderStatusFilter: "",
+  saleQuery: "",
+  saleStatusFilter: "",
+  saleRangeFilter: "all",
+  saleDateFrom: "",
+  saleDateTo: "",
 };
 
 const EXPIRATION_FILTER_LABELS = {
@@ -4538,8 +4547,8 @@ const productsSectionTitles = {
 const viewDescriptions = {
   dashboard: "Resumen operativo de pedidos, ventas, inventario y alertas del negocio.",
   clientes: "Registra clientes, consulta su historial y mantén datos de contacto actualizados.",
-  pedidos: "Gestiona el flujo completo desde pedido nuevo hasta entrega.",
-  ventas: "Consulta ventas confirmadas y tickets cerrados.",
+  pedidos: "Gestiona pedidos de tienda, WhatsApp, teléfono y mostrador.",
+  ventas: "Historial económico: totales vendidos, cobrados, pendientes y ganancia estimada.",
   pagos: "Controla cobros pendientes y métodos de pago.",
   envios: "Seguimiento de entregas locales y nacionales.",
   canales: "Tienda online y puntos de venta digital.",
@@ -4624,7 +4633,131 @@ const STOCK_ADJUST_ACTION_COPY = {
   },
 };
 
-const orderColumns = ["Nuevo", "Por cobrar", "Por enviar", "Enviado", "Completado"];
+const ORDER_STATUS_META = {
+  nuevo: { label: "Nuevo", badge: "info" },
+  por_cobrar: { label: "Por cobrar", badge: "warning" },
+  cobrado: { label: "Cobrado", badge: "success" },
+  por_enviar: { label: "Por enviar", badge: "info" },
+  por_retirar: { label: "Por retirar", badge: "info" },
+  enviado: { label: "Enviado", badge: "info" },
+  completado: { label: "Completado", badge: "success" },
+  cancelado: { label: "Cancelado", badge: "danger" },
+};
+
+const ORDER_STATUS_FILTERS = [
+  "",
+  "nuevo",
+  "por_cobrar",
+  "cobrado",
+  "por_enviar",
+  "por_retirar",
+  "enviado",
+  "completado",
+  "cancelado",
+];
+
+const ORDER_FILTER_LABELS = {
+  "": "Todos",
+  nuevo: "Nuevos",
+  por_cobrar: "Por cobrar",
+  cobrado: "Cobrados",
+  por_enviar: "Por enviar",
+  por_retirar: "Por retirar",
+  enviado: "Enviados",
+  completado: "Completados",
+  cancelado: "Cancelados",
+};
+
+const ORDER_FILTER_EMPTY_MESSAGES = {
+  "": "No hay pedidos registrados. Usa «Crear pedido» para agregar uno.",
+  nuevo: "No hay pedidos nuevos",
+  por_cobrar: "No hay pedidos por cobrar",
+  cobrado: "No hay pedidos cobrados",
+  por_enviar: "No hay pedidos por enviar",
+  por_retirar: "No hay pedidos por retirar",
+  enviado: "No hay pedidos enviados",
+  completado: "No hay pedidos completados",
+  cancelado: "No hay pedidos cancelados",
+};
+
+const FLOW_ALLOWED_STATUSES = {
+  mostrador_direct: ["nuevo", "por_cobrar", "cobrado", "completado", "cancelado"],
+  mostrador_pickup: ["nuevo", "por_cobrar", "cobrado", "por_retirar", "completado", "cancelado"],
+  shipping: ["nuevo", "por_cobrar", "cobrado", "por_enviar", "enviado", "completado", "cancelado"],
+  pickup: ["nuevo", "por_cobrar", "cobrado", "por_retirar", "completado", "cancelado"],
+};
+
+const ORDER_ORIGIN_LABELS = {
+  tienda_en_linea: "Tienda en línea",
+  whatsapp: "WhatsApp",
+  telefono: "Teléfono",
+  mostrador: "Mostrador",
+  manual: "Manual",
+};
+
+const SALE_STATUS_META = {
+  por_cobrar: { label: "Por cobrar", badge: "warning" },
+  pagada: { label: "Pagada", badge: "success" },
+  completada: { label: "Completada", badge: "success" },
+  cancelada: { label: "Cancelada", badge: "danger" },
+};
+
+const SALE_STATUS_FILTERS = ["", "por_cobrar", "pagada", "completada", "cancelada"];
+
+const SALE_RANGE_FILTERS = ["all", "today", "week", "month", "custom"];
+
+const SALE_RANGE_LABELS = {
+  all: "Todas",
+  today: "Hoy",
+  week: "Semana",
+  month: "Mes",
+  custom: "Personalizado",
+};
+
+const PAYMENT_STATUS_LABELS = {
+  pendiente: "Pendiente",
+  pagado: "Pagado",
+  vencido: "Vencido",
+};
+
+const PAYMENT_METHOD_LABELS = {
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  tarjeta: "Tarjeta",
+  mercado_pago: "Mercado Pago",
+  clip: "Clip",
+  otro: "Otro",
+  pendiente: "Pendiente",
+  Pendiente: "Pendiente",
+  Transferencia: "Transferencia",
+  Efectivo: "Efectivo",
+  "Mercado Pago": "Mercado Pago",
+  Clip: "Clip",
+};
+
+const DELIVERY_TYPE_LABELS = {
+  venta_directa: "Venta directa",
+  recoger_tienda: "Recoger en tienda",
+  envio_local: "Envío local",
+  paqueteria: "Paquetería",
+  pendiente: "Pendiente definir",
+  Local: "Envío local",
+  Nacional: "Paquetería",
+};
+
+const LEGACY_ORDER_STATUS_MAP = {
+  Nuevo: "nuevo",
+  "Por cobrar": "por_cobrar",
+  Cobrado: "cobrado",
+  "Por enviar": "por_enviar",
+  "Por retirar": "por_retirar",
+  Enviado: "enviado",
+  Completado: "completado",
+  Cancelado: "cancelado",
+};
+
+let orderFormDraft = { items: [] };
+let saleFormDraft = { items: [] };
 const currency = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => document.querySelectorAll(selector);
@@ -4739,7 +4872,54 @@ const elements = {
   commercialProfileCreditAllowed: $("#commercialProfileCreditAllowed"),
   commercialProfileSuggestedCreditLimit: $("#commercialProfileSuggestedCreditLimit"),
   commercialProfileNotes: $("#commercialProfileNotes"),
-  ordersBoard: $("#ordersBoard"),
+  ordersTable: $("#ordersTable"),
+  orderSearch: $("#orderSearch"),
+  orderListCount: $("#orderListCount"),
+  orderListFooter: $("#orderListFooter"),
+  orderStatusFilters: $("#orderStatusFilters"),
+  openOrderDialogButton: $("#openOrderDialogButton"),
+  orderDialog: $("#orderDialog"),
+  orderForm: $("#orderForm"),
+  orderCustomerSelect: $("#orderCustomerSelect"),
+  orderOriginSelect: $("#orderOriginSelect"),
+  orderProductSearch: $("#orderProductSearch"),
+  orderProductResults: $("#orderProductResults"),
+  orderLineItems: $("#orderLineItems"),
+  orderLinesEmpty: $("#orderLinesEmpty"),
+  orderDiscount: $("#orderDiscount"),
+  orderShipping: $("#orderShipping"),
+  orderPaymentStatus: $("#orderPaymentStatus"),
+  orderPaymentMethod: $("#orderPaymentMethod"),
+  orderDeliveryType: $("#orderDeliveryType"),
+  orderSubtotalPreview: $("#orderSubtotalPreview"),
+  orderDiscountPreview: $("#orderDiscountPreview"),
+  orderShippingPreview: $("#orderShippingPreview"),
+  orderTotalPreview: $("#orderTotalPreview"),
+  orderNotes: $("#orderNotes"),
+  saleSearch: $("#saleSearch"),
+  saleListCount: $("#saleListCount"),
+  saleListFooter: $("#saleListFooter"),
+  saleStatusFilters: $("#saleStatusFilters"),
+  saleRangeFilters: $("#saleRangeFilters"),
+  salesCustomRange: $("#salesCustomRange"),
+  saleDateFrom: $("#saleDateFrom"),
+  saleDateTo: $("#saleDateTo"),
+  salesSummaryCards: $("#salesSummaryCards"),
+  salesProfitNotice: $("#salesProfitNotice"),
+  openSaleDialogButton: $("#openSaleDialogButton"),
+  exportSalesButton: $("#exportSalesButton"),
+  saleDialog: $("#saleDialog"),
+  saleForm: $("#saleForm"),
+  saleCustomerSelect: $("#saleCustomerSelect"),
+  saleOriginSelect: $("#saleOriginSelect"),
+  saleProductSearch: $("#saleProductSearch"),
+  saleProductResults: $("#saleProductResults"),
+  saleLineItems: $("#saleLineItems"),
+  saleLinesEmpty: $("#saleLinesEmpty"),
+  salePaymentMethod: $("#salePaymentMethod"),
+  salePaymentStatus: $("#salePaymentStatus"),
+  saleTotalPreview: $("#saleTotalPreview"),
+  saleNotes: $("#saleNotes"),
   productForm: $("#productForm"),
   productFormTitle: $("#productFormTitle"),
   cancelProductForm: $("#cancelProductForm"),
@@ -4945,6 +5125,7 @@ const elements = {
 init();
 
 function init() {
+  migrateCommerceState();
   elements.todayLabel.textContent = `Operacion local - ${formatShortDate(new Date().toISOString())}`;
   createProductRefreshButton();
   hydrateSettings();
@@ -4953,17 +5134,18 @@ function init() {
   loadProducts();
   loadCategories();
   loadClassifications();
+  ensureCommerceDemoData();
   loadRealConversations();
   window.setInterval(loadRealConversations, 5000);
 }
 
 function bindEvents() {
-  $$(".nav-item, .nav-subitem, [data-view]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const viewId = button.dataset.view;
-      if (!viewId) return;
-      showView(viewId, { productsSection: button.dataset.productsSection || null });
-    });
+  document.addEventListener("click", (event) => {
+    const navButton = event.target.closest(".nav-item, .nav-subitem, [data-view]");
+    if (!navButton || navButton.closest("dialog")) return;
+    const viewId = navButton.dataset.view;
+    if (!viewId) return;
+    showView(viewId, { productsSection: navButton.dataset.productsSection || null });
   });
 
   elements.resetDemoButton.addEventListener("click", resetDemoData);
@@ -5006,6 +5188,63 @@ function bindEvents() {
   elements.customerSearch.addEventListener("input", (event) => {
     state.customerQuery = event.target.value.trim().toLowerCase();
     renderCustomers();
+  });
+
+  elements.openOrderDialogButton?.addEventListener("click", openOrderDialog);
+  elements.orderForm?.addEventListener("submit", saveManualOrder);
+  elements.orderSearch?.addEventListener("input", (event) => {
+    state.orderQuery = event.target.value.trim().toLowerCase();
+    renderOrders();
+  });
+  elements.orderProductSearch?.addEventListener("input", (event) => {
+    renderCommerceProductResults(elements.orderProductResults, event.target.value, "order");
+  });
+  ["orderDiscount", "orderShipping"].forEach((id) => {
+    const input = elements[id];
+    input?.addEventListener("input", updateOrderFormPreview);
+    input?.addEventListener("change", updateOrderFormPreview);
+  });
+
+  elements.openSaleDialogButton?.addEventListener("click", openSaleDialog);
+  elements.exportSalesButton?.addEventListener("click", exportSalesList);
+  elements.saleForm?.addEventListener("submit", saveManualSale);
+  elements.saleSearch?.addEventListener("input", (event) => {
+    state.saleQuery = event.target.value.trim().toLowerCase();
+    renderSales();
+  });
+  elements.saleProductSearch?.addEventListener("input", (event) => {
+    renderCommerceProductResults(elements.saleProductResults, event.target.value, "sale");
+  });
+
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const action = target.dataset.action;
+    const index = Number(target.dataset.index);
+    if (action === "update-order-line-qty") {
+      updateDraftItemQuantity(orderFormDraft, index, target.value);
+      renderOrderLineItems();
+    }
+    if (action === "update-order-line-price") {
+      const item = orderFormDraft.items[index];
+      if (item) {
+        item.unitPrice = toNumber(target.value);
+        item.subtotal = item.quantity * item.unitPrice;
+        renderOrderLineItems();
+      }
+    }
+    if (action === "update-sale-line-qty") {
+      updateDraftItemQuantity(saleFormDraft, index, target.value);
+      renderSaleLineItems();
+    }
+    if (action === "update-sale-line-price") {
+      const item = saleFormDraft.items[index];
+      if (item) {
+        item.unitPrice = toNumber(target.value);
+        item.subtotal = item.quantity * item.unitPrice;
+        renderSaleLineItems();
+      }
+    }
   });
 
   elements.productForm.addEventListener("submit", saveProduct);
@@ -5280,6 +5519,74 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "delete-classification") deleteClassification(id);
   if (action.dataset.action === "toggle-classification-menu") toggleProductActionMenu(action);
   if (action.dataset.action === "order-next") moveOrderNext(id);
+  if (action.dataset.action === "order-mark-awaiting-payment") markOrderAwaitingPayment(id);
+  if (action.dataset.action === "order-mark-paid") markOrderPaid(id);
+  if (action.dataset.action === "order-mark-awaiting-shipment") markOrderAwaitingShipment(id);
+  if (action.dataset.action === "order-mark-ready-pickup") markOrderReadyPickup(id);
+  if (action.dataset.action === "order-mark-shipped") markOrderShipped(id);
+  if (action.dataset.action === "order-mark-completed") markOrderCompleted(id);
+  if (action.dataset.action === "order-cancel") cancelOrder(id);
+  if (action.dataset.action === "filter-orders") {
+    state.orderStatusFilter = action.dataset.status || "";
+    renderOrders();
+  }
+  if (action.dataset.action === "filter-sales") {
+    state.saleStatusFilter = action.dataset.status || "";
+    renderSales();
+  }
+  if (action.dataset.action === "filter-sales-range") {
+    state.saleRangeFilter = action.dataset.range || "all";
+    renderSales();
+  }
+  if (action.dataset.action === "apply-sale-date-range") {
+    state.saleDateFrom = elements.saleDateFrom?.value || "";
+    state.saleDateTo = elements.saleDateTo?.value || "";
+    if (!state.saleDateFrom || !state.saleDateTo) {
+      showToast("Selecciona fecha inicio y fin.");
+      return;
+    }
+    if (new Date(state.saleDateFrom) > new Date(state.saleDateTo)) {
+      showToast("La fecha inicio no puede ser posterior a la fecha fin.");
+      return;
+    }
+    renderSales();
+  }
+  if (action.dataset.action === "close-order-dialog") closeOrderDialog();
+  if (action.dataset.action === "close-sale-dialog") closeSaleDialog();
+  if (action.dataset.action === "add-order-product") addProductToOrderDraft(id);
+  if (action.dataset.action === "add-sale-product") addProductToSaleDraft(id);
+  if (action.dataset.action === "remove-order-line") {
+    orderFormDraft.items.splice(Number(action.dataset.index), 1);
+    renderOrderLineItems();
+  }
+  if (action.dataset.action === "remove-sale-line") {
+    saleFormDraft.items.splice(Number(action.dataset.index), 1);
+    renderSaleLineItems();
+  }
+  if (action.dataset.action === "update-order-line-qty") {
+    updateDraftItemQuantity(orderFormDraft, Number(action.dataset.index), action.target.value);
+    renderOrderLineItems();
+  }
+  if (action.dataset.action === "update-order-line-price") {
+    const item = orderFormDraft.items[Number(action.dataset.index)];
+    if (item) {
+      item.unitPrice = toNumber(action.target.value);
+      item.subtotal = item.quantity * item.unitPrice;
+      renderOrderLineItems();
+    }
+  }
+  if (action.dataset.action === "update-sale-line-qty") {
+    updateDraftItemQuantity(saleFormDraft, Number(action.dataset.index), action.target.value);
+    renderSaleLineItems();
+  }
+  if (action.dataset.action === "update-sale-line-price") {
+    const item = saleFormDraft.items[Number(action.dataset.index)];
+    if (item) {
+      item.unitPrice = toNumber(action.target.value);
+      item.subtotal = item.quantity * item.unitPrice;
+      renderSaleLineItems();
+    }
+  }
   if (action.dataset.action === "mark-paid") markPaymentPaid(id);
   if (action.dataset.action === "mark-shipped") markShipmentSent(id);
   if (action.dataset.action === "take-conversation") updateLatestConversation("Asesor humano");
@@ -6362,9 +6669,13 @@ function normalizeConversationStatus(status) {
 
 function renderDashboard() {
   const today = new Date().toDateString();
-  const openOrders = state.orders.filter((order) => order.status !== "Completado");
+  const openOrders = state.orders.filter((order) => isOrderOpen(order));
   const pendingPayments = state.payments.filter((payment) => payment.status !== "Pagado");
-  const todaySales = state.sales.filter((sale) => new Date(sale.createdAt).toDateString() === today);
+  const todaySales = state.sales.filter((sale) => {
+    if (new Date(sale.createdAt).toDateString() !== today) return false;
+    const status = normalizeSaleStatus(sale.status, sale.paymentStatus);
+    return status === "pagada" || status === "completada";
+  });
   const salesTotal = todaySales.reduce((total, sale) => total + sale.total, 0);
   const activeShipments = state.shipments.filter((shipment) => shipment.status !== "Entregado");
   const nationalShipments = activeShipments.filter((shipment) => shipment.type === "Nacional");
@@ -6388,7 +6699,12 @@ function renderDashboard() {
   renderDashboardExpirationAlerts();
 
   elements.dashboardOrders.innerHTML = state.orders.length
-    ? state.orders.slice(0, 5).map((order) => listRow(order.id, `${order.customerName} - ${order.status}`, currency.format(order.total))).join("")
+    ? state.orders
+        .slice(0, 5)
+        .map((order) =>
+          listRow(order.id, `${order.customerName} - ${getOrderStatusLabel(order.status)}`, currency.format(order.total)),
+        )
+        .join("")
     : emptyState("Aun no hay pedidos.");
 
   elements.dashboardAlerts.innerHTML = lowStock.length
@@ -6874,53 +7190,56 @@ function createOnlineOrder(event) {
   }
 
   const totals = storeTotals();
-  const order = {
-    id: `PD-${Date.now().toString().slice(-6)}`,
+  const paymentStatus = elements.storePaymentMethod.value === "Pendiente" ? "pendiente" : "pagado";
+  const deliveryType = elements.storeDeliveryType.value === "Nacional" ? "paqueteria" : "envio_local";
+  const initialStatus = resolveInitialOrderStatus({
+    origin: "tienda_en_linea",
+    paymentStatus,
+    deliveryType,
+  });
+  const order = normalizeOrder({
+    id: getNextOrderFolio(),
     customerId: customer.id,
     customerName: customer.name,
-    status: elements.storePaymentMethod.value === "Pendiente" ? "Por cobrar" : "Por enviar",
-    deliveryType: elements.storeDeliveryType.value,
+    origin: "tienda_en_linea",
+    status: initialStatus,
+    paymentStatus: resolveInitialOrderPaymentStatus(paymentStatus, initialStatus),
+    paymentMethod: elements.storePaymentMethod.value === "Pendiente" ? "pendiente" : normalizePaymentMethod(elements.storePaymentMethod.value),
+    deliveryType,
     address: elements.storeAddress.value.trim(),
-    paymentMethod: elements.storePaymentMethod.value,
     subtotal: totals.subtotal,
+    discount: 0,
     shipping: totals.shipping,
     total: totals.total,
     items: state.storeCart.map((item) => {
       const product = getProduct(item.productId);
-      return { productId: product.id, name: product.name, quantity: item.quantity, price: product.price };
+      const unitPrice = toNumber(product.discountPrice ?? product.price ?? product.regularPrice);
+      return normalizeOrderItem({
+        productId: product.id,
+        name: product.name,
+        quantity: item.quantity,
+        unitPrice,
+      });
     }),
     createdAt: new Date().toISOString(),
-  };
-
-  order.items.forEach((item) => {
-    const product = getProduct(item.productId);
-    product.stock -= item.quantity;
   });
 
-  const payment = {
-    id: createId("pay"),
-    orderId: order.id,
-    customerName: order.customerName,
-    method: order.paymentMethod,
-    total: order.total,
-    status: order.paymentMethod === "Pendiente" ? "Pendiente" : "Pagado",
-    createdAt: order.createdAt,
-  };
-
-  const shipment = {
-    id: createId("ship"),
-    orderId: order.id,
-    customerName: order.customerName,
-    type: order.deliveryType,
-    address: order.address,
-    status: payment.status === "Pagado" ? "Preparando" : "Esperando pago",
-    createdAt: order.createdAt,
-  };
+  if (paymentStatus === "pagado") {
+    for (const item of order.items) {
+      const product = getProduct(item.productId);
+      if (!product || product.stock < item.quantity) return showToast(`Stock insuficiente: ${product?.name || item.productId}`);
+    }
+  }
 
   state.orders.unshift(order);
-  state.payments.unshift(payment);
-  state.shipments.unshift(shipment);
-  if (payment.status === "Pagado") createSaleFromOrder(order, payment);
+  syncOrderPaymentRecord(order);
+  syncOrderShipmentRecord(order);
+  if (paymentStatus === "pagado") {
+    deductOrderInventory(order);
+    createSaleFromOrder(order);
+  } else {
+    createSaleFromOrder(order, { pending: true });
+  }
   state.storeCart = [];
   persistAll();
   elements.storeCheckoutForm.reset();
@@ -7549,18 +7868,1436 @@ function clearCustomerForm() {
   setCustomerFormMode("create");
 }
 
+function normalizeOrderStatus(status) {
+  const value = String(status || "").trim();
+  if (ORDER_STATUS_META[value]) return value;
+  return LEGACY_ORDER_STATUS_MAP[value] || "nuevo";
+}
+
+function normalizePaymentStatus(status, paymentMethod = "") {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "pagado" || value === "paid") return "pagado";
+  if (value === "vencido" || value === "overdue") return "vencido";
+  if (paymentMethod === "Pendiente" || value === "pendiente") return "pendiente";
+  return "pendiente";
+}
+
+function normalizeOrderOrigin(origin) {
+  const value = String(origin || "manual").trim().toLowerCase();
+  if (ORDER_ORIGIN_LABELS[value]) return value;
+  if (value.includes("tienda")) return "tienda_en_linea";
+  if (value.includes("whats")) return "whatsapp";
+  if (value.includes("tel")) return "telefono";
+  if (value.includes("mostrador")) return "mostrador";
+  return "manual";
+}
+
+function normalizeDeliveryType(value) {
+  const raw = String(value || "pendiente").trim().toLowerCase();
+  if (DELIVERY_TYPE_LABELS[raw]) return raw;
+  if (raw === "local") return "envio_local";
+  if (raw === "nacional") return "paqueteria";
+  if (raw.includes("directa") || raw.includes("sin entrega")) return "venta_directa";
+  return "pendiente";
+}
+
+function getOrderFlowProfile(origin, deliveryType) {
+  const normalizedOrigin = normalizeOrderOrigin(origin);
+  const normalizedDelivery = normalizeDeliveryType(deliveryType);
+
+  if (normalizedOrigin === "mostrador") {
+    return normalizedDelivery === "recoger_tienda" ? "mostrador_pickup" : "mostrador_direct";
+  }
+  if (normalizedDelivery === "recoger_tienda") return "pickup";
+  if (normalizedDelivery === "envio_local" || normalizedDelivery === "paqueteria") return "shipping";
+  return "shipping";
+}
+
+function getOrderFlowByOriginAndDelivery(origin, deliveryType) {
+  return getOrderFlowProfile(origin, deliveryType);
+}
+
+function getAllowedOrderStatuses(order) {
+  const profile = getOrderFlowProfile(order.origin, order.deliveryType);
+  return FLOW_ALLOWED_STATUSES[profile] || FLOW_ALLOWED_STATUSES.shipping;
+}
+
+function isOrderStatusAllowed(order, status) {
+  return getAllowedOrderStatuses(order).includes(normalizeOrderStatus(status));
+}
+
+function getAllowedOrderActions(order) {
+  const status = normalizeOrderStatus(order.status);
+  const profile = getOrderFlowProfile(order.origin, order.deliveryType);
+
+  if (status === "cancelado" || status === "completado") return [];
+
+  const actions = [];
+  const add = (action, label, className = "is-neutral") => {
+    actions.push({ action, label, className });
+  };
+
+  if (profile === "mostrador_direct") {
+    if (status === "nuevo" || status === "por_cobrar") {
+      add("order-mark-paid", "Cobrar", "is-success");
+      add("order-cancel", "Cancelar", "is-danger");
+    } else if (status === "cobrado") {
+      add("order-mark-completed", "Completar", "is-success");
+      add("order-cancel", "Cancelar", "is-danger");
+    }
+    return actions;
+  }
+
+  if (profile === "shipping") {
+    if (status === "nuevo") {
+      add("order-mark-awaiting-payment", "Marcar por cobrar", "is-neutral");
+      add("order-cancel", "Cancelar", "is-danger");
+    } else if (status === "por_cobrar") {
+      add("order-mark-paid", "Cobrar", "is-success");
+      add("order-cancel", "Cancelar", "is-danger");
+    } else if (status === "cobrado") {
+      add("order-mark-awaiting-shipment", "Por enviar", "is-neutral");
+      add("order-cancel", "Cancelar", "is-danger");
+    } else if (status === "por_enviar") {
+      add("order-mark-shipped", "Enviado", "is-neutral");
+      add("order-cancel", "Cancelar", "is-danger");
+    } else if (status === "enviado") {
+      add("order-mark-completed", "Completar", "is-success");
+    }
+    return actions;
+  }
+
+  // pickup + mostrador_pickup
+  if (status === "nuevo") {
+    add("order-mark-awaiting-payment", "Marcar por cobrar", "is-neutral");
+    add("order-cancel", "Cancelar", "is-danger");
+  } else if (status === "por_cobrar") {
+    add("order-mark-paid", "Cobrar", "is-success");
+    add("order-cancel", "Cancelar", "is-danger");
+  } else if (status === "cobrado") {
+    add("order-mark-ready-pickup", "Por retirar", "is-neutral");
+    add("order-cancel", "Cancelar", "is-danger");
+  } else if (status === "por_retirar") {
+    add("order-mark-completed", "Completar", "is-success");
+  }
+  return actions;
+}
+
+function getNextOrderActions(order) {
+  return getAllowedOrderActions(order);
+}
+
+function transitionOrderStatus(order, nextStatus, options = {}) {
+  const target = normalizeOrderStatus(nextStatus);
+  if (!isOrderStatusAllowed(order, target)) {
+    showToast("Este estado no aplica para este tipo de pedido.");
+    return false;
+  }
+  order.status = target;
+  if (options.paymentStatus) order.paymentStatus = normalizePaymentStatus(options.paymentStatus);
+  return true;
+}
+
+function normalizePaymentMethod(method) {
+  const value = String(method || "efectivo").trim().toLowerCase();
+  const map = {
+    efectivo: "efectivo",
+    transferencia: "transferencia",
+    tarjeta: "tarjeta",
+    "mercado pago": "mercado_pago",
+    mercado_pago: "mercado_pago",
+    clip: "clip",
+    otro: "otro",
+    pendiente: "pendiente",
+  };
+  return map[value] || "otro";
+}
+
+function normalizeOrderItem(item = {}) {
+  const quantity = Math.max(1, toInteger(item.quantity));
+  const unitPrice = toNumber(item.unitPrice ?? item.price);
+  const normalized = {
+    productId: item.productId || "",
+    name: item.name || "Producto",
+    quantity,
+    unitPrice,
+    price: unitPrice,
+    subtotal: toNumber(item.subtotal ?? unitPrice * quantity),
+  };
+  if (item.cost != null && item.cost !== "") normalized.cost = toNumber(item.cost);
+  return normalized;
+}
+
+function normalizeOrder(order = {}) {
+  const paymentStatus = normalizePaymentStatus(order.paymentStatus, order.paymentMethod);
+  let status = normalizeOrderStatus(order.status);
+  const deliveryType = normalizeDeliveryType(order.deliveryType);
+  const origin = normalizeOrderOrigin(order.origin);
+  const items = Array.isArray(order.items) ? order.items.map(normalizeOrderItem) : [];
+  const subtotal = toNumber(order.subtotal ?? items.reduce((sum, item) => sum + item.subtotal, 0));
+  const discount = toNumber(order.discount);
+  const shipping = toNumber(order.shipping ?? order.shippingCost);
+  const total = toNumber(order.total ?? subtotal - discount + shipping);
+
+  const normalized = {
+    id: order.id || getNextOrderFolio(),
+    customerId: order.customerId || "",
+    customerName: order.customerName || "Cliente no informado",
+    origin,
+    status: status === "cancelado" ? "cancelado" : status,
+    paymentStatus,
+    paymentMethod: normalizePaymentMethod(order.paymentMethod),
+    deliveryType,
+    address: order.address || "",
+    subtotal,
+    discount,
+    shipping,
+    total,
+    items,
+    notes: order.notes || "",
+    inventoryDeducted: Boolean(order.inventoryDeducted),
+    createdAt: order.createdAt || new Date().toISOString(),
+    updatedAt: order.updatedAt || order.createdAt || new Date().toISOString(),
+  };
+
+  if (!isOrderStatusAllowed(normalized, normalized.status)) {
+    if (paymentStatus === "pagado" && normalized.status === "por_enviar" && !isOrderStatusAllowed(normalized, "por_enviar")) {
+      normalized.status = isOrderStatusAllowed(normalized, "cobrado") ? "cobrado" : "completado";
+    } else if (paymentStatus === "pagado" && isOrderStatusAllowed(normalized, "cobrado")) {
+      normalized.status = "cobrado";
+    } else if (!isOrderStatusAllowed(normalized, normalized.status)) {
+      normalized.status = "por_cobrar";
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeSaleStatus(status, paymentStatus = "") {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "enviada") return "pagada";
+  if (SALE_STATUS_META[value]) return value;
+  if (value === "pagado" || paymentStatus === "pagado") return "pagada";
+  if (value === "completado") return "completada";
+  if (value === "cancelado") return "cancelada";
+  return "por_cobrar";
+}
+
+function normalizeSale(sale = {}) {
+  const items = Array.isArray(sale.items) ? sale.items.map(normalizeOrderItem) : [];
+  const paymentStatus = normalizePaymentStatus(sale.paymentStatus, sale.paymentMethod);
+  return {
+    id: sale.id || getNextSaleId(),
+    orderId: sale.orderId || "",
+    customerId: sale.customerId || "",
+    customerName: sale.customerName || "Cliente no informado",
+    origin: normalizeOrderOrigin(sale.origin),
+    status: normalizeSaleStatus(sale.status, paymentStatus),
+    paymentStatus,
+    paymentMethod: normalizePaymentMethod(sale.paymentMethod),
+    deliveryType: normalizeDeliveryType(sale.deliveryType),
+    total: toNumber(sale.total ?? items.reduce((sum, item) => sum + item.subtotal, 0)),
+    items,
+    productSummary: sale.productSummary || summarizeSaleProducts(items),
+    notes: sale.notes || "",
+    createdAt: sale.createdAt || new Date().toISOString(),
+  };
+}
+
+function getNextOrderFolio() {
+  const current = toInteger(localStorage.getItem(storageKeys.orderSeq) || 1000);
+  const next = current + 1;
+  localStorage.setItem(storageKeys.orderSeq, String(next));
+  return `#${next}`;
+}
+
+function getNextSaleId() {
+  const current = toInteger(localStorage.getItem(storageKeys.saleSeq) || 1000);
+  const next = current + 1;
+  localStorage.setItem(storageKeys.saleSeq, String(next));
+  return `VT-${next}`;
+}
+
+function summarizeSaleProducts(items = []) {
+  const count = items.reduce((sum, item) => sum + toInteger(item.quantity), 0);
+  if (!count) return "Sin productos";
+  return count === 1 ? "1 producto" : `${count} productos`;
+}
+
+function getOrderStatusLabel(status) {
+  return ORDER_STATUS_META[normalizeOrderStatus(status)]?.label || status;
+}
+
+function getSaleStatusLabel(status) {
+  return SALE_STATUS_META[normalizeSaleStatus(status)]?.label || status;
+}
+
+function getOrderOriginLabel(origin) {
+  return ORDER_ORIGIN_LABELS[normalizeOrderOrigin(origin)] || origin;
+}
+
+function getPaymentStatusLabel(status) {
+  return PAYMENT_STATUS_LABELS[normalizePaymentStatus(status)] || status;
+}
+
+function getPaymentMethodLabel(method) {
+  return PAYMENT_METHOD_LABELS[normalizePaymentMethod(method)] || method;
+}
+
+function getDeliveryTypeLabel(type) {
+  return DELIVERY_TYPE_LABELS[normalizeDeliveryType(type)] || type;
+}
+
+function isOrderOpen(order) {
+  const status = normalizeOrderStatus(order.status);
+  return status !== "completado" && status !== "cancelado";
+}
+
+function resolveInitialOrderStatus({ origin, paymentStatus, deliveryType }) {
+  const profile = getOrderFlowProfile(origin, deliveryType);
+  const delivery = normalizeDeliveryType(deliveryType);
+
+  if (paymentStatus !== "pagado") {
+    if (profile === "mostrador_direct") return "por_cobrar";
+    return profile === "shipping" || profile === "pickup" ? "nuevo" : "por_cobrar";
+  }
+
+  if (profile === "mostrador_direct") return "completado";
+  return "cobrado";
+}
+
+function resolveInitialOrderPaymentStatus(paymentStatus, orderStatus) {
+  if (normalizeOrderStatus(orderStatus) === "completado") return "pagado";
+  return normalizePaymentStatus(paymentStatus);
+}
+
+function migrateCommerceState() {
+  state.orders = (Array.isArray(state.orders) ? state.orders : []).map(normalizeOrder);
+  state.sales = (Array.isArray(state.sales) ? state.sales : []).map(normalizeSale);
+}
+
+function ensureCommerceDemoData() {
+  if (state.orders.length) {
+    persist(storageKeys.orders, state.orders);
+    persist(storageKeys.sales, state.sales);
+    return;
+  }
+
+  localStorage.setItem(storageKeys.orderSeq, "1005");
+  localStorage.setItem(storageKeys.saleSeq, "1005");
+
+  const demoItemsA = [
+    { productId: "demo-1", name: "Paracetamol 500 mg", quantity: 2, unitPrice: 89, subtotal: 178 },
+    { productId: "demo-2", name: "Suero oral 1 L", quantity: 1, unitPrice: 45, subtotal: 45 },
+  ];
+  const demoItemsB = [
+    { productId: "demo-3", name: "Alcohol gel 500 ml", quantity: 3, unitPrice: 68, subtotal: 204 },
+  ];
+  const demoItemsC = [
+    { productId: "demo-4", name: "Vitamina C 1 g", quantity: 1, unitPrice: 206, subtotal: 206 },
+  ];
+  const demoItemsD = [
+    { productId: "demo-5", name: "Ibuprofeno 400 mg", quantity: 2, unitPrice: 55, subtotal: 110 },
+  ];
+
+  state.orders = [
+    normalizeOrder({
+      id: "#1001",
+      customerName: "Venta mostrador",
+      origin: "mostrador",
+      status: "completado",
+      paymentStatus: "pagado",
+      paymentMethod: "efectivo",
+      deliveryType: "venta_directa",
+      subtotal: 204,
+      discount: 0,
+      shipping: 0,
+      total: 204,
+      items: demoItemsB,
+      inventoryDeducted: true,
+      createdAt: new Date(Date.now() - 172800000).toISOString(),
+    }),
+    normalizeOrder({
+      id: "#1002",
+      customerName: "Ángel Lucero",
+      origin: "whatsapp",
+      status: "por_cobrar",
+      paymentStatus: "pendiente",
+      paymentMethod: "transferencia",
+      deliveryType: "envio_local",
+      subtotal: 223,
+      discount: 0,
+      shipping: 49,
+      total: 272,
+      items: demoItemsA,
+      notes: "Envío local por la tarde.",
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+    }),
+    normalizeOrder({
+      id: "#1003",
+      customerName: "María Gómez",
+      origin: "whatsapp",
+      status: "por_enviar",
+      paymentStatus: "pagado",
+      paymentMethod: "transferencia",
+      deliveryType: "envio_local",
+      subtotal: 110,
+      discount: 0,
+      shipping: 39,
+      total: 149,
+      items: demoItemsD,
+      inventoryDeducted: true,
+      createdAt: new Date(Date.now() - 7200000).toISOString(),
+    }),
+    normalizeOrder({
+      id: "#1004",
+      customerName: "Carlos Ruiz",
+      origin: "whatsapp",
+      status: "por_retirar",
+      paymentStatus: "pagado",
+      paymentMethod: "efectivo",
+      deliveryType: "recoger_tienda",
+      subtotal: 178,
+      discount: 0,
+      shipping: 0,
+      total: 178,
+      items: [{ productId: "demo-1", name: "Paracetamol 500 mg", quantity: 2, unitPrice: 89, subtotal: 178 }],
+      inventoryDeducted: true,
+      createdAt: new Date(Date.now() - 5400000).toISOString(),
+    }),
+    normalizeOrder({
+      id: "#1005",
+      customerName: "Laura Martinez",
+      customerId: "cust-laura",
+      origin: "tienda_en_linea",
+      status: "enviado",
+      paymentStatus: "pagado",
+      paymentMethod: "mercado_pago",
+      deliveryType: "paqueteria",
+      subtotal: 206,
+      discount: 0,
+      shipping: 99,
+      total: 305,
+      items: demoItemsC,
+      inventoryDeducted: true,
+      createdAt: new Date(Date.now() - 3600000).toISOString(),
+    }),
+  ];
+
+  state.sales = [
+    normalizeSale({
+      id: "VT-1001",
+      customerName: "Venta mostrador",
+      origin: "mostrador",
+      status: "completada",
+      paymentStatus: "pagado",
+      paymentMethod: "efectivo",
+      deliveryType: "venta_directa",
+      total: 204,
+      items: [
+        { productId: "demo-3", name: "Ibuprofeno 400 mg", quantity: 3, unitPrice: 68, subtotal: 204, cost: 42 },
+      ],
+      createdAt: new Date(new Date().setHours(11, 15, 0, 0)).toISOString(),
+    }),
+    normalizeSale({
+      id: "VT-1002",
+      orderId: "#1002",
+      customerName: "Ángel Lucero",
+      origin: "whatsapp",
+      status: "por_cobrar",
+      paymentStatus: "pendiente",
+      paymentMethod: "transferencia",
+      deliveryType: "envio_local",
+      total: 272,
+      items: demoItemsA,
+      createdAt: new Date(new Date().setHours(16, 40, 0, 0)).toISOString(),
+    }),
+    normalizeSale({
+      id: "VT-1003",
+      orderId: "#1003",
+      customerName: "María Gómez",
+      origin: "whatsapp",
+      status: "completada",
+      paymentStatus: "pagado",
+      paymentMethod: "transferencia",
+      deliveryType: "envio_local",
+      total: 149,
+      items: demoItemsD,
+      createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+    }),
+    normalizeSale({
+      id: "VT-1004",
+      customerName: "Pedido cancelado",
+      origin: "telefono",
+      status: "cancelada",
+      paymentStatus: "pendiente",
+      paymentMethod: "efectivo",
+      deliveryType: "recoger_tienda",
+      total: 178,
+      items: [{ productId: "demo-1", name: "Paracetamol 500 mg", quantity: 2, unitPrice: 89, subtotal: 178 }],
+      createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    }),
+    normalizeSale({
+      id: "VT-1005",
+      orderId: "#1005",
+      customerName: "Laura Martinez",
+      origin: "tienda_en_linea",
+      status: "pagada",
+      paymentStatus: "pagado",
+      paymentMethod: "mercado_pago",
+      deliveryType: "paqueteria",
+      total: 305,
+      items: demoItemsC,
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+    }),
+  ];
+
+  persist(storageKeys.orders, state.orders);
+  persist(storageKeys.sales, state.sales);
+}
+
+function countOrdersByStatus(status) {
+  if (!status) return state.orders.length;
+  return state.orders.filter((order) => normalizeOrderStatus(order.status) === status).length;
+}
+
+function startOfDay(date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function endOfDay(date) {
+  const value = new Date(date);
+  value.setHours(23, 59, 59, 999);
+  return value;
+}
+
+function getWeekStart(date = new Date()) {
+  const value = startOfDay(date);
+  const weekday = value.getDay();
+  const diff = weekday === 0 ? 6 : weekday - 1;
+  value.setDate(value.getDate() - diff);
+  return value;
+}
+
+function getMonthStart(date = new Date()) {
+  const value = startOfDay(date);
+  value.setDate(1);
+  return value;
+}
+
+function getSaleDateRangeBounds(rangeFilter, dateFrom = "", dateTo = "") {
+  const now = new Date();
+  if (rangeFilter === "today") return { start: startOfDay(now), end: endOfDay(now) };
+  if (rangeFilter === "week") return { start: getWeekStart(now), end: endOfDay(now) };
+  if (rangeFilter === "month") return { start: getMonthStart(now), end: endOfDay(now) };
+  if (rangeFilter === "custom" && dateFrom && dateTo) {
+    return { start: startOfDay(dateFrom), end: endOfDay(dateTo) };
+  }
+  return null;
+}
+
+function isSaleInDateRange(sale, rangeFilter = "all", dateFrom = "", dateTo = "") {
+  if (!rangeFilter || rangeFilter === "all") return true;
+  const bounds = getSaleDateRangeBounds(rangeFilter, dateFrom, dateTo);
+  if (!bounds) return false;
+  const saleDate = new Date(sale.createdAt);
+  if (Number.isNaN(saleDate.getTime())) return false;
+  return saleDate >= bounds.start && saleDate <= bounds.end;
+}
+
+function getProductPurchaseCost(product) {
+  if (!product || typeof product !== "object") return null;
+  const candidates = [product.cost, product.costo_compra, product.costo, product.precio_compra];
+  for (const value of candidates) {
+    if (value == null || value === "") continue;
+    const parsed = toNumber(value);
+    if (parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function calculateSaleCost(sale, products = state.products) {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  let totalCost = 0;
+  let hasAnyCost = false;
+
+  items.forEach((item) => {
+    let unitCost = item.cost != null && item.cost !== "" ? toNumber(item.cost) : null;
+    if (unitCost == null && item.productId) {
+      const product = products.find((entry) => entry.id === item.productId);
+      unitCost = getProductPurchaseCost(product);
+    }
+    if (unitCost != null && unitCost > 0) {
+      hasAnyCost = true;
+      totalCost += unitCost * Math.max(1, toInteger(item.quantity));
+    }
+  });
+
+  return { totalCost, hasAnyCost };
+}
+
+function calculateSaleProfit(sale, products = state.products) {
+  const total = toNumber(sale.total);
+  const { totalCost, hasAnyCost } = calculateSaleCost(sale, products);
+  if (!hasAnyCost) return { profit: 0, hasCost: false, cost: 0, total };
+  return { profit: total - totalCost, hasCost: true, cost: totalCost, total };
+}
+
+function calculateSalesSummary(sales, products = state.products) {
+  let totalSold = 0;
+  let totalCollected = 0;
+  let totalPending = 0;
+  let totalProfit = 0;
+  let profitKnown = false;
+  let profitMissing = false;
+  let activeCount = 0;
+
+  sales.forEach((sale) => {
+    const status = normalizeSaleStatus(sale.status, sale.paymentStatus);
+    const total = toNumber(sale.total);
+    if (status === "cancelada") return;
+
+    activeCount += 1;
+    totalSold += total;
+    if (status === "por_cobrar") totalPending += total;
+    if (status === "pagada" || status === "completada") totalCollected += total;
+
+    const profitInfo = calculateSaleProfit(sale, products);
+    if (profitInfo.hasCost) {
+      profitKnown = true;
+      totalProfit += profitInfo.profit;
+    } else {
+      profitMissing = true;
+    }
+  });
+
+  return {
+    totalSold,
+    totalCollected,
+    totalPending,
+    totalProfit,
+    profitKnown,
+    profitMissing,
+    count: activeCount,
+    averageTicket: activeCount > 0 ? totalSold / activeCount : 0,
+  };
+}
+
+function getSalesForSummary() {
+  return state.sales.filter((sale) => {
+    const matchesStatus =
+      !state.saleStatusFilter || normalizeSaleStatus(sale.status, sale.paymentStatus) === state.saleStatusFilter;
+    const matchesRange = isSaleInDateRange(sale, state.saleRangeFilter, state.saleDateFrom, state.saleDateTo);
+    return matchesStatus && matchesRange;
+  });
+}
+
+function getFilteredSales() {
+  return getSalesForSummary().filter((sale) => getSaleSearchText(sale).includes(state.saleQuery));
+}
+
+function renderSaleRangeFilters() {
+  if (!elements.saleRangeFilters) return;
+  elements.saleRangeFilters.innerHTML = SALE_RANGE_FILTERS.map((range) => {
+    return `
+      <button
+        class="sales-filter-chip${state.saleRangeFilter === range ? " is-active" : ""}"
+        type="button"
+        data-action="filter-sales-range"
+        data-range="${range}"
+      >${SALE_RANGE_LABELS[range] || range}</button>
+    `;
+  }).join("");
+
+  if (elements.salesCustomRange) {
+    elements.salesCustomRange.hidden = state.saleRangeFilter !== "custom";
+  }
+  if (elements.saleDateFrom && state.saleDateFrom) elements.saleDateFrom.value = state.saleDateFrom;
+  if (elements.saleDateTo && state.saleDateTo) elements.saleDateTo.value = state.saleDateTo;
+}
+
+function renderSalesSummary(summary) {
+  if (!elements.salesSummaryCards) return;
+
+  const profitDisplay = summary.profitKnown ? currency.format(summary.totalProfit) : "$0";
+  const profitNote = !summary.profitKnown && summary.profitMissing ? "Pendiente de costo" : "";
+
+  elements.salesSummaryCards.innerHTML = `
+    <article class="sales-summary-card">
+      <span class="sales-summary-label">Total vendido</span>
+      <strong>${currency.format(summary.totalSold)}</strong>
+    </article>
+    <article class="sales-summary-card">
+      <span class="sales-summary-label">Total cobrado</span>
+      <strong>${currency.format(summary.totalCollected)}</strong>
+    </article>
+    <article class="sales-summary-card">
+      <span class="sales-summary-label">Total por cobrar</span>
+      <strong>${currency.format(summary.totalPending)}</strong>
+    </article>
+    <article class="sales-summary-card">
+      <span class="sales-summary-label">Ganancia estimada</span>
+      <strong>${profitDisplay}</strong>
+      ${profitNote ? `<small>${escapeHTML(profitNote)}</small>` : ""}
+    </article>
+    <article class="sales-summary-card">
+      <span class="sales-summary-label">Ventas</span>
+      <strong>${summary.count}</strong>
+    </article>
+    <article class="sales-summary-card">
+      <span class="sales-summary-label">Ticket promedio</span>
+      <strong>${currency.format(summary.averageTicket)}</strong>
+    </article>
+  `;
+
+  if (elements.salesProfitNotice) {
+    const showNotice = summary.profitMissing;
+    elements.salesProfitNotice.hidden = !showNotice;
+    elements.salesProfitNotice.textContent = showNotice
+      ? "Agrega costo de compra en productos para calcular ganancia real."
+      : "";
+  }
+}
+
+function renderSaleProfitCell(sale) {
+  const profitInfo = calculateSaleProfit(sale);
+  if (!profitInfo.hasCost) {
+    return `<span class="sales-profit-pending" title="Agrega costo de compra en productos">Pendiente</span>`;
+  }
+  const tone = profitInfo.profit >= 0 ? "is-positive" : "is-negative";
+  return `<span class="sales-profit-value ${tone}">${currency.format(profitInfo.profit)}</span>`;
+}
+
+function renderSaleActionsCell(sale) {
+  if (!sale.orderId) return `<span class="orders-muted">—</span>`;
+  return `<span class="sales-order-link" title="Pedido ${escapeHTML(sale.orderId)}">${escapeHTML(sale.orderId)}</span>`;
+}
+
+function renderOrderStatusFilters() {
+  if (!elements.orderStatusFilters) return;
+  elements.orderStatusFilters.innerHTML = ORDER_STATUS_FILTERS.map((status) => {
+    const count = countOrdersByStatus(status);
+    const label = ORDER_FILTER_LABELS[status] || status;
+    const countLabel = status === "" ? "" : ` (${count})`;
+    return `
+      <button
+        class="orders-filter-chip${state.orderStatusFilter === status ? " is-active" : ""}"
+        type="button"
+        data-action="filter-orders"
+        data-status="${status}"
+      >${label}${countLabel}</button>
+    `;
+  }).join("");
+}
+
+function renderSaleStatusFilters() {
+  if (!elements.saleStatusFilters) return;
+  const labels = {
+    "": "Todos",
+    por_cobrar: "Por cobrar",
+    pagada: "Pagadas",
+    completada: "Completadas",
+    cancelada: "Canceladas",
+  };
+  const rangeSales = state.sales.filter((sale) =>
+    isSaleInDateRange(sale, state.saleRangeFilter, state.saleDateFrom, state.saleDateTo),
+  );
+  elements.saleStatusFilters.innerHTML = SALE_STATUS_FILTERS.map((status) => {
+    const count =
+      status === ""
+        ? rangeSales.length
+        : rangeSales.filter((sale) => normalizeSaleStatus(sale.status, sale.paymentStatus) === status).length;
+    const countLabel = status === "" ? "" : ` (${count})`;
+    return `
+      <button
+        class="sales-filter-chip${state.saleStatusFilter === status ? " is-active" : ""}"
+        type="button"
+        data-action="filter-sales"
+        data-status="${status}"
+      >${labels[status] || status}${countLabel}</button>
+    `;
+  }).join("");
+}
+
+function getOrderSearchText(order) {
+  return [
+    order.id,
+    order.customerName,
+    getOrderOriginLabel(order.origin),
+    getOrderStatusLabel(order.status),
+    getPaymentStatusLabel(order.paymentStatus),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function getSaleSearchText(sale) {
+  return [
+    sale.id,
+    sale.orderId,
+    sale.customerName,
+    getOrderOriginLabel(sale.origin),
+    getSaleStatusLabel(sale.status),
+    sale.productSummary,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function renderOrderStatusBadge(order) {
+  const status = normalizeOrderStatus(order.status);
+  const meta = ORDER_STATUS_META[status] || ORDER_STATUS_META.nuevo;
+  return `<span class="orders-status-badge is-${meta.badge}">${escapeHTML(meta.label)}</span>`;
+}
+
+function renderSaleStatusBadge(sale) {
+  const status = normalizeSaleStatus(sale.status, sale.paymentStatus);
+  const meta = SALE_STATUS_META[status] || SALE_STATUS_META.por_cobrar;
+  return `<span class="sales-status-badge is-${meta.badge}">${escapeHTML(meta.label)}</span>`;
+}
+
+function renderOrderActionsMarkup(order) {
+  const actions = getAllowedOrderActions(order);
+  if (!actions.length) {
+    const status = normalizeOrderStatus(order.status);
+    if (status === "cancelado") return `<span class="orders-muted">Cancelado</span>`;
+    if (status === "completado") return `<span class="orders-muted">Completado</span>`;
+    return `<span class="orders-muted">Sin acciones</span>`;
+  }
+  const orderId = escapeHTML(order.id);
+  return `
+    <div class="orders-admin-actions">
+      ${actions
+        .map(
+          (item) =>
+            `<button class="orders-action-btn ${item.className}" type="button" data-action="${item.action}" data-id="${orderId}">${escapeHTML(item.label)}</button>`,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderOrders() {
-  elements.ordersBoard.innerHTML = orderColumns
-    .map((column) => {
-      const orders = state.orders.filter((order) => order.status === column);
-      return `
-        <section class="kanban-column">
-          <h3>${column}</h3>
-          ${orders.length ? orders.map(orderCard).join("") : emptyState("Sin pedidos")}
-        </section>
-      `;
-    })
+  renderOrderStatusFilters();
+
+  const orders = state.orders.filter((order) => {
+    const matchesStatus = !state.orderStatusFilter || normalizeOrderStatus(order.status) === state.orderStatusFilter;
+    return matchesStatus && getOrderSearchText(order).includes(state.orderQuery);
+  });
+
+  if (elements.orderListCount) {
+    elements.orderListCount.textContent = `${orders.length} pedido${orders.length === 1 ? "" : "s"}`;
+  }
+  if (elements.orderListFooter) {
+    elements.orderListFooter.textContent = orders.length
+      ? `Mostrando 1-${orders.length} pedidos de ${orders.length}`
+      : "Mostrando 0 pedidos";
+  }
+  if (!elements.ordersTable) return;
+
+  const emptyMessage =
+    state.orderQuery.trim() && !orders.length
+      ? "No hay pedidos que coincidan con la búsqueda."
+      : ORDER_FILTER_EMPTY_MESSAGES[state.orderStatusFilter] || ORDER_FILTER_EMPTY_MESSAGES[""];
+
+  elements.ordersTable.innerHTML = orders.length
+    ? orders
+        .map((order) => {
+          const paymentLabel = getPaymentStatusLabel(order.paymentStatus);
+          const paymentClass = order.paymentStatus === "pagado" ? "is-paid" : order.paymentStatus === "vencido" ? "is-overdue" : "is-pending";
+          return `
+            <tr class="orders-admin-row">
+              <td class="orders-col-id"><strong>${escapeHTML(order.id)}</strong></td>
+              <td>${escapeHTML(formatShortDate(order.createdAt) || "—")}</td>
+              <td>${escapeHTML(order.customerName || "—")}</td>
+              <td>${escapeHTML(getOrderOriginLabel(order.origin))}</td>
+              <td><strong>${currency.format(order.total || 0)}</strong></td>
+              <td><span class="orders-payment-badge ${paymentClass}">${escapeHTML(paymentLabel)}</span></td>
+              <td>${escapeHTML(getDeliveryTypeLabel(order.deliveryType))}</td>
+              <td>${renderOrderStatusBadge(order)}</td>
+              <td class="orders-col-actions">${renderOrderActionsMarkup(order)}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : tableEmpty(9, emptyMessage);
+}
+
+function renderSales() {
+  renderSaleRangeFilters();
+  renderSaleStatusFilters();
+
+  const summary = calculateSalesSummary(getSalesForSummary());
+  renderSalesSummary(summary);
+
+  const sales = getFilteredSales();
+
+  if (elements.saleListCount) {
+    elements.saleListCount.textContent = `${sales.length} venta${sales.length === 1 ? "" : "s"}`;
+  }
+  if (elements.saleListFooter) {
+    elements.saleListFooter.textContent = sales.length
+      ? `Mostrando 1-${sales.length} ventas de ${sales.length}`
+      : "Mostrando 0 ventas";
+  }
+  if (!elements.salesTable) return;
+
+  const emptyMessage =
+    state.saleQuery.trim() && !sales.length
+      ? "No hay ventas que coincidan con la búsqueda."
+      : state.saleRangeFilter === "custom" && (!state.saleDateFrom || !state.saleDateTo)
+        ? "Selecciona fecha inicio y fin, luego aplica el filtro."
+        : "No hay ventas en este rango o filtro.";
+
+  elements.salesTable.innerHTML = sales.length
+    ? sales
+        .map((sale) => {
+          const paymentLabel = getPaymentStatusLabel(sale.paymentStatus);
+          const paymentClass = sale.paymentStatus === "pagado" ? "is-paid" : "is-pending";
+          return `
+            <tr class="sales-admin-row">
+              <td class="sales-col-id"><strong>${escapeHTML(sale.id)}</strong>${sale.orderId ? `<span class="sales-order-ref">${escapeHTML(sale.orderId)}</span>` : ""}</td>
+              <td>${escapeHTML(formatShortDate(sale.createdAt) || "—")}</td>
+              <td>${escapeHTML(sale.customerName || "—")}</td>
+              <td><strong>${currency.format(sale.total || 0)}</strong></td>
+              <td>${renderSaleProfitCell(sale)}</td>
+              <td>${escapeHTML(sale.productSummary || summarizeSaleProducts(sale.items))}</td>
+              <td><span class="orders-payment-badge ${paymentClass}">${escapeHTML(paymentLabel)} · ${escapeHTML(getPaymentMethodLabel(sale.paymentMethod))}</span></td>
+              <td>${escapeHTML(getDeliveryTypeLabel(sale.deliveryType))}</td>
+              <td>${escapeHTML(getOrderOriginLabel(sale.origin))}</td>
+              <td>${renderSaleStatusBadge(sale)}</td>
+              <td class="sales-col-actions">${renderSaleActionsCell(sale)}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : tableEmpty(11, emptyMessage);
+}
+
+function populateCommerceCustomerSelect(select, selectedId = "") {
+  if (!select) return;
+  const walkInSelected = selectedId === "__walkin__" ? " selected" : "";
+  const options = getActiveCustomers()
+    .map(
+      (customer) =>
+        `<option value="${escapeHTML(customer.id)}"${customer.id === selectedId ? " selected" : ""}>${escapeHTML(customer.name)}</option>`,
+    )
     .join("");
+  select.innerHTML = `<option value="__walkin__"${walkInSelected}>Cliente no informado / venta rápida</option>${options}`;
+}
+
+function resetOrderFormDraft() {
+  orderFormDraft = { items: [] };
+  if (elements.orderProductSearch) elements.orderProductSearch.value = "";
+  if (elements.orderProductResults) elements.orderProductResults.hidden = true;
+  if (elements.orderDiscount) elements.orderDiscount.value = "0";
+  if (elements.orderShipping) elements.orderShipping.value = "0";
+  if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = "pendiente";
+  if (elements.orderPaymentMethod) elements.orderPaymentMethod.value = "efectivo";
+  if (elements.orderDeliveryType) elements.orderDeliveryType.value = "venta_directa";
+  if (elements.orderNotes) elements.orderNotes.value = "";
+  renderOrderLineItems();
+}
+
+function resetSaleFormDraft() {
+  saleFormDraft = { items: [] };
+  if (elements.saleProductSearch) elements.saleProductSearch.value = "";
+  if (elements.saleProductResults) elements.saleProductResults.hidden = true;
+  if (elements.salePaymentMethod) elements.salePaymentMethod.value = "efectivo";
+  if (elements.salePaymentStatus) elements.salePaymentStatus.value = "pagado";
+  if (elements.saleNotes) elements.saleNotes.value = "";
+  renderSaleLineItems();
+}
+
+function openOrderDialog() {
+  populateCommerceCustomerSelect(elements.orderCustomerSelect);
+  if (elements.orderOriginSelect) elements.orderOriginSelect.value = "whatsapp";
+  resetOrderFormDraft();
+  elements.orderDialog?.showModal();
+}
+
+function closeOrderDialog() {
+  elements.orderDialog?.close();
+  resetOrderFormDraft();
+}
+
+function openSaleDialog() {
+  populateCommerceCustomerSelect(elements.saleCustomerSelect);
+  if (elements.saleOriginSelect) elements.saleOriginSelect.value = "mostrador";
+  resetSaleFormDraft();
+  elements.saleDialog?.showModal();
+}
+
+function closeSaleDialog() {
+  elements.saleDialog?.close();
+  resetSaleFormDraft();
+}
+
+function getCommerceProductSearchResults(query) {
+  const value = String(query || "").trim().toLowerCase();
+  if (!value) return [];
+  return state.products
+    .filter((product) => product.status === "Activo")
+    .filter((product) => {
+      const haystack = `${product.name || ""} ${product.sku || ""} ${product.substance || ""}`.toLowerCase();
+      return haystack.includes(value);
+    })
+    .slice(0, 8);
+}
+
+function renderCommerceProductResults(container, query, target = "order") {
+  if (!container) return;
+  const results = getCommerceProductSearchResults(query);
+  if (!results.length) {
+    container.hidden = true;
+    container.innerHTML = "";
+    return;
+  }
+  container.hidden = false;
+  container.innerHTML = results
+    .map(
+      (product) => `
+        <button class="order-product-result" type="button" data-action="${target === "sale" ? "add-sale-product" : "add-order-product"}" data-id="${escapeHTML(product.id)}">
+          <strong>${escapeHTML(product.name)}</strong>
+          <span>${escapeHTML(product.sku || "Sin SKU")} · ${currency.format(product.discountPrice ?? product.price ?? product.regularPrice ?? 0)}</span>
+        </button>
+      `,
+    )
+    .join("");
+}
+
+function addProductToOrderDraft(productId) {
+  const product = getProduct(productId);
+  if (!product) return;
+  const unitPrice = toNumber(product.discountPrice ?? product.price ?? product.regularPrice);
+  const existing = orderFormDraft.items.find((item) => item.productId === product.id);
+  if (existing) {
+    existing.quantity += 1;
+    existing.subtotal = existing.quantity * existing.unitPrice;
+  } else {
+    orderFormDraft.items.push(
+      normalizeOrderItem({
+        productId: product.id,
+        name: product.name,
+        quantity: 1,
+        unitPrice,
+      }),
+    );
+  }
+  if (elements.orderProductSearch) elements.orderProductSearch.value = "";
+  if (elements.orderProductResults) elements.orderProductResults.hidden = true;
+  renderOrderLineItems();
+}
+
+function addProductToSaleDraft(productId) {
+  const product = getProduct(productId);
+  if (!product) return;
+  const unitPrice = toNumber(product.discountPrice ?? product.price ?? product.regularPrice);
+  const existing = saleFormDraft.items.find((item) => item.productId === product.id);
+  if (existing) {
+    existing.quantity += 1;
+    existing.subtotal = existing.quantity * existing.unitPrice;
+  } else {
+    saleFormDraft.items.push(
+      normalizeOrderItem({
+        productId: product.id,
+        name: product.name,
+        quantity: 1,
+        unitPrice,
+      }),
+    );
+  }
+  if (elements.saleProductSearch) elements.saleProductSearch.value = "";
+  if (elements.saleProductResults) elements.saleProductResults.hidden = true;
+  renderSaleLineItems();
+}
+
+function updateDraftItemQuantity(draft, index, quantity) {
+  const item = draft.items[index];
+  if (!item) return;
+  item.quantity = Math.max(1, toInteger(quantity));
+  item.subtotal = item.quantity * toNumber(item.unitPrice);
+}
+
+function renderOrderLineItems() {
+  if (!elements.orderLineItems) return;
+  const items = orderFormDraft.items;
+  if (elements.orderLinesEmpty) elements.orderLinesEmpty.hidden = items.length > 0;
+  elements.orderLineItems.innerHTML = items.length
+    ? items
+        .map(
+          (item, index) => `
+            <tr>
+              <td>${escapeHTML(item.name)}</td>
+              <td><input class="order-line-qty" type="number" min="1" step="1" value="${item.quantity}" data-action="update-order-line-qty" data-index="${index}" /></td>
+              <td><input class="order-line-price" type="number" min="0" step="0.01" value="${item.unitPrice}" data-action="update-order-line-price" data-index="${index}" /></td>
+              <td>${currency.format(item.subtotal)}</td>
+              <td><button class="ghost-button small" type="button" data-action="remove-order-line" data-index="${index}">Quitar</button></td>
+            </tr>
+          `,
+        )
+        .join("")
+    : "";
+  updateOrderFormPreview();
+}
+
+function renderSaleLineItems() {
+  if (!elements.saleLineItems) return;
+  const items = saleFormDraft.items;
+  if (elements.saleLinesEmpty) elements.saleLinesEmpty.hidden = items.length > 0;
+  elements.saleLineItems.innerHTML = items.length
+    ? items
+        .map(
+          (item, index) => `
+            <tr>
+              <td>${escapeHTML(item.name)}</td>
+              <td><input class="order-line-qty" type="number" min="1" step="1" value="${item.quantity}" data-action="update-sale-line-qty" data-index="${index}" /></td>
+              <td><input class="order-line-price" type="number" min="0" step="0.01" value="${item.unitPrice}" data-action="update-sale-line-price" data-index="${index}" /></td>
+              <td>${currency.format(item.subtotal)}</td>
+              <td><button class="ghost-button small" type="button" data-action="remove-sale-line" data-index="${index}">Quitar</button></td>
+            </tr>
+          `,
+        )
+        .join("")
+    : "";
+  updateSaleFormPreview();
+}
+
+function calculateDraftTotals(items, discount = 0, shipping = 0) {
+  const subtotal = items.reduce((sum, item) => sum + toNumber(item.subtotal), 0);
+  const discountValue = Math.max(0, toNumber(discount));
+  const shippingValue = Math.max(0, toNumber(shipping));
+  const total = Math.max(0, subtotal - discountValue + shippingValue);
+  return { subtotal, discount: discountValue, shipping: shippingValue, total };
+}
+
+function updateOrderFormPreview() {
+  const totals = calculateDraftTotals(
+    orderFormDraft.items,
+    elements.orderDiscount?.value,
+    elements.orderShipping?.value,
+  );
+  if (elements.orderSubtotalPreview) elements.orderSubtotalPreview.textContent = currency.format(totals.subtotal);
+  if (elements.orderDiscountPreview) elements.orderDiscountPreview.textContent = currency.format(totals.discount);
+  if (elements.orderShippingPreview) elements.orderShippingPreview.textContent = currency.format(totals.shipping);
+  if (elements.orderTotalPreview) elements.orderTotalPreview.textContent = currency.format(totals.total);
+}
+
+function updateSaleFormPreview() {
+  const totals = calculateDraftTotals(saleFormDraft.items);
+  if (elements.saleTotalPreview) elements.saleTotalPreview.textContent = currency.format(totals.total);
+}
+
+function readOrderCustomerSelection() {
+  const value = elements.orderCustomerSelect?.value || "__walkin__";
+  if (value === "__walkin__") {
+    return { customerId: "", customerName: "Cliente no informado" };
+  }
+  const customer = getCustomer(value);
+  return {
+    customerId: customer?.id || "",
+    customerName: customer?.name || "Cliente no informado",
+  };
+}
+
+function saveManualOrder(event) {
+  event.preventDefault();
+  if (!orderFormDraft.items.length) return showToast("Agrega al menos un producto al pedido");
+
+  const customer = readOrderCustomerSelection();
+  const origin = elements.orderOriginSelect?.value || "manual";
+  const paymentStatus = normalizePaymentStatus(elements.orderPaymentStatus?.value);
+  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
+  const totals = calculateDraftTotals(
+    orderFormDraft.items,
+    elements.orderDiscount?.value,
+    elements.orderShipping?.value,
+  );
+  const status = resolveInitialOrderStatus({ origin, paymentStatus, deliveryType });
+  const order = normalizeOrder({
+    id: getNextOrderFolio(),
+    ...customer,
+    origin,
+    status,
+    paymentStatus: resolveInitialOrderPaymentStatus(paymentStatus, status),
+    paymentMethod: elements.orderPaymentMethod?.value || "efectivo",
+    deliveryType,
+    subtotal: totals.subtotal,
+    discount: totals.discount,
+    shipping: totals.shipping,
+    total: totals.total,
+    items: orderFormDraft.items.map((item) => ({ ...item })),
+    notes: elements.orderNotes?.value.trim() || "",
+    createdAt: new Date().toISOString(),
+  });
+
+  state.orders.unshift(order);
+  syncOrderPaymentRecord(order);
+  syncOrderShipmentRecord(order);
+  if (paymentStatus === "pagado" || status === "completado") {
+    deductOrderInventory(order);
+    createSaleFromOrder(order);
+  } else {
+    createSaleFromOrder(order, { pending: true });
+  }
+  persistAll();
+  closeOrderDialog();
+  renderAll();
+  showToast("Pedido creado correctamente.");
+}
+
+function saveManualSale(event) {
+  event.preventDefault();
+  if (!saleFormDraft.items.length) return showToast("Agrega al menos un producto a la venta");
+
+  const customerValue = elements.saleCustomerSelect?.value || "__walkin__";
+  const customer =
+    customerValue === "__walkin__"
+      ? { customerId: "", customerName: "Cliente no informado" }
+      : {
+          customerId: customerValue,
+          customerName: getCustomer(customerValue)?.name || "Cliente no informado",
+        };
+  const paymentStatus = normalizePaymentStatus(elements.salePaymentStatus?.value);
+  const totals = calculateDraftTotals(saleFormDraft.items);
+  const saleOrigin = elements.saleOriginSelect?.value || "mostrador";
+  const sale = normalizeSale({
+    id: getNextSaleId(),
+    orderId: "",
+    ...customer,
+    origin: saleOrigin,
+    status: paymentStatus === "pagado" ? "completada" : "por_cobrar",
+    paymentStatus,
+    paymentMethod: elements.salePaymentMethod?.value || "efectivo",
+    deliveryType: saleOrigin === "mostrador" ? "venta_directa" : "recoger_tienda",
+    total: totals.total,
+    items: saleFormDraft.items.map((item) => ({ ...item })),
+    notes: elements.saleNotes?.value.trim() || "",
+    createdAt: new Date().toISOString(),
+  });
+
+  state.sales.unshift(sale);
+  if (paymentStatus === "pagado") {
+    const pseudoOrder = normalizeOrder({
+      id: sale.id,
+      customerId: sale.customerId,
+      customerName: sale.customerName,
+      origin: sale.origin,
+      status: "completado",
+      paymentStatus: "pagado",
+      paymentMethod: sale.paymentMethod,
+      deliveryType: sale.deliveryType,
+      total: sale.total,
+      items: sale.items,
+      inventoryDeducted: false,
+      createdAt: sale.createdAt,
+    });
+    deductOrderInventory(pseudoOrder);
+  }
+  persist(storageKeys.sales, state.sales);
+  closeSaleDialog();
+  renderSales();
+  renderDashboard();
+  showToast("Venta registrada correctamente.");
+}
+
+function exportSalesList() {
+  const sales = getFilteredSales();
+  if (!sales.length) return showToast("No hay ventas para exportar");
+  const headers = ["Venta", "Pedido", "Fecha", "Cliente", "Total", "Ganancia", "Pago", "Estado", "Origen"];
+  const rows = sales.map((sale) => {
+    const profitInfo = calculateSaleProfit(sale);
+    return [
+      sale.id,
+      sale.orderId || "",
+      formatShortDate(sale.createdAt),
+      sale.customerName,
+      sale.total,
+      profitInfo.hasCost ? profitInfo.profit : "Pendiente de costo",
+      getPaymentMethodLabel(sale.paymentMethod),
+      getSaleStatusLabel(sale.status),
+      getOrderOriginLabel(sale.origin),
+    ];
+  });
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `ventas-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  showToast("Lista de ventas exportada");
+}
+
+function syncOrderPaymentRecord(order) {
+  const existing = state.payments.find((payment) => payment.orderId === order.id);
+  const payload = {
+    id: existing?.id || createId("pay"),
+    orderId: order.id,
+    customerName: order.customerName,
+    method: getPaymentMethodLabel(order.paymentMethod),
+    total: order.total,
+    status: order.paymentStatus === "pagado" ? "Pagado" : "Pendiente",
+    createdAt: order.createdAt,
+  };
+  if (existing) Object.assign(existing, payload);
+  else state.payments.unshift(payload);
+}
+
+function syncOrderShipmentRecord(order) {
+  const existing = state.shipments.find((shipment) => shipment.orderId === order.id);
+  const orderStatus = normalizeOrderStatus(order.status);
+  let shipmentStatus = "Preparando";
+  if (order.paymentStatus !== "pagado") shipmentStatus = "Esperando pago";
+  else if (orderStatus === "completado") shipmentStatus = "Entregado";
+  else if (orderStatus === "por_retirar") shipmentStatus = "Listo para retirar";
+  else if (orderStatus === "enviado") shipmentStatus = "En ruta";
+  else if (orderStatus === "por_enviar") shipmentStatus = "Preparando envío";
+
+  const payload = {
+    id: existing?.id || createId("ship"),
+    orderId: order.id,
+    customerName: order.customerName,
+    type: getDeliveryTypeLabel(order.deliveryType),
+    address: order.address || "",
+    status: shipmentStatus,
+    createdAt: order.createdAt,
+  };
+  if (existing) Object.assign(existing, payload);
+  else state.shipments.unshift(payload);
+}
+
+function deductOrderInventory(order) {
+  if (!order || order.inventoryDeducted || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (order.paymentStatus !== "pagado") return;
+  const status = normalizeOrderStatus(order.status);
+  if (!["cobrado", "por_enviar", "por_retirar", "enviado", "completado"].includes(status)) return;
+  if (!Array.isArray(order.items) || !order.items.length) return;
+
+  // TODO: conectar descuento real por lote vía /api/inventory/adjust cuando el flujo de pedidos use backend.
+  order.items.forEach((item) => {
+    const product = getProduct(item.productId);
+    if (!product) return;
+    product.stock = Math.max(0, toInteger(product.stock) - toInteger(item.quantity));
+  });
+  order.inventoryDeducted = true;
+}
+
+function updateOrderRecord(order) {
+  const index = state.orders.findIndex((item) => item.id === order.id);
+  if (index >= 0) state.orders[index] = order;
+  order.updatedAt = new Date().toISOString();
+  syncOrderPaymentRecord(order);
+  syncOrderShipmentRecord(order);
+  persist(storageKeys.orders, state.orders);
+  persist(storageKeys.payments, state.payments);
+  persist(storageKeys.shipments, state.shipments);
+}
+
+function markOrderAwaitingPayment(orderId) {
+  const order = getOrder(orderId);
+  if (!order) return;
+  if (!transitionOrderStatus(order, "por_cobrar")) return;
+  updateOrderRecord(order);
+  createSaleFromOrder(order, { pending: true });
+  renderAll();
+  showToast("Pedido marcado por cobrar.");
+}
+
+function markOrderPaid(orderId) {
+  const order = getOrder(orderId);
+  if (!order || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (!transitionOrderStatus(order, "cobrado", { paymentStatus: "pagado" })) return;
+  deductOrderInventory(order);
+  updateOrderRecord(order);
+  createSaleFromOrder(order);
+  renderAll();
+  showToast("Pedido marcado como cobrado.");
+}
+
+function markOrderAwaitingShipment(orderId) {
+  const order = getOrder(orderId);
+  if (!order || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (!transitionOrderStatus(order, "por_enviar")) return;
+  updateOrderRecord(order);
+  createSaleFromOrder(order);
+  renderAll();
+  showToast("Pedido listo por enviar.");
+}
+
+function markOrderReadyPickup(orderId) {
+  const order = getOrder(orderId);
+  if (!order || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (!transitionOrderStatus(order, "por_retirar")) return;
+  updateOrderRecord(order);
+  createSaleFromOrder(order);
+  renderAll();
+  showToast("Pedido listo por retirar.");
+}
+
+function markOrderShipped(orderId) {
+  const order = getOrder(orderId);
+  if (!order || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (!transitionOrderStatus(order, "enviado")) return;
+  updateOrderRecord(order);
+  createSaleFromOrder(order);
+  renderAll();
+  showToast("Pedido marcado como enviado.");
+}
+
+function markOrderCompleted(orderId) {
+  const order = getOrder(orderId);
+  if (!order || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (!transitionOrderStatus(order, "completado", { paymentStatus: "pagado" })) return;
+  deductOrderInventory(order);
+  updateOrderRecord(order);
+  createSaleFromOrder(order);
+  renderAll();
+  showToast("Pedido completado.");
+}
+
+function cancelOrder(orderId) {
+  const order = getOrder(orderId);
+  if (!order || normalizeOrderStatus(order.status) === "cancelado") return;
+  if (!transitionOrderStatus(order, "cancelado")) return;
+  updateOrderRecord(order);
+  upsertSaleFromOrder(order, { status: "cancelada", paymentStatus: order.paymentStatus });
+  renderAll();
+  showToast("Pedido cancelado.");
+}
+
+function resolveSaleStatusFromOrder(order) {
+  const status = normalizeOrderStatus(order.status);
+  if (status === "cancelado") return "cancelada";
+  if (order.paymentStatus !== "pagado") return "por_cobrar";
+  if (status === "completado") return "completada";
+  return "pagada";
+}
+
+function upsertSaleFromOrder(order, overrides = {}) {
+  const existing = state.sales.find((sale) => sale.orderId === order.id);
+  const payload = normalizeSale({
+    id: existing?.id || getNextSaleId(),
+    orderId: order.id,
+    customerId: order.customerId,
+    customerName: order.customerName,
+    origin: order.origin,
+    status: overrides.status || resolveSaleStatusFromOrder(order),
+    paymentStatus: overrides.paymentStatus || order.paymentStatus,
+    paymentMethod: order.paymentMethod,
+    deliveryType: order.deliveryType,
+    total: order.total,
+    items: order.items,
+    createdAt: existing?.createdAt || order.createdAt,
+  });
+  if (existing) Object.assign(existing, payload);
+  else state.sales.unshift(payload);
+  persist(storageKeys.sales, state.sales);
 }
 
 function orderCard(order) {
@@ -7578,13 +9315,14 @@ function orderCard(order) {
 function moveOrderNext(orderId) {
   const order = getOrder(orderId);
   if (!order) return;
-  const currentIndex = orderColumns.indexOf(order.status);
-  if (currentIndex < orderColumns.length - 1) order.status = orderColumns[currentIndex + 1];
-  const shipment = state.shipments.find((item) => item.orderId === order.id);
-  if (order.status === "Enviado" && shipment) shipment.status = "En ruta";
-  if (order.status === "Completado" && shipment) shipment.status = "Entregado";
-  persistAll();
-  renderAll();
+  const primary = getNextOrderActions(order)[0];
+  if (!primary) return;
+  if (primary.action === "order-mark-awaiting-payment") markOrderAwaitingPayment(orderId);
+  else if (primary.action === "order-mark-paid") markOrderPaid(orderId);
+  else if (primary.action === "order-mark-awaiting-shipment") markOrderAwaitingShipment(orderId);
+  else if (primary.action === "order-mark-ready-pickup") markOrderReadyPickup(orderId);
+  else if (primary.action === "order-mark-shipped") markOrderShipped(orderId);
+  else if (primary.action === "order-mark-completed") markOrderCompleted(orderId);
 }
 
 function createProductRefreshButton() {
@@ -10036,25 +11774,6 @@ function getProductCommercialMetrics(product, options = {}) {
   };
 }
 
-function renderSales() {
-  elements.salesTable.innerHTML = state.sales.length
-    ? state.sales
-        .map(
-          (sale) => `
-            <tr>
-              <td><strong>${escapeHTML(sale.id)}</strong></td>
-              <td>${escapeHTML(sale.orderId)}</td>
-              <td>${escapeHTML(sale.customerName)}</td>
-              <td>${escapeHTML(sale.paymentMethod)}</td>
-              <td>${currency.format(sale.total)}</td>
-              <td>${formatShortDate(sale.createdAt)}</td>
-            </tr>
-          `,
-        )
-        .join("")
-    : tableEmpty(6, "Aun no hay ventas confirmadas.");
-}
-
 function renderShipments() {
   elements.shipmentsTable.innerHTML = state.shipments.length
     ? state.shipments
@@ -10079,9 +11798,11 @@ function markShipmentSent(shipmentId) {
   if (!shipment) return;
   shipment.status = "En ruta";
   const order = getOrder(shipment.orderId);
-  if (order && order.status !== "Completado") order.status = "Enviado";
-  persistAll();
-  renderAll();
+  if (order && normalizeOrderStatus(order.status) !== "completado") markOrderShipped(order.id);
+  else {
+    persist(storageKeys.shipments, state.shipments);
+    renderAll();
+  }
 }
 
 function renderPayments() {
@@ -10109,28 +11830,23 @@ function markPaymentPaid(paymentId) {
   payment.status = "Pagado";
   payment.method = payment.method === "Pendiente" ? "Transferencia" : payment.method;
   const order = getOrder(payment.orderId);
-  if (order) {
-    order.paymentMethod = payment.method;
-    if (order.status === "Por cobrar") order.status = "Por enviar";
-    createSaleFromOrder(order, payment);
+  if (order) markOrderPaid(order.id);
+  else {
+    persist(storageKeys.payments, state.payments);
+    renderAll();
   }
-  const shipment = state.shipments.find((item) => item.orderId === payment.orderId);
-  if (shipment && shipment.status === "Esperando pago") shipment.status = "Preparando";
-  persistAll();
-  renderAll();
 }
 
-function createSaleFromOrder(order, payment) {
-  if (state.sales.some((sale) => sale.orderId === order.id)) return;
-  state.sales.unshift({
-    id: `VT-${Date.now().toString().slice(-6)}`,
-    orderId: order.id,
-    customerName: order.customerName,
-    paymentMethod: payment.method,
-    total: order.total,
-    items: order.items,
-    createdAt: new Date().toISOString(),
-  });
+function createSaleFromOrder(order, options = {}) {
+  if (normalizeOrderStatus(order.status) === "cancelado") {
+    upsertSaleFromOrder(order, { status: "cancelada" });
+    return;
+  }
+  if (options.pending || order.paymentStatus !== "pagado") {
+    upsertSaleFromOrder(order, { status: "por_cobrar", paymentStatus: order.paymentStatus });
+    return;
+  }
+  upsertSaleFromOrder(order);
 }
 
 function getProduct(id) {
@@ -10641,10 +12357,13 @@ function resetDemoData() {
   state.payments = [];
   state.shipments = [];
   state.sales = [];
+  localStorage.removeItem(storageKeys.orderSeq);
+  localStorage.removeItem(storageKeys.saleSeq);
   state.conversations = initialConversations.map((item) => ({ ...item }));
   state.storeCart = [];
   persistAll();
   localStorage.setItem(storageKeys.catalogVersion, PRODUCT_CATALOG_VERSION);
+  ensureCommerceDemoData();
   seedChat();
   renderAll();
   loadProducts();
