@@ -7446,6 +7446,7 @@ function updateProductsModuleTitle() {
 }
 
 function openProductForm() {
+  ensureProductStorePublicationSection();
   clearProductForm();
   renderProductCatalogSelects();
   showView("product-form");
@@ -14978,6 +14979,226 @@ function clearInventoryProductForm() {
   elements.inventoryProductVisualForm.reset();
 }
 
+let productStorePublicationReady = false;
+
+const PRODUCT_STORE_STATUS_VALUES = ["borrador", "publicado", "pausado"];
+const PRODUCT_STORE_STATUS_LABELS = {
+  borrador: "Borrador",
+  publicado: "Publicado",
+  pausado: "Pausado",
+};
+const PRODUCT_STORE_AVAILABILITY_VALUES = ["disponible", "pocas_piezas", "bajo_pedido", "no_disponible"];
+const PRODUCT_STORE_AVAILABILITY_LABELS = {
+  disponible: "Disponible",
+  pocas_piezas: "Pocas piezas",
+  bajo_pedido: "Bajo pedido",
+  no_disponible: "No disponible",
+};
+const PRODUCT_STORE_PRIMARY_BUTTON_VALUES = ["whatsapp", "comprar", "no_disponible"];
+const PRODUCT_STORE_PRIMARY_BUTTON_LABELS = {
+  whatsapp: "WhatsApp",
+  comprar: "Comprar",
+  no_disponible: "No disponible",
+};
+
+function getInternalProductPrice(baseProduct = null) {
+  if (baseProduct && typeof baseProduct === "object") {
+    return toNumber(baseProduct.regularPrice ?? baseProduct.price);
+  }
+  return toNumber(elements.productRegularPrice?.value);
+}
+
+function getProductStorePublicationElements() {
+  return {
+    storePublished: $("#productStorePublished"),
+    storeStatus: $("#productStoreStatus"),
+    storeUseInternalPrice: $("#productStoreUseInternalPrice"),
+    storePrice: $("#productStorePrice"),
+    storeDescription: $("#productStoreDescription"),
+    storeImageUrl: $("#productStoreImageUrl"),
+    storeShowStock: $("#productStoreShowStock"),
+    storeAvailabilityText: $("#productStoreAvailabilityText"),
+    storeFeatured: $("#productStoreFeatured"),
+    storePrimaryButton: $("#productStorePrimaryButton"),
+    storeNotes: $("#productStoreNotes"),
+  };
+}
+
+function applyProductStorePriceFieldState(baseProduct = null) {
+  const fields = getProductStorePublicationElements();
+  const useInternal = fields.storeUseInternalPrice?.checked !== false;
+  if (fields.storePrice) {
+    fields.storePrice.disabled = useInternal;
+    if (useInternal) fields.storePrice.value = String(getInternalProductPrice(baseProduct));
+  }
+}
+
+function bindProductStorePublicationSection() {
+  if (productStorePublicationReady) return;
+  const fields = getProductStorePublicationElements();
+  fields.storeUseInternalPrice?.addEventListener("change", () => applyProductStorePriceFieldState());
+  elements.productRegularPrice?.addEventListener("input", () => applyProductStorePriceFieldState());
+  elements.productRegularPrice?.addEventListener("change", () => applyProductStorePriceFieldState());
+  productStorePublicationReady = true;
+}
+
+function ensureProductStorePublicationSection() {
+  if (document.getElementById("productStorePublished")) {
+    bindProductStorePublicationSection();
+    return;
+  }
+
+  const priceSection = document
+    .querySelector("#product-form #productProfitSummary")
+    ?.closest(".product-form-section-card");
+  if (!priceSection) return;
+
+  const section = document.createElement("section");
+  section.className = "panel-card product-form-section-card";
+  section.id = "productStorePublicationSection";
+  section.innerHTML = `
+    <p class="product-form-section-title">6. Publicación en tienda</p>
+    <p class="product-form-section-help">Configura la vitrina pública sin modificar precio interno ni stock real.</p>
+    <div class="product-form-grid product-form-grid--2">
+      <label class="product-form-full">
+        <span>Publicar en tienda</span>
+        <input id="productStorePublished" type="checkbox" />
+      </label>
+      <label>Estado tienda
+        <select id="productStoreStatus">
+          ${PRODUCT_STORE_STATUS_VALUES.map(
+            (value) => `<option value="${value}">${PRODUCT_STORE_STATUS_LABELS[value]}</option>`,
+          ).join("")}
+        </select>
+      </label>
+      <label class="product-form-full">
+        <span>Usar precio interno</span>
+        <input id="productStoreUseInternalPrice" type="checkbox" checked />
+      </label>
+      <label>Precio web
+        <input id="productStorePrice" type="number" min="0" step="0.01" />
+      </label>
+      <label class="product-form-full">Descripción pública
+        <textarea id="productStoreDescription" rows="2"></textarea>
+      </label>
+      <label class="product-form-full">Imagen pública / URL
+        <input id="productStoreImageUrl" type="text" placeholder="https://" />
+      </label>
+      <label class="product-form-full">
+        <span>Mostrar stock</span>
+        <input id="productStoreShowStock" type="checkbox" />
+      </label>
+      <label>Disponibilidad
+        <select id="productStoreAvailabilityText">
+          ${PRODUCT_STORE_AVAILABILITY_VALUES.map(
+            (value) => `<option value="${value}">${PRODUCT_STORE_AVAILABILITY_LABELS[value]}</option>`,
+          ).join("")}
+        </select>
+      </label>
+      <label class="product-form-full">
+        <span>Producto destacado</span>
+        <input id="productStoreFeatured" type="checkbox" />
+      </label>
+      <label>Botón principal
+        <select id="productStorePrimaryButton">
+          ${PRODUCT_STORE_PRIMARY_BUTTON_VALUES.map(
+            (value) => `<option value="${value}">${PRODUCT_STORE_PRIMARY_BUTTON_LABELS[value]}</option>`,
+          ).join("")}
+        </select>
+      </label>
+      <label class="product-form-full">Notas internas de publicación
+        <textarea id="productStoreNotes" rows="2" placeholder="Opcional"></textarea>
+      </label>
+    </div>
+  `;
+  priceSection.insertAdjacentElement("afterend", section);
+  bindProductStorePublicationSection();
+}
+
+function resetProductStorePublicationForm() {
+  ensureProductStorePublicationSection();
+  const fields = getProductStorePublicationElements();
+  const internalPrice = getInternalProductPrice();
+  if (fields.storePublished) fields.storePublished.checked = false;
+  if (fields.storeStatus) fields.storeStatus.value = "borrador";
+  if (fields.storeUseInternalPrice) fields.storeUseInternalPrice.checked = true;
+  if (fields.storePrice) fields.storePrice.value = String(internalPrice);
+  if (fields.storeDescription) fields.storeDescription.value = "";
+  if (fields.storeImageUrl) fields.storeImageUrl.value = "";
+  if (fields.storeShowStock) fields.storeShowStock.checked = false;
+  if (fields.storeAvailabilityText) fields.storeAvailabilityText.value = "disponible";
+  if (fields.storeFeatured) fields.storeFeatured.checked = false;
+  if (fields.storePrimaryButton) fields.storePrimaryButton.value = "whatsapp";
+  if (fields.storeNotes) fields.storeNotes.value = "";
+  applyProductStorePriceFieldState();
+}
+
+function loadProductStorePublicationForm(product = {}) {
+  ensureProductStorePublicationSection();
+  const fields = getProductStorePublicationElements();
+  const internalPrice = getInternalProductPrice(product);
+  const useInternal = product.storeUseInternalPrice !== false;
+  const storeStatus = PRODUCT_STORE_STATUS_VALUES.includes(product.storeStatus) ? product.storeStatus : "borrador";
+  const availability = PRODUCT_STORE_AVAILABILITY_VALUES.includes(product.storeAvailabilityText)
+    ? product.storeAvailabilityText
+    : "disponible";
+  const primaryButton = PRODUCT_STORE_PRIMARY_BUTTON_VALUES.includes(product.storePrimaryButton)
+    ? product.storePrimaryButton
+    : "whatsapp";
+
+  if (fields.storePublished) fields.storePublished.checked = Boolean(product.storePublished);
+  if (fields.storeStatus) fields.storeStatus.value = storeStatus;
+  if (fields.storeUseInternalPrice) fields.storeUseInternalPrice.checked = useInternal;
+  if (fields.storePrice) {
+    fields.storePrice.value = String(useInternal ? internalPrice : toNumber(product.storePrice));
+  }
+  if (fields.storeDescription) fields.storeDescription.value = String(product.storeDescription || "");
+  if (fields.storeImageUrl) fields.storeImageUrl.value = String(product.storeImageUrl || "");
+  if (fields.storeShowStock) fields.storeShowStock.checked = Boolean(product.storeShowStock);
+  if (fields.storeAvailabilityText) fields.storeAvailabilityText.value = availability;
+  if (fields.storeFeatured) fields.storeFeatured.checked = Boolean(product.storeFeatured);
+  if (fields.storePrimaryButton) fields.storePrimaryButton.value = primaryButton;
+  if (fields.storeNotes) fields.storeNotes.value = String(product.storeNotes || "");
+  applyProductStorePriceFieldState(product);
+}
+
+function readProductStorePublicationForm(baseProduct = {}) {
+  ensureProductStorePublicationSection();
+  const fields = getProductStorePublicationElements();
+  const useInternal = fields.storeUseInternalPrice?.checked !== false;
+  const internalPrice = getInternalProductPrice(baseProduct);
+  const storeStatus = PRODUCT_STORE_STATUS_VALUES.includes(fields.storeStatus?.value)
+    ? fields.storeStatus.value
+    : "borrador";
+  const availability = PRODUCT_STORE_AVAILABILITY_VALUES.includes(fields.storeAvailabilityText?.value)
+    ? fields.storeAvailabilityText.value
+    : "disponible";
+  const primaryButton = PRODUCT_STORE_PRIMARY_BUTTON_VALUES.includes(fields.storePrimaryButton?.value)
+    ? fields.storePrimaryButton.value
+    : "whatsapp";
+
+  return {
+    storePublished: Boolean(fields.storePublished?.checked),
+    storeStatus,
+    storeUseInternalPrice: useInternal,
+    storePrice: useInternal ? internalPrice : toNumber(fields.storePrice?.value),
+    storeDescription: String(fields.storeDescription?.value || "").trim(),
+    storeImageUrl: String(fields.storeImageUrl?.value || "").trim(),
+    storeShowStock: Boolean(fields.storeShowStock?.checked),
+    storeAvailabilityText: availability,
+    storeFeatured: Boolean(fields.storeFeatured?.checked),
+    storePrimaryButton: primaryButton,
+    storeNotes: String(fields.storeNotes?.value || "").trim(),
+  };
+}
+
+function mergeProductStoreFieldsIntoState(productId, storeFields) {
+  const key = String(productId || "").trim();
+  if (!key) return;
+  const index = state.products.findIndex((item) => String(item.id) === key);
+  if (index >= 0) state.products[index] = { ...state.products[index], ...storeFields };
+}
+
 async function saveProduct(event) {
   event.preventDefault();
   const sku = elements.productSku.value.trim();
@@ -15013,6 +15234,8 @@ async function saveProduct(event) {
     }
   }
 
+  const storeFields = readProductStorePublicationForm({ regularPrice: listPrice, price: listPrice });
+
   const product = {
     id,
     sku,
@@ -15034,6 +15257,7 @@ async function saveProduct(event) {
     requiresRecipe: classificationRequiresRecipe(elements.productType.value),
     iva: elements.productIva.value === "Si",
     status: elements.productStatus.value,
+    ...storeFields,
   };
 
   if (!id) {
@@ -15048,8 +15272,10 @@ async function saveProduct(event) {
   if (!listPrice && listPrice !== 0) return showToast("Indica el precio lista");
 
   try {
-    await saveProductToApi(product);
+    const saved = await saveProductToApi(product);
     await loadProducts();
+    const savedId = saved?.id || product.id;
+    if (savedId) mergeProductStoreFieldsIntoState(savedId, storeFields);
     closeProductForm();
     showToast("Producto guardado");
   } catch (error) {
@@ -15060,6 +15286,7 @@ async function saveProduct(event) {
 function editProduct(id) {
   const product = getProduct(id);
   if (!product) return;
+  ensureProductStorePublicationSection();
   renderProductCatalogSelects();
   elements.productFormTitle.textContent = "Editar producto";
   elements.productId.value = product.id;
@@ -15088,6 +15315,7 @@ function editProduct(id) {
   elements.productIva.value = product.iva ? "Si" : "No";
   elements.productStatus.value = product.status;
   elements.productDescription.value = product.description;
+  loadProductStorePublicationForm(product);
   renderProductLotsPanel(product);
   updateProductProfitSummary();
   showView("product-form");
@@ -15367,6 +15595,7 @@ function clearProductForm() {
   updateProductLotFormPreview();
   updateProductImagePreview();
   updateProductImageStatus("");
+  resetProductStorePublicationForm();
 }
 
 function clearProductImagePendingFile(options = {}) {
