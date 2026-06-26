@@ -3,7 +3,9 @@ const storageKeys = {
   customers: "minifarmacia_crm_customers",
   commercialProfiles: "minifarmacia_crm_commercial_profiles",
   orders: "minifarmacia_crm_orders",
-  payments: "minifarmacia_crm_payments",
+  paymentMethods: "minifarmacia_crm_payment_methods",
+  paymentProviders: "minifarmacia_crm_payment_providers",
+  paymentConfigVersion: "minifarmacia_crm_payment_config_version",
   shipments: "minifarmacia_crm_shipments",
   sales: "minifarmacia_crm_sales",
   orderSeq: "minifarmacia_crm_order_seq",
@@ -4435,7 +4437,8 @@ const state = {
     normalizeCommercialProfile,
   ),
   orders: readJSON(storageKeys.orders, []),
-  payments: readJSON(storageKeys.payments, []),
+  paymentMethods: [],
+  paymentProviders: [],
   shipments: readJSON(storageKeys.shipments, []),
   sales: readJSON(storageKeys.sales, []),
   conversations: [],
@@ -4549,7 +4552,7 @@ const viewDescriptions = {
   clientes: "Registra clientes, consulta su historial y mantén datos de contacto actualizados.",
   pedidos: "Gestiona pedidos de tienda, WhatsApp, teléfono y mostrador.",
   ventas: "Historial económico: totales vendidos, cobrados, pendientes y ganancia estimada.",
-  pagos: "Controla cobros pendientes y métodos de pago.",
+  pagos: "Configura métodos de pago, comisiones, confirmaciones y proveedores.",
   envios: "Seguimiento de entregas locales y nacionales.",
   canales: "Tienda online y puntos de venta digital.",
   "whatsapp-manager": "Atiende conversaciones y automatiza respuestas de WhatsApp.",
@@ -4571,7 +4574,7 @@ const productsSectionDescriptions = {
 };
 
 const viewAliases = {
-  pagos: "cobros",
+  pagos: "pagos",
   canales: "tienda",
   "whatsapp-manager": "whatsapp",
   inventario: { view: "productos", productsSection: "products-inventory" },
@@ -4715,10 +4718,464 @@ const SALE_RANGE_LABELS = {
   custom: "Personalizado",
 };
 
+const PAYMENT_CONFIG_VERSION = 3;
+
+const PAYMENT_METHOD_TYPES = {
+  efectivo: "Efectivo",
+  transferencia: "Transferencia bancaria",
+  qr_bancario: "CoDi / QR bancario",
+  tarjeta_debito: "Tarjeta de débito",
+  tarjeta_credito: "Tarjeta de crédito",
+  procesador_pago: "Procesador de pago",
+  pasarela: "Pasarela digital",
+  efectivo_referencia: "Efectivo con referencia",
+  contra_entrega: "Contra entrega",
+  otro: "Otro",
+};
+
+const PAYMENT_CATEGORY_LABELS = {
+  efectivo_banco: "Efectivo y banco",
+  tarjetas: "Tarjetas",
+  pasarelas: "Pasarelas / procesadores digitales",
+  contra_entrega: "Pago contra entrega",
+  otros: "Otros",
+};
+
+const PAYMENT_SUGGESTED_STATUS_LABELS = {
+  pendiente: "Pendiente",
+  por_confirmar: "Por confirmar",
+  recibido: "Recibido",
+};
+
+const PAYMENT_METHOD_TYPE_DEFAULTS = {
+  efectivo: { requiereReferencia: false, requiereConfirmacion: false, estadoSugerido: "recibido", categoria: "efectivo_banco" },
+  transferencia: { requiereReferencia: true, requiereConfirmacion: true, estadoSugerido: "por_confirmar", categoria: "efectivo_banco" },
+  qr_bancario: { requiereReferencia: true, requiereConfirmacion: true, estadoSugerido: "por_confirmar", categoria: "efectivo_banco" },
+  tarjeta_debito: { requiereReferencia: true, requiereConfirmacion: false, estadoSugerido: "recibido", categoria: "tarjetas" },
+  tarjeta_credito: { requiereReferencia: true, requiereConfirmacion: false, estadoSugerido: "recibido", categoria: "tarjetas" },
+  procesador_pago: { requiereReferencia: true, requiereConfirmacion: false, estadoSugerido: "recibido", categoria: "pasarelas" },
+  pasarela: { requiereReferencia: true, requiereConfirmacion: true, estadoSugerido: "por_confirmar", categoria: "pasarelas" },
+  efectivo_referencia: { requiereReferencia: true, requiereConfirmacion: true, estadoSugerido: "por_confirmar", categoria: "pasarelas" },
+  contra_entrega: { requiereReferencia: false, requiereConfirmacion: true, estadoSugerido: "pendiente", categoria: "contra_entrega" },
+  otro: { requiereReferencia: false, requiereConfirmacion: false, estadoSugerido: "pendiente", categoria: "otros" },
+};
+
+const PAYMENT_METHOD_HINTS = {
+  efectivo: "Cobro inmediato, sin confirmación.",
+  transferencia: "Requiere referencia y confirmación en banco.",
+  qr_bancario: "Pago por QR bancario/CoDi. Validar en banco.",
+  tarjeta_debito: "Cobro con terminal o procesador.",
+  tarjeta_credito: "Cobro con terminal o procesador.",
+  procesador_pago: "Procesador: terminal, tarjeta y links de pago.",
+  pasarela: "Pasarela digital con confirmación.",
+  efectivo_referencia: "Pago en efectivo con referencia del proveedor.",
+  contra_entrega: "Se cobra al entregar el pedido.",
+  otro: "Método manual personalizado.",
+};
+
+const PAYMENT_METHOD_CATEGORIES = [
+  {
+    id: "efectivo_banco",
+    title: "Efectivo y banco",
+    subtitle: "Cobros directos en efectivo, transferencia o QR bancario.",
+    methodIds: ["pm-efectivo", "pm-transferencia", "pm-codi"],
+    matchTypes: ["efectivo", "transferencia", "qr_bancario"],
+  },
+  {
+    id: "tarjetas",
+    title: "Tarjetas",
+    subtitle: "Tipos de pago con tarjeta; el procesador puede ser Clip, MP o terminal bancaria.",
+    methodIds: ["pm-tarjeta-debito", "pm-tarjeta-credito"],
+    matchTypes: ["tarjeta_debito", "tarjeta_credito", "tarjeta"],
+  },
+  {
+    id: "pasarelas",
+    title: "Pasarelas / procesadores digitales",
+    subtitle: "Procesadores y pasarelas que habilitan varios tipos de cobro.",
+    methodIds: ["pm-clip", "pm-mercado-pago", "pm-pago-nube", "pm-oxxo"],
+    matchTypes: ["procesador_pago", "pasarela", "efectivo_referencia", "wallet"],
+  },
+  {
+    id: "contra_entrega",
+    title: "Pago contra entrega",
+    subtitle: "El cobro se registra al momento de la entrega.",
+    methodIds: ["pm-contra-entrega"],
+    matchTypes: ["contra_entrega"],
+  },
+  {
+    id: "otros",
+    title: "Otros",
+    subtitle: "Métodos manuales o personalizados.",
+    methodIds: ["pm-otro"],
+    matchTypes: ["otro"],
+  },
+];
+
+const LEGACY_PAYMENT_PROVIDER_IDS = ["prov-transferencia"];
+
+const PAYMENT_METHOD_USAGE_KEYS = {
+  "pm-efectivo": ["efectivo"],
+  "pm-transferencia": ["transferencia"],
+  "pm-codi": ["transferencia", "qr_bancario"],
+  "pm-tarjeta-debito": ["tarjeta"],
+  "pm-tarjeta-credito": ["tarjeta"],
+  "pm-clip": ["clip"],
+  "pm-mercado-pago": ["mercado_pago"],
+  "pm-oxxo": ["mercado_pago", "otro"],
+  "pm-pago-nube": ["mercado_pago", "otro"],
+  "pm-contra-entrega": ["otro"],
+  "pm-otro": ["otro"],
+};
+
+const INITIAL_DEMO_PAYMENT_METHODS = [
+  {
+    id: "pm-efectivo",
+    nombre: "Efectivo",
+    categoria: "efectivo_banco",
+    tipo: "efectivo",
+    providerId: "",
+    activo: true,
+    requiereReferencia: false,
+    requiereConfirmacion: false,
+    requiereComprobante: false,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "inmediato",
+    reglasObservaciones: "",
+    estadoSugerido: "recibido",
+    comisionTipo: "ninguna",
+    comisionAbsorbe: "negocio",
+    comisionPct: 0,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: false, tiendaOnline: false, entregaDomicilio: false, otro: false },
+    notas: "Cobro inmediato en mostrador.",
+  },
+  {
+    id: "pm-transferencia",
+    nombre: "Transferencia bancaria",
+    categoria: "efectivo_banco",
+    tipo: "transferencia",
+    providerId: "prov-banco",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: true,
+    requiereComprobante: true,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "horas_24",
+    reglasObservaciones: "Validar SPEI en banco antes de marcar cobrado.",
+    estadoSugerido: "por_confirmar",
+    comisionTipo: "ninguna",
+    comisionAbsorbe: "negocio",
+    comisionPct: 0,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: true, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Validar SPEI antes de marcar cobrado.",
+  },
+  {
+    id: "pm-codi",
+    nombre: "CoDi / QR bancario",
+    categoria: "efectivo_banco",
+    tipo: "qr_bancario",
+    providerId: "prov-codi",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: true,
+    requiereComprobante: true,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "horas_24",
+    reglasObservaciones: "Pago por QR bancario/CoDi. Validar en banco.",
+    estadoSugerido: "por_confirmar",
+    comisionTipo: "ninguna",
+    comisionAbsorbe: "negocio",
+    comisionPct: 0,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: true, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Pago por QR bancario/CoDi. Validar en banco.",
+  },
+  {
+    id: "pm-tarjeta-debito",
+    nombre: "Tarjeta de débito",
+    categoria: "tarjetas",
+    tipo: "tarjeta_debito",
+    providerId: "",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: false,
+    requiereComprobante: false,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "inmediato",
+    reglasObservaciones: "Puede procesarse con Clip, Mercado Pago o terminal bancaria.",
+    estadoSugerido: "recibido",
+    comisionTipo: "porcentaje",
+    comisionAbsorbe: "negocio",
+    comisionPct: 1.5,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: false, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Puede procesarse con Clip, Mercado Pago o terminal bancaria.",
+  },
+  {
+    id: "pm-tarjeta-credito",
+    nombre: "Tarjeta de crédito",
+    categoria: "tarjetas",
+    tipo: "tarjeta_credito",
+    providerId: "",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: false,
+    requiereComprobante: false,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "inmediato",
+    reglasObservaciones: "Puede procesarse con Clip, Mercado Pago o terminal bancaria.",
+    estadoSugerido: "recibido",
+    comisionTipo: "porcentaje",
+    comisionAbsorbe: "negocio",
+    comisionPct: 2.9,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: false, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Puede procesarse con Clip, Mercado Pago o terminal bancaria.",
+  },
+  {
+    id: "pm-clip",
+    nombre: "Clip",
+    categoria: "pasarelas",
+    tipo: "procesador_pago",
+    providerId: "prov-clip",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: false,
+    requiereComprobante: false,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "inmediato",
+    reglasObservaciones: "Procesador: terminal, tarjeta y links de pago.",
+    estadoSugerido: "recibido",
+    comisionTipo: "porcentaje",
+    comisionAbsorbe: "negocio",
+    comisionPct: 3.6,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: true, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Procesador: terminal, tarjeta y links de pago.",
+  },
+  {
+    id: "pm-mercado-pago",
+    nombre: "Mercado Pago",
+    categoria: "pasarelas",
+    tipo: "pasarela",
+    providerId: "prov-mercado-pago",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: true,
+    requiereComprobante: true,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "horas_24",
+    reglasObservaciones: "Pasarela digital. Pendiente de integración completa.",
+    estadoSugerido: "por_confirmar",
+    comisionTipo: "mixta",
+    comisionAbsorbe: "negocio",
+    comisionPct: 3.99,
+    comisionFija: 4,
+    canales: { mostrador: false, whatsapp: true, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Pasarela digital. Pendiente de integración completa.",
+  },
+  {
+    id: "pm-oxxo",
+    nombre: "Pago en OXXO",
+    categoria: "pasarelas",
+    tipo: "efectivo_referencia",
+    providerId: "prov-oxxo",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: true,
+    requiereComprobante: true,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "horas_48",
+    reglasObservaciones: "Pago en efectivo con referencia generada por proveedor.",
+    estadoSugerido: "por_confirmar",
+    comisionTipo: "fija",
+    comisionAbsorbe: "cliente",
+    comisionPct: 0,
+    comisionFija: 12,
+    canales: { mostrador: false, whatsapp: true, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Pago en efectivo con referencia generada por proveedor.",
+  },
+  {
+    id: "pm-pago-nube",
+    nombre: "Pago Nube / Tiendanube",
+    categoria: "pasarelas",
+    tipo: "pasarela",
+    providerId: "prov-pago-nube",
+    activo: true,
+    requiereReferencia: true,
+    requiereConfirmacion: true,
+    requiereComprobante: true,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "horas_24",
+    reglasObservaciones: "Pasarela para tienda en línea.",
+    estadoSugerido: "por_confirmar",
+    comisionTipo: "porcentaje",
+    comisionAbsorbe: "negocio",
+    comisionPct: 3.5,
+    comisionFija: 0,
+    canales: { mostrador: false, whatsapp: false, tiendaOnline: true, entregaDomicilio: false, otro: false },
+    notas: "Pasarela para tienda en línea.",
+  },
+  {
+    id: "pm-contra-entrega",
+    nombre: "Pago contra entrega",
+    categoria: "contra_entrega",
+    tipo: "contra_entrega",
+    providerId: "",
+    activo: true,
+    requiereReferencia: false,
+    requiereConfirmacion: true,
+    requiereComprobante: false,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "manual",
+    reglasObservaciones: "Se cobra al entregar el pedido.",
+    estadoSugerido: "pendiente",
+    comisionTipo: "ninguna",
+    comisionAbsorbe: "negocio",
+    comisionPct: 0,
+    comisionFija: 0,
+    canales: { mostrador: false, whatsapp: true, tiendaOnline: true, entregaDomicilio: true, otro: false },
+    notas: "Se cobra al entregar el pedido.",
+  },
+  {
+    id: "pm-otro",
+    nombre: "Otro",
+    categoria: "otros",
+    tipo: "otro",
+    providerId: "",
+    activo: true,
+    requiereReferencia: false,
+    requiereConfirmacion: false,
+    requiereComprobante: false,
+    requiereAutorizacion: false,
+    tiempoConfirmacion: "manual",
+    reglasObservaciones: "",
+    estadoSugerido: "pendiente",
+    comisionTipo: "ninguna",
+    comisionAbsorbe: "negocio",
+    comisionPct: 0,
+    comisionFija: 0,
+    canales: { mostrador: true, whatsapp: true, tiendaOnline: true, entregaDomicilio: false, otro: true },
+    notas: "Método manual personalizado.",
+  },
+];
+
+const INITIAL_DEMO_PAYMENT_PROVIDERS = [
+  {
+    id: "prov-banco",
+    nombre: "Transferencia bancaria / Banco",
+    activo: true,
+    modo: "produccion",
+    publicKeyVisible: "",
+    webhookUrl: "",
+    estadoConexion: "conectado",
+    methodIds: ["pm-transferencia"],
+    notas: "Cuenta CLABE operativa.",
+  },
+  {
+    id: "prov-codi",
+    nombre: "CoDi / Banco",
+    activo: true,
+    modo: "produccion",
+    publicKeyVisible: "",
+    webhookUrl: "",
+    estadoConexion: "conectado",
+    methodIds: ["pm-codi"],
+    notas: "Validación de pagos QR bancarios.",
+  },
+  {
+    id: "prov-clip",
+    nombre: "Clip",
+    activo: true,
+    modo: "prueba",
+    publicKeyVisible: "",
+    webhookUrl: "",
+    estadoConexion: "no_configurado",
+    methodIds: ["pm-clip", "pm-tarjeta-debito", "pm-tarjeta-credito"],
+    notas: "Procesador de terminal, tarjeta y links.",
+  },
+  {
+    id: "prov-mercado-pago",
+    nombre: "Mercado Pago",
+    activo: true,
+    modo: "prueba",
+    publicKeyVisible: "",
+    webhookUrl: "",
+    estadoConexion: "pendiente",
+    methodIds: ["pm-mercado-pago", "pm-oxxo"],
+    notas: "Claves secretas: configurar en servidor / .env",
+  },
+  {
+    id: "prov-oxxo",
+    nombre: "OXXO / procesador",
+    activo: true,
+    modo: "prueba",
+    publicKeyVisible: "",
+    webhookUrl: "",
+    estadoConexion: "pendiente",
+    methodIds: ["pm-oxxo"],
+    notas: "Referencia de pago en tienda de conveniencia.",
+  },
+  {
+    id: "prov-pago-nube",
+    nombre: "Pago Nube / Tiendanube",
+    activo: true,
+    modo: "prueba",
+    publicKeyVisible: "",
+    webhookUrl: "",
+    estadoConexion: "no_configurado",
+    methodIds: ["pm-pago-nube"],
+    notas: "Integración tienda en línea.",
+  },
+];
+
+const PAYMENT_CHANNEL_LABELS = {
+  mostrador: "Mostrador",
+  whatsapp: "WhatsApp",
+  tiendaOnline: "En línea",
+  entregaDomicilio: "Entrega a domicilio",
+  otro: "Otro canal",
+};
+
+const PAYMENT_COMMISSION_TYPE_LABELS = {
+  ninguna: "Ninguna",
+  porcentaje: "Porcentaje",
+  fija: "Fija",
+  mixta: "Mixta",
+};
+
+const PAYMENT_COMMISSION_ABSORB_LABELS = {
+  negocio: "Negocio",
+  cliente: "Cliente",
+  mixto: "Mixto",
+};
+
+const PAYMENT_CONFIRMATION_TIME_LABELS = {
+  inmediato: "Inmediato",
+  horas_24: "24 horas",
+  horas_48: "48 horas",
+  manual: "Manual / sin estimado",
+};
+
+const PROVIDER_CONNECTION_LABELS = {
+  no_configurado: "No configurado",
+  pendiente: "Pendiente",
+  conectado: "Conectado",
+};
+
+const PROVIDER_MODE_LABELS = {
+  prueba: "Prueba",
+  produccion: "Producción",
+};
+
 const PAYMENT_STATUS_LABELS = {
   pendiente: "Pendiente",
   pagado: "Pagado",
   vencido: "Vencido",
+  parcial: "Parcial",
+  contra_entrega: "Contra entrega",
+  cancelado: "Cancelado / no aplica",
 };
 
 const PAYMENT_METHOD_LABELS = {
@@ -4777,6 +5234,7 @@ const LEGACY_ORDER_STATUS_MAP = {
   Cancelado: "cancelado",
 };
 
+let commercePaymentFormsReady = false;
 let orderFormDraft = { items: [] };
 let saleFormDraft = { items: [] };
 let orderFormEditingId = null;
@@ -4784,6 +5242,9 @@ let orderFormProfilePercent = 0;
 let orderFormDiscountManual = false;
 let orderProfilePanelReady = false;
 let salesViewPolishReady = false;
+let paymentsViewReady = false;
+let paymentMethodDraft = null;
+let paymentProviderDraft = null;
 const currency = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => document.querySelectorAll(selector);
@@ -5145,7 +5606,6 @@ const elements = {
   inventoryMovementsContent: $("#inventoryMovementsContent"),
   salesTable: $("#salesTable"),
   shipmentsTable: $("#shipmentsTable"),
-  paymentsTable: $("#paymentsTable"),
   resetDemoButton: $("#resetDemoButton"),
 };
 
@@ -5153,6 +5613,8 @@ init();
 
 function init() {
   migrateCommerceState();
+  migratePaymentConfigState();
+  ensureCommercePaymentForms();
   elements.todayLabel.textContent = `Operacion local - ${formatShortDate(new Date().toISOString())}`;
   createProductRefreshButton();
   hydrateSettings();
@@ -5643,7 +6105,26 @@ function handleDocumentAction(event) {
       renderSaleLineItems();
     }
   }
-  if (action.dataset.action === "mark-paid") markPaymentPaid(id);
+  if (action.dataset.action === "edit-payment-method") {
+    const method = getPaymentMethodConfig(id);
+    if (method) openPaymentMethodDialog(method);
+  }
+  if (action.dataset.action === "deactivate-payment-method") {
+    setPaymentMethodActive(id, false);
+  }
+  if (action.dataset.action === "activate-payment-method") setPaymentMethodActive(id, true);
+  if (action.dataset.action === "delete-payment-method") deletePaymentMethod(id);
+  if (action.dataset.action === "close-payment-method-dialog") closePaymentMethodDialog();
+  if (action.dataset.action === "edit-payment-provider") {
+    const provider = getPaymentProvider(id);
+    if (provider) openPaymentProviderDialog(provider);
+  }
+  if (action.dataset.action === "deactivate-payment-provider") {
+    setPaymentProviderActive(id, false);
+  }
+  if (action.dataset.action === "activate-payment-provider") setPaymentProviderActive(id, true);
+  if (action.dataset.action === "delete-payment-provider") deletePaymentProvider(id);
+  if (action.dataset.action === "close-payment-provider-dialog") closePaymentProviderDialog();
   if (action.dataset.action === "mark-shipped") markShipmentSent(id);
   if (action.dataset.action === "take-conversation") updateLatestConversation("Asesor humano");
   if (action.dataset.action === "mark-conversation-order") updateLatestConversation("Pedido");
@@ -6726,7 +7207,10 @@ function normalizeConversationStatus(status) {
 function renderDashboard() {
   const today = new Date().toDateString();
   const openOrders = state.orders.filter((order) => isOrderOpen(order));
-  const pendingPayments = state.payments.filter((payment) => payment.status !== "Pagado");
+  const pendingPayments = state.orders.filter((order) => {
+    if (normalizeOrderStatus(order.status) === "cancelado") return false;
+    return normalizeOrderStatus(order.status) === "por_cobrar" || normalizePaymentStatus(order.paymentStatus) === "pendiente";
+  });
   const todaySales = state.sales.filter((sale) => {
     if (new Date(sale.createdAt).toDateString() !== today) return false;
     const status = normalizeSaleStatus(sale.status, sale.paymentStatus);
@@ -7934,6 +8418,9 @@ function normalizePaymentStatus(status, paymentMethod = "") {
   const value = String(status || "").trim().toLowerCase();
   if (value === "pagado" || value === "paid") return "pagado";
   if (value === "vencido" || value === "overdue") return "vencido";
+  if (value === "parcial") return "parcial";
+  if (value === "contra_entrega" || value === "contra entrega") return "contra_entrega";
+  if (value === "cancelado" || value === "no_aplica" || value === "no aplica") return "cancelado";
   if (paymentMethod === "Pendiente" || value === "pendiente") return "pendiente";
   return "pendiente";
 }
@@ -8094,6 +8581,7 @@ function normalizeOrder(order = {}) {
   const discount = toNumber(order.discount);
   const shipping = toNumber(order.shipping ?? order.shippingCost);
   const total = toNumber(order.total ?? subtotal - discount + shipping);
+  const paymentMethodId = resolvePaymentMethodIdForRecord(order);
 
   const normalized = {
     id: order.id || getNextOrderFolio(),
@@ -8102,7 +8590,11 @@ function normalizeOrder(order = {}) {
     origin,
     status: status === "cancelado" ? "cancelado" : status,
     paymentStatus,
-    paymentMethod: normalizePaymentMethod(order.paymentMethod),
+    paymentMethodId,
+    paymentMethod: resolveLegacyPaymentKeyForRecord({ ...order, paymentMethodId }),
+    paymentChannel: normalizePaymentChannel(order.paymentChannel || inferPaymentChannelFromOrigin(origin)),
+    paymentReference: order.paymentReference || "",
+    paymentProof: order.paymentProof || "",
     deliveryType,
     address: order.address || "",
     subtotal,
@@ -8225,6 +8717,18 @@ function reconcileCommerceSales() {
 function normalizeSale(sale = {}) {
   const items = Array.isArray(sale.items) ? sale.items.map(normalizeOrderItem) : [];
   const paymentStatus = normalizePaymentStatus(sale.paymentStatus, sale.paymentMethod);
+  const total = toNumber(sale.total ?? items.reduce((sum, item) => sum + item.subtotal, 0));
+  const paymentMethodId = resolvePaymentMethodIdForRecord(sale);
+  const paymentProviderId = sale.paymentProviderId || getPaymentMethodConfig(paymentMethodId)?.providerId || "";
+  const commission =
+    sale.paymentCommission != null && sale.paymentCommission !== ""
+      ? toNumber(sale.paymentCommission)
+      : calculatePaymentMethodCommission(getPaymentMethodConfig(paymentMethodId), total);
+  const netTotal =
+    sale.paymentNetTotal != null && sale.paymentNetTotal !== ""
+      ? toNumber(sale.paymentNetTotal)
+      : Math.max(0, total - commission);
+
   return {
     id: sale.id || getNextSaleId(),
     orderId: sale.orderId || "",
@@ -8233,7 +8737,13 @@ function normalizeSale(sale = {}) {
     origin: normalizeOrderOrigin(sale.origin),
     status: normalizeSaleStatus(sale.status, paymentStatus),
     paymentStatus,
-    paymentMethod: normalizePaymentMethod(sale.paymentMethod),
+    paymentMethodId,
+    paymentMethod: resolveLegacyPaymentKeyForRecord({ ...sale, paymentMethodId }),
+    paymentProviderId,
+    paymentCommission: commission,
+    paymentNetTotal: netTotal,
+    paymentReference: sale.paymentReference || "",
+    paymentChannel: sale.paymentChannel ? normalizePaymentChannel(sale.paymentChannel) : "",
     deliveryType: normalizeDeliveryType(sale.deliveryType),
     total: toNumber(sale.total ?? items.reduce((sum, item) => sum + item.subtotal, 0)),
     items,
@@ -8279,8 +8789,14 @@ function getPaymentStatusLabel(status) {
   return PAYMENT_STATUS_LABELS[normalizePaymentStatus(status)] || status;
 }
 
-function getPaymentMethodLabel(method) {
-  return PAYMENT_METHOD_LABELS[normalizePaymentMethod(method)] || method;
+function getPaymentMethodLabel(methodOrId) {
+  const key = String(methodOrId || "").trim();
+  if (!key) return "Sin método";
+  const config = getPaymentMethodConfig(key);
+  if (config) return config.nombre;
+  const byLegacy = state.paymentMethods.find((method) => getLegacyPaymentKeyFromMethod(method) === normalizePaymentMethod(key));
+  if (byLegacy) return byLegacy.nombre;
+  return PAYMENT_METHOD_LABELS[normalizePaymentMethod(key)] || key;
 }
 
 function getDeliveryTypeLabel(type) {
@@ -9054,8 +9570,7 @@ function resetOrderFormDraft() {
     elements.orderDiscount.classList.remove("is-blocked");
   }
   if (elements.orderShipping) elements.orderShipping.value = "0";
-  if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = "pendiente";
-  if (elements.orderPaymentMethod) elements.orderPaymentMethod.value = "efectivo";
+  loadOrderPaymentForm();
   if (elements.orderDeliveryType) elements.orderDeliveryType.value = "venta_directa";
   if (elements.orderNotes) elements.orderNotes.value = "";
   if (elements.orderProfileDiscountWarning) elements.orderProfileDiscountWarning.hidden = true;
@@ -9072,19 +9587,19 @@ function resetSaleFormDraft() {
   saleFormDraft = { items: [] };
   if (elements.saleProductSearch) elements.saleProductSearch.value = "";
   if (elements.saleProductResults) elements.saleProductResults.hidden = true;
-  if (elements.salePaymentMethod) elements.salePaymentMethod.value = "efectivo";
-  if (elements.salePaymentStatus) elements.salePaymentStatus.value = "pagado";
+  loadSalePaymentForm();
   if (elements.saleNotes) elements.saleNotes.value = "";
   renderSaleLineItems();
 }
 
 function openOrderDialog() {
+  ensureCommercePaymentForms();
   resetOrderFormDraft();
   populateCommerceCustomerSelect(elements.orderCustomerSelect);
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = "whatsapp";
   if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = "pendiente";
-  if (elements.orderPaymentMethod) elements.orderPaymentMethod.value = "efectivo";
   if (elements.orderDeliveryType) elements.orderDeliveryType.value = "envio_local";
+  loadOrderPaymentForm();
   ensureOrderProfileDiscountPanel();
   applyOrderCustomerProfileDiscount();
   elements.orderDialog?.showModal();
@@ -9092,6 +9607,7 @@ function openOrderDialog() {
 }
 
 function openOrderEditor(orderId) {
+  ensureCommercePaymentForms();
   const order = getOrder(orderId);
   if (!order) return showToast("Pedido no encontrado");
   if (normalizeOrderStatus(order.status) === "cancelado") {
@@ -9103,13 +9619,12 @@ function openOrderEditor(orderId) {
   orderFormDraft = { items: order.items.map((item) => ({ ...item })) };
   populateCommerceCustomerSelect(elements.orderCustomerSelect, order.customerId || "__walkin__");
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = order.origin || "manual";
-  if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = order.paymentStatus || "pendiente";
-  if (elements.orderPaymentMethod) elements.orderPaymentMethod.value = order.paymentMethod || "efectivo";
   if (elements.orderDeliveryType) elements.orderDeliveryType.value = order.deliveryType || "pendiente";
   if (elements.orderDiscount) elements.orderDiscount.value = String(order.discount ?? 0);
   if (elements.orderShipping) elements.orderShipping.value = String(order.shipping ?? 0);
   if (elements.orderNotes) elements.orderNotes.value = order.notes || "";
   if (elements.orderDialogTitle) elements.orderDialogTitle.textContent = `Editar pedido ${order.id}`;
+  loadOrderPaymentForm(order);
   ensureOrderProfileDiscountPanel();
   const profileInfo = resolveOrderProfileDiscount(order.customerId || "");
   orderFormProfilePercent = profileInfo.percent;
@@ -9126,9 +9641,11 @@ function closeOrderDialog() {
 }
 
 function openSaleDialog() {
+  ensureCommercePaymentForms();
   populateCommerceCustomerSelect(elements.saleCustomerSelect);
   if (elements.saleOriginSelect) elements.saleOriginSelect.value = "mostrador";
   resetSaleFormDraft();
+  loadSalePaymentForm();
   elements.saleDialog?.showModal();
 }
 
@@ -9305,6 +9822,7 @@ function updateOrderFormPreview() {
 function updateSaleFormPreview() {
   const totals = calculateDraftTotals(saleFormDraft.items);
   if (elements.saleTotalPreview) elements.saleTotalPreview.textContent = currency.format(totals.total);
+  updateSalePaymentCommissionPreview();
 }
 
 function readOrderCustomerSelection() {
@@ -9501,13 +10019,19 @@ function saveManualOrder(event) {
 
   const customer = readOrderCustomerSelection();
   const origin = elements.orderOriginSelect?.value || "manual";
-  const paymentStatus = normalizePaymentStatus(elements.orderPaymentStatus?.value);
+  const paymentPayload = readOrderPaymentPayload();
+  const paymentStatus = paymentPayload.paymentStatus;
   const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
   const totals = calculateDraftTotals(
     orderFormDraft.items,
     elements.orderDiscount?.value,
     elements.orderShipping?.value,
   );
+
+  const methodConfig = getPaymentMethodConfig(paymentPayload.paymentMethodId);
+  if (methodConfig?.requiereReferencia && !paymentPayload.paymentReference) {
+    return showToast("Este método requiere referencia de pago.");
+  }
 
   const discountCheck = validateOrderDiscountAuthorization({
     discountAmount: totals.discount,
@@ -9528,8 +10052,8 @@ function saveManualOrder(event) {
       ...existing,
       ...customer,
       origin,
+      ...paymentPayload,
       paymentStatus,
-      paymentMethod: elements.orderPaymentMethod?.value || "efectivo",
       deliveryType,
       subtotal: totals.subtotal,
       discount: totals.discount,
@@ -9555,8 +10079,8 @@ function saveManualOrder(event) {
     ...customer,
     origin,
     status,
+    ...paymentPayload,
     paymentStatus: resolveInitialOrderPaymentStatus(paymentStatus, status),
-    paymentMethod: elements.orderPaymentMethod?.value || "efectivo",
     deliveryType,
     subtotal: totals.subtotal,
     discount: totals.discount,
@@ -9594,17 +10118,16 @@ function saveManualSale(event) {
           customerId: customerValue,
           customerName: getCustomer(customerValue)?.name || "Cliente no informado",
         };
-  const paymentStatus = normalizePaymentStatus(elements.salePaymentStatus?.value);
   const totals = calculateDraftTotals(saleFormDraft.items);
   const saleOrigin = elements.saleOriginSelect?.value || "mostrador";
+  const paymentPayload = readSalePaymentPayload(totals.total);
   const sale = normalizeSale({
     id: getNextSaleId(),
     orderId: "",
     ...customer,
     origin: saleOrigin,
-    status: paymentStatus === "pagado" ? "completada" : "por_cobrar",
-    paymentStatus,
-    paymentMethod: elements.salePaymentMethod?.value || "efectivo",
+    status: paymentPayload.paymentStatus === "pagado" ? "completada" : "por_cobrar",
+    ...paymentPayload,
     deliveryType: saleOrigin === "mostrador" ? "venta_directa" : "recoger_tienda",
     total: totals.total,
     items: saleFormDraft.items.map((item) => ({ ...item })),
@@ -9613,7 +10136,7 @@ function saveManualSale(event) {
   });
 
   state.sales.unshift(sale);
-  if (paymentStatus === "pagado") {
+  if (paymentPayload.paymentStatus === "pagado") {
     const pseudoOrder = normalizeOrder({
       id: sale.id,
       customerId: sale.customerId,
@@ -9621,6 +10144,7 @@ function saveManualSale(event) {
       origin: sale.origin,
       status: "completado",
       paymentStatus: "pagado",
+      paymentMethodId: sale.paymentMethodId,
       paymentMethod: sale.paymentMethod,
       deliveryType: sale.deliveryType,
       total: sale.total,
@@ -9668,20 +10192,1668 @@ function exportSalesList() {
   showToast("Lista de ventas exportada");
 }
 
-function syncOrderPaymentRecord(order) {
-  const existing = state.payments.find((payment) => payment.orderId === order.id);
-  const payload = {
-    id: existing?.id || createId("pay"),
-    orderId: order.id,
-    customerName: order.customerName,
-    method: getPaymentMethodLabel(order.paymentMethod),
-    total: order.total,
-    status: order.paymentStatus === "pagado" ? "Pagado" : "Pendiente",
-    createdAt: order.createdAt,
-  };
-  if (existing) Object.assign(existing, payload);
-  else state.payments.unshift(payload);
+function normalizePaymentMethodType(type) {
+  const value = String(type || "otro")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (PAYMENT_METHOD_TYPES[value]) return value;
+  if (value.includes("contra")) return "contra_entrega";
+  if (value.includes("credito")) return "tarjeta_credito";
+  if (value.includes("debito") || value === "tarjeta") return "tarjeta_debito";
+  if (value.includes("codi") || value.includes("qr")) return "qr_bancario";
+  if (value.includes("oxxo") || (value.includes("referencia") && value.includes("efectivo"))) return "efectivo_referencia";
+  if (value.includes("transfer")) return "transferencia";
+  if (value === "wallet" || value === "clip" || value.includes("procesador")) return "procesador_pago";
+  if (value.includes("pasarela") || value.includes("mercado") || value.includes("nube")) return "pasarela";
+  if (value === "efectivo") return "efectivo";
+  return "otro";
 }
+
+function normalizePaymentCategory(category) {
+  const value = String(category || "")
+    .trim()
+    .toLowerCase();
+  if (PAYMENT_CATEGORY_LABELS[value]) return value;
+  return "";
+}
+
+function normalizeSuggestedPaymentStatus(status) {
+  const value = String(status || "pendiente")
+    .trim()
+    .toLowerCase();
+  if (PAYMENT_SUGGESTED_STATUS_LABELS[value]) return value;
+  return "pendiente";
+}
+
+function normalizePaymentChannel(channel) {
+  const value = String(channel || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  if (value === "tiendaonline" || value === "tienda_en_linea" || value === "tienda" || value === "enlinea") {
+    return "tiendaOnline";
+  }
+  if (value === "entregadomicilio" || value === "domicilio" || value === "entrega") return "entregaDomicilio";
+  if (value === "whatsapp") return "whatsapp";
+  if (value === "mostrador") return "mostrador";
+  if (value === "otro") return "otro";
+  return value;
+}
+
+function inferCommissionType(method = {}) {
+  const pct = toNumber(method.comisionPct);
+  const fixed = toNumber(method.comisionFija);
+  if (pct && fixed) return "mixta";
+  if (pct) return "porcentaje";
+  if (fixed) return "fija";
+  return "ninguna";
+}
+
+function normalizeCommissionType(type, method = {}) {
+  const value = String(type || "")
+    .trim()
+    .toLowerCase();
+  if (PAYMENT_COMMISSION_TYPE_LABELS[value]) return value;
+  return inferCommissionType(method);
+}
+
+function normalizeCommissionAbsorb(value) {
+  const key = String(value || "negocio")
+    .trim()
+    .toLowerCase();
+  if (PAYMENT_COMMISSION_ABSORB_LABELS[key]) return key;
+  return "negocio";
+}
+
+function normalizeConfirmationTime(value) {
+  const key = String(value || "manual")
+    .trim()
+    .toLowerCase();
+  if (PAYMENT_CONFIRMATION_TIME_LABELS[key]) return key;
+  return "manual";
+}
+
+function suggestedStatusFromConfirmationTime(time) {
+  const normalized = normalizeConfirmationTime(time);
+  if (normalized === "inmediato") return "recibido";
+  if (normalized === "manual") return "pendiente";
+  return "por_confirmar";
+}
+
+function normalizeProviderConnectionStatus(status) {
+  const value = String(status || "no_configurado")
+    .trim()
+    .toLowerCase();
+  if (PROVIDER_CONNECTION_LABELS[value]) return value;
+  return "no_configurado";
+}
+
+function normalizePaymentMethodConfig(method = {}) {
+  const tipo = normalizePaymentMethodType(method.tipo);
+  const defaults = PAYMENT_METHOD_TYPE_DEFAULTS[tipo] || PAYMENT_METHOD_TYPE_DEFAULTS.otro;
+  const canales = method.canales && typeof method.canales === "object" ? method.canales : {};
+  const categoria = normalizePaymentCategory(method.categoria) || defaults.categoria || "otros";
+  const comisionPct = toNumber(method.comisionPct);
+  const comisionFija = toNumber(method.comisionFija);
+  const comisionTipo = normalizeCommissionType(method.comisionTipo, { comisionPct, comisionFija });
+  const tiempoConfirmacion = normalizeConfirmationTime(
+    method.tiempoConfirmacion != null ? method.tiempoConfirmacion : method.estadoSugerido === "recibido" ? "inmediato" : "horas_24",
+  );
+  return {
+    id: method.id || createId("pmethod"),
+    nombre: String(method.nombre || "").trim() || "Método sin nombre",
+    categoria,
+    tipo,
+    providerId: String(method.providerId || "").trim(),
+    activo: method.activo !== false,
+    requiereReferencia:
+      method.requiereReferencia != null ? Boolean(method.requiereReferencia) : Boolean(defaults.requiereReferencia),
+    requiereConfirmacion:
+      method.requiereConfirmacion != null
+        ? Boolean(method.requiereConfirmacion)
+        : Boolean(defaults.requiereConfirmacion),
+    requiereComprobante:
+      method.requiereComprobante != null
+        ? Boolean(method.requiereComprobante)
+        : Boolean(method.requiereConfirmacion ?? defaults.requiereConfirmacion),
+    requiereAutorizacion: Boolean(method.requiereAutorizacion),
+    tiempoConfirmacion,
+    reglasObservaciones: method.reglasObservaciones || "",
+    estadoSugerido: normalizeSuggestedPaymentStatus(
+      method.estadoSugerido != null
+        ? method.estadoSugerido
+        : suggestedStatusFromConfirmationTime(tiempoConfirmacion),
+    ),
+    comisionTipo,
+    comisionAbsorbe: normalizeCommissionAbsorb(method.comisionAbsorbe),
+    comisionPct,
+    comisionFija,
+    canales: {
+      mostrador: canales.mostrador != null ? Boolean(canales.mostrador) : true,
+      whatsapp: canales.whatsapp != null ? Boolean(canales.whatsapp) : false,
+      tiendaOnline: canales.tiendaOnline != null ? Boolean(canales.tiendaOnline) : false,
+      entregaDomicilio: canales.entregaDomicilio != null ? Boolean(canales.entregaDomicilio) : false,
+      otro: canales.otro != null ? Boolean(canales.otro) : false,
+    },
+    notas: method.notas || "",
+    createdAt: method.createdAt || new Date().toISOString(),
+    updatedAt: method.updatedAt || method.createdAt || new Date().toISOString(),
+  };
+}
+
+function normalizePaymentProvider(provider = {}) {
+  return {
+    id: provider.id || createId("pprovider"),
+    nombre: String(provider.nombre || "").trim() || "Proveedor sin nombre",
+    activo: provider.activo !== false,
+    modo: provider.modo === "produccion" ? "produccion" : "prueba",
+    publicKeyVisible: provider.publicKeyVisible || "",
+    webhookUrl: provider.webhookUrl || "",
+    notas: provider.notas || "",
+    estadoConexion: normalizeProviderConnectionStatus(provider.estadoConexion),
+    methodIds: Array.isArray(provider.methodIds) ? provider.methodIds.filter(Boolean) : [],
+    updatedAt: provider.updatedAt || new Date().toISOString(),
+  };
+}
+
+function migratePaymentConfigState() {
+  state.paymentMethods = readJSON(storageKeys.paymentMethods, []).map(normalizePaymentMethodConfig);
+  state.paymentProviders = readJSON(storageKeys.paymentProviders, []).map(normalizePaymentProvider);
+  const storedVersion = toInteger(localStorage.getItem(storageKeys.paymentConfigVersion) || 0);
+  if (storedVersion < PAYMENT_CONFIG_VERSION) {
+    syncPaymentConfigCatalog();
+    localStorage.setItem(storageKeys.paymentConfigVersion, String(PAYMENT_CONFIG_VERSION));
+  } else {
+    ensurePaymentConfigDemoData();
+  }
+  state.paymentProviders = state.paymentProviders.filter(
+    (provider) => !LEGACY_PAYMENT_PROVIDER_IDS.includes(provider.id),
+  );
+  persistPaymentConfig();
+}
+
+function syncPaymentConfigCatalog() {
+  INITIAL_DEMO_PAYMENT_METHODS.forEach((demo) => {
+    const existing = getPaymentMethodConfig(demo.id);
+    const normalized = normalizePaymentMethodConfig({
+      ...demo,
+      activo: existing ? existing.activo : demo.activo,
+      createdAt: existing?.createdAt,
+      updatedAt: new Date().toISOString(),
+    });
+    if (existing) Object.assign(existing, normalized);
+    else state.paymentMethods.push(normalized);
+  });
+
+  INITIAL_DEMO_PAYMENT_PROVIDERS.forEach((demo) => {
+    const existing = getPaymentProvider(demo.id);
+    const normalized = normalizePaymentProvider({
+      ...demo,
+      activo: existing ? existing.activo : demo.activo,
+      updatedAt: new Date().toISOString(),
+    });
+    if (existing) Object.assign(existing, normalized);
+    else state.paymentProviders.push(normalized);
+  });
+
+  state.paymentProviders = state.paymentProviders.filter(
+    (provider) => !LEGACY_PAYMENT_PROVIDER_IDS.includes(provider.id),
+  );
+}
+
+function ensurePaymentConfigDemoData() {
+  if (!state.paymentMethods.length) {
+    state.paymentMethods = INITIAL_DEMO_PAYMENT_METHODS.map((method) => normalizePaymentMethodConfig(method));
+  } else {
+    INITIAL_DEMO_PAYMENT_METHODS.forEach((demo) => {
+      if (!getPaymentMethodConfig(demo.id)) {
+        state.paymentMethods.push(normalizePaymentMethodConfig(demo));
+      }
+    });
+  }
+  if (!state.paymentProviders.length) {
+    state.paymentProviders = INITIAL_DEMO_PAYMENT_PROVIDERS.map((provider) => normalizePaymentProvider(provider));
+  } else {
+    INITIAL_DEMO_PAYMENT_PROVIDERS.forEach((demo) => {
+      if (!getPaymentProvider(demo.id)) {
+        state.paymentProviders.push(normalizePaymentProvider(demo));
+      }
+    });
+  }
+}
+
+function persistPaymentConfig() {
+  persist(storageKeys.paymentMethods, state.paymentMethods);
+  persist(storageKeys.paymentProviders, state.paymentProviders);
+}
+
+function getPaymentMethodConfig(methodId) {
+  const key = String(methodId || "").trim();
+  if (!key) return null;
+  return state.paymentMethods.find((method) => method.id === key) || null;
+}
+
+function getPaymentProvider(providerId) {
+  const key = String(providerId || "").trim();
+  if (!key) return null;
+  return state.paymentProviders.find((provider) => provider.id === key) || null;
+}
+
+function getPaymentMethodTypeLabel(type) {
+  return PAYMENT_METHOD_TYPES[normalizePaymentMethodType(type)] || type;
+}
+
+function getProviderConnectionLabel(status) {
+  return PROVIDER_CONNECTION_LABELS[normalizeProviderConnectionStatus(status)] || status;
+}
+
+function getProviderModeLabel(mode) {
+  return PROVIDER_MODE_LABELS[mode === "produccion" ? "produccion" : "prueba"] || mode;
+}
+
+function getSuggestedPaymentStatusForMethod(method) {
+  const normalized = normalizePaymentMethodConfig(method);
+  if (normalized.estadoSugerido) return normalized.estadoSugerido;
+  const defaults = PAYMENT_METHOD_TYPE_DEFAULTS[normalized.tipo];
+  return defaults?.estadoSugerido || "pendiente";
+}
+
+function calculatePaymentMethodCommission(method, amount) {
+  if (!method) return 0;
+  const config = normalizePaymentMethodConfig(method);
+  const base = toNumber(amount);
+  const tipo = config.comisionTipo || inferCommissionType(config);
+  if (tipo === "ninguna") return 0;
+  if (tipo === "porcentaje") return (base * toNumber(config.comisionPct)) / 100;
+  if (tipo === "fija") return toNumber(config.comisionFija);
+  if (tipo === "mixta") return toNumber(config.comisionFija) + (base * toNumber(config.comisionPct)) / 100;
+  return 0;
+}
+
+function getActivePaymentMethods(channel) {
+  const key = normalizePaymentChannel(channel);
+  return state.paymentMethods
+    .filter((method) => method.activo && method.canales[key])
+    .sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+}
+
+function getPaymentMethodRules(methodId) {
+  const method = getPaymentMethodConfig(methodId);
+  if (!method || !method.activo) return null;
+  return {
+    id: method.id,
+    nombre: method.nombre,
+    categoria: method.categoria,
+    tipo: method.tipo,
+    providerId: method.providerId,
+    activo: method.activo,
+    requiereReferencia: method.requiereReferencia,
+    requiereConfirmacion: method.requiereConfirmacion,
+    requiereComprobante: method.requiereComprobante,
+    requiereAutorizacion: method.requiereAutorizacion,
+    tiempoConfirmacion: method.tiempoConfirmacion,
+    reglasObservaciones: method.reglasObservaciones,
+    comisionTipo: method.comisionTipo,
+    comisionAbsorbe: method.comisionAbsorbe,
+    comisionPct: method.comisionPct,
+    comisionFija: method.comisionFija,
+    canales: { ...method.canales },
+    estadoSugerido: getSuggestedPaymentStatusForMethod(method),
+    proveedores: getPaymentProvidersForMethod(method.id).map((provider) => ({
+      id: provider.id,
+      nombre: provider.nombre,
+    })),
+    notas: method.notas,
+  };
+}
+
+function getPaymentMethodsByCategory() {
+  return groupPaymentMethodsByCategory();
+}
+
+function getPaymentProvidersForMethod(methodId) {
+  const key = String(methodId || "").trim();
+  if (!key) return [];
+  return state.paymentProviders
+    .filter((provider) => provider.activo && provider.methodIds.includes(key))
+    .sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+}
+
+function getPaymentMethodUsageKeys(method) {
+  const keys = new Set();
+  const predefined = PAYMENT_METHOD_USAGE_KEYS[method.id];
+  if (predefined) predefined.forEach((key) => keys.add(key));
+  const tipo = normalizePaymentMethodType(method.tipo);
+  if (tipo === "efectivo") keys.add("efectivo");
+  if (tipo === "transferencia" || tipo === "qr_bancario") keys.add("transferencia");
+  if (tipo === "tarjeta_debito" || tipo === "tarjeta_credito") keys.add("tarjeta");
+  if (tipo === "procesador_pago") keys.add("clip");
+  if (tipo === "pasarela" || tipo === "efectivo_referencia") keys.add("mercado_pago");
+  if (tipo === "otro" || tipo === "contra_entrega") keys.add("otro");
+  return Array.from(keys);
+}
+
+function isPaymentMethodInUse(methodOrId) {
+  const method = typeof methodOrId === "string" ? getPaymentMethodConfig(methodOrId) : methodOrId;
+  if (!method) return false;
+  const usedById =
+    state.orders.some((order) => order.paymentMethodId === method.id) ||
+    state.sales.some((sale) => sale.paymentMethodId === method.id);
+  if (usedById) return true;
+  const usageKeys = getPaymentMethodUsageKeys(method);
+  const usedInOrders = state.orders.some((order) => usageKeys.includes(normalizePaymentMethod(order.paymentMethod)));
+  const usedInSales = state.sales.some((sale) => usageKeys.includes(normalizePaymentMethod(sale.paymentMethod)));
+  return usedInOrders || usedInSales;
+}
+
+function getActivePaymentMethodCount() {
+  return state.paymentMethods.filter((method) => method.activo).length;
+}
+
+function getLegacyPaymentKeyFromMethod(method) {
+  if (!method) return "otro";
+  const predefined = PAYMENT_METHOD_USAGE_KEYS[method.id];
+  if (predefined && predefined[0]) return predefined[0];
+  const tipo = normalizePaymentMethodType(method.tipo);
+  if (tipo === "efectivo") return "efectivo";
+  if (tipo === "transferencia" || tipo === "qr_bancario") return "transferencia";
+  if (tipo === "tarjeta_debito" || tipo === "tarjeta_credito") return "tarjeta";
+  if (tipo === "procesador_pago") return "clip";
+  if (tipo === "pasarela" || tipo === "efectivo_referencia") return "mercado_pago";
+  if (tipo === "contra_entrega") return "otro";
+  return "otro";
+}
+
+function resolvePaymentMethodIdForRecord(record = {}) {
+  const explicit = String(record.paymentMethodId || "").trim();
+  if (explicit && getPaymentMethodConfig(explicit)) return explicit;
+  const legacy = normalizePaymentMethod(record.paymentMethod);
+  const match = state.paymentMethods.find((method) => getLegacyPaymentKeyFromMethod(method) === legacy);
+  return match?.id || "";
+}
+
+function resolveLegacyPaymentKeyForRecord(record = {}) {
+  const config = getPaymentMethodConfig(record.paymentMethodId);
+  if (config) return getLegacyPaymentKeyFromMethod(config);
+  return normalizePaymentMethod(record.paymentMethod);
+}
+
+function inferPaymentChannelFromOrigin(origin) {
+  const value = normalizeOrderOrigin(origin);
+  if (value === "whatsapp") return "whatsapp";
+  if (value === "tienda_en_linea") return "tiendaOnline";
+  if (value === "mostrador") return "mostrador";
+  return "mostrador";
+}
+
+function getSelectablePaymentMethods(channel, historicalMethodId = "") {
+  const key = channel ? normalizePaymentChannel(channel) : "";
+  const active = state.paymentMethods
+    .filter((method) => method.activo && (!key || method.canales[key]))
+    .sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+  const historical = historicalMethodId ? getPaymentMethodConfig(historicalMethodId) : null;
+  if (historical && !historical.activo && !active.some((method) => method.id === historical.id)) {
+    return [...active, historical];
+  }
+  return active;
+}
+
+function populateCommercePaymentMethodSelect(select, options = {}) {
+  if (!select) return;
+  const selectedId = String(options.selectedId || "").trim();
+  const legacyKey = options.legacyKey ? normalizePaymentMethod(options.legacyKey) : "";
+  const historicalMethodId =
+    options.historicalMethodId ||
+    selectedId ||
+    state.paymentMethods.find((method) => getLegacyPaymentKeyFromMethod(method) === legacyKey)?.id ||
+    "";
+  const methods = getSelectablePaymentMethods(options.channel, historicalMethodId);
+  const resolvedSelected =
+    selectedId ||
+    historicalMethodId ||
+    methods.find((method) => getLegacyPaymentKeyFromMethod(method) === legacyKey)?.id ||
+    methods[0]?.id ||
+    "";
+
+  select.innerHTML = methods.length
+    ? methods
+        .map((method) => {
+          const historical = !method.activo;
+          const suffix = historical ? " (histórico)" : "";
+          return `<option value="${escapeHTML(method.id)}"${method.id === resolvedSelected ? " selected" : ""}${historical ? ' data-historical="true"' : ""}>${escapeHTML(method.nombre)}${suffix}</option>`;
+        })
+        .join("")
+    : `<option value="">Sin métodos activos</option>`;
+
+  if (resolvedSelected) select.value = resolvedSelected;
+  select.dataset.historicalId = historicalMethodId;
+}
+
+function populateOrderPaymentStatusOptions() {
+  if (!elements.orderPaymentStatus) return;
+  elements.orderPaymentStatus.innerHTML = Object.entries(PAYMENT_STATUS_LABELS)
+    .map(([value, label]) => `<option value="${value}">${label}</option>`)
+    .join("");
+}
+
+function buildSalePaymentBreakdown(methodId, total) {
+  const config = getPaymentMethodConfig(methodId);
+  const collected = toNumber(total);
+  const commission = config ? calculatePaymentMethodCommission(config, collected) : 0;
+  return {
+    commission,
+    netTotal: Math.max(0, collected - commission),
+  };
+}
+
+function readOrderPaymentPayload() {
+  const methodId = elements.orderPaymentMethod?.value || "";
+  const config = getPaymentMethodConfig(methodId);
+  return {
+    paymentMethodId: methodId,
+    paymentMethod: config ? getLegacyPaymentKeyFromMethod(config) : resolveLegacyPaymentKeyForRecord({ paymentMethod: methodId }),
+    paymentStatus: normalizePaymentStatus(elements.orderPaymentStatus?.value),
+    paymentChannel: elements.orderPaymentChannel?.value || "",
+    paymentReference: elements.orderPaymentReference?.value.trim() || "",
+    paymentProof: elements.orderPaymentProof?.value.trim() || "",
+  };
+}
+
+function readSalePaymentPayload(total) {
+  const methodId = elements.salePaymentMethod?.value || "";
+  const config = getPaymentMethodConfig(methodId);
+  const breakdown = buildSalePaymentBreakdown(methodId, total);
+  const providerId = elements.salePaymentProvider?.value || config?.providerId || "";
+  return {
+    paymentMethodId: methodId,
+    paymentMethod: config ? getLegacyPaymentKeyFromMethod(config) : resolveLegacyPaymentKeyForRecord({ paymentMethod: methodId }),
+    paymentStatus: normalizePaymentStatus(elements.salePaymentStatus?.value),
+    paymentProviderId: providerId,
+    paymentCommission: breakdown.commission,
+    paymentNetTotal: breakdown.netTotal,
+    paymentReference: elements.salePaymentReference?.value.trim() || "",
+    paymentChannel: elements.salePaymentChannel?.value || "",
+  };
+}
+
+function updateOrderPaymentFieldVisibility() {
+  const methodId = elements.orderPaymentMethod?.value || "";
+  const config = getPaymentMethodConfig(methodId);
+  const needsRef = Boolean(config?.requiereReferencia);
+  const needsProof = Boolean(config?.requiereComprobante);
+  elements.orderPaymentReferenceWrap?.classList.toggle("is-important", needsRef);
+  elements.orderPaymentProofWrap?.classList.toggle("is-hidden", !needsProof);
+  if (elements.orderPaymentReference) {
+    elements.orderPaymentReference.required = needsRef;
+    elements.orderPaymentReference.placeholder = needsRef
+      ? "Requerido: folio, SPEI o referencia"
+      : "Folio, SPEI o referencia (opcional)";
+  }
+}
+
+function syncOrderPaymentChannelFromOrigin() {
+  if (!elements.orderPaymentChannel) return;
+  elements.orderPaymentChannel.value = inferPaymentChannelFromOrigin(elements.orderOriginSelect?.value);
+  const historicalId = elements.orderPaymentMethod?.dataset.historicalId || elements.orderPaymentMethod?.value || "";
+  populateCommercePaymentMethodSelect(elements.orderPaymentMethod, {
+    selectedId: elements.orderPaymentMethod?.value,
+    channel: elements.orderPaymentChannel.value,
+    historicalMethodId: historicalId,
+  });
+  updateOrderPaymentFieldVisibility();
+}
+
+function populateSalePaymentProviderSelect(methodId, selectedProviderId = "") {
+  if (!elements.salePaymentProvider) return;
+  const providers = getPaymentProvidersForMethod(methodId);
+  const config = getPaymentMethodConfig(methodId);
+  if (!methodId || !providers.length) {
+    elements.salePaymentProvider.innerHTML = `<option value="">${config?.providerId ? "Sin proveedor vinculado" : "No aplica"}</option>`;
+    elements.salePaymentProvider.disabled = true;
+    return;
+  }
+  const defaultId = selectedProviderId || config?.providerId || providers[0]?.id || "";
+  elements.salePaymentProvider.disabled = false;
+  elements.salePaymentProvider.innerHTML = providers
+    .map(
+      (provider) =>
+        `<option value="${escapeHTML(provider.id)}"${provider.id === defaultId ? " selected" : ""}>${escapeHTML(provider.nombre)}</option>`,
+    )
+    .join("");
+}
+
+function updateSalePaymentCommissionPreview() {
+  const methodId = elements.salePaymentMethod?.value || "";
+  const totals = calculateDraftTotals(saleFormDraft.items);
+  const breakdown = buildSalePaymentBreakdown(methodId, totals.total);
+  if (elements.salePaymentTotalCollected) {
+    elements.salePaymentTotalCollected.textContent = currency.format(totals.total);
+  }
+  if (elements.salePaymentCommissionPreview) {
+    elements.salePaymentCommissionPreview.textContent = currency.format(breakdown.commission);
+  }
+  if (elements.salePaymentNetPreview) {
+    elements.salePaymentNetPreview.textContent = currency.format(breakdown.netTotal);
+  }
+}
+
+function loadOrderPaymentForm(order = null) {
+  const channel = order?.paymentChannel || inferPaymentChannelFromOrigin(order?.origin || elements.orderOriginSelect?.value);
+  const methodId = resolvePaymentMethodIdForRecord(order || {});
+  populateCommercePaymentMethodSelect(elements.orderPaymentMethod, {
+    selectedId: methodId,
+    legacyKey: order?.paymentMethod,
+    channel,
+    historicalMethodId: methodId,
+  });
+  if (elements.orderPaymentStatus) {
+    elements.orderPaymentStatus.value = normalizePaymentStatus(order?.paymentStatus) || "pendiente";
+  }
+  if (elements.orderPaymentChannel) elements.orderPaymentChannel.value = channel;
+  if (elements.orderPaymentReference) elements.orderPaymentReference.value = order?.paymentReference || "";
+  if (elements.orderPaymentProof) elements.orderPaymentProof.value = order?.paymentProof || "";
+  updateOrderPaymentFieldVisibility();
+}
+
+function loadSalePaymentForm(sale = null) {
+  const channel = sale?.paymentChannel || inferPaymentChannelFromOrigin(sale?.origin || elements.saleOriginSelect?.value);
+  const methodId = resolvePaymentMethodIdForRecord(sale || {});
+  populateCommercePaymentMethodSelect(elements.salePaymentMethod, {
+    selectedId: methodId,
+    legacyKey: sale?.paymentMethod,
+    channel,
+    historicalMethodId: methodId,
+  });
+  if (elements.salePaymentStatus) {
+    elements.salePaymentStatus.value = normalizePaymentStatus(sale?.paymentStatus) || "pagado";
+  }
+  if (elements.salePaymentChannel) elements.salePaymentChannel.value = channel;
+  if (elements.salePaymentReference) elements.salePaymentReference.value = sale?.paymentReference || "";
+  populateSalePaymentProviderSelect(methodId, sale?.paymentProviderId || "");
+  updateSalePaymentCommissionPreview();
+}
+
+function refreshCommercePaymentElements() {
+  elements.orderPaymentMethod = $("#orderPaymentMethod");
+  elements.orderPaymentStatus = $("#orderPaymentStatus");
+  elements.orderPaymentChannel = $("#orderPaymentChannel");
+  elements.orderPaymentReference = $("#orderPaymentReference");
+  elements.orderPaymentProof = $("#orderPaymentProof");
+  elements.orderPaymentReferenceWrap = $("#orderPaymentReferenceWrap");
+  elements.orderPaymentProofWrap = $("#orderPaymentProofWrap");
+  elements.salePaymentMethod = $("#salePaymentMethod");
+  elements.salePaymentStatus = $("#salePaymentStatus");
+  elements.salePaymentChannel = $("#salePaymentChannel");
+  elements.salePaymentReference = $("#salePaymentReference");
+  elements.salePaymentProvider = $("#salePaymentProvider");
+  elements.salePaymentTotalCollected = $("#salePaymentTotalCollected");
+  elements.salePaymentCommissionPreview = $("#salePaymentCommissionPreview");
+  elements.salePaymentNetPreview = $("#salePaymentNetPreview");
+}
+
+function ensureOrderCommercePaymentSection() {
+  if (!elements.orderForm || document.getElementById("orderCommercePaymentPanel")) {
+    refreshCommercePaymentElements();
+    return;
+  }
+
+  const statusLabel = elements.orderPaymentStatus?.closest("label");
+  const methodLabel = elements.orderPaymentMethod?.closest("label");
+  const summary = elements.orderForm.querySelector(".order-summary-box");
+  const grid3 = elements.orderDiscount?.closest(".customer-form-grid--3");
+
+  if (statusLabel) statusLabel.remove();
+  if (methodLabel) methodLabel.remove();
+  if (grid3) grid3.className = "customer-form-grid customer-form-grid--2";
+
+  const panel = document.createElement("section");
+  panel.className = "commerce-payment-panel";
+  panel.id = "orderCommercePaymentPanel";
+  panel.innerHTML = `
+    <h3 class="commerce-payment-title">Pago</h3>
+    <div class="customer-form-grid customer-form-grid--2 commerce-payment-grid">
+      <label>Método de pago
+        <select id="orderPaymentMethod"></select>
+      </label>
+      <label>Estado del pago
+        <select id="orderPaymentStatus"></select>
+      </label>
+      <label>Canal de pago
+        <select id="orderPaymentChannel">
+          <option value="mostrador">Mostrador</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="tiendaOnline">En línea</option>
+          <option value="entregaDomicilio">Entrega a domicilio</option>
+          <option value="otro">Otro</option>
+        </select>
+      </label>
+      <label id="orderPaymentReferenceWrap">Referencia de pago
+        <input id="orderPaymentReference" type="text" placeholder="Folio, SPEI o referencia" />
+      </label>
+      <label id="orderPaymentProofWrap" class="is-full">Comprobante / nota
+        <input id="orderPaymentProof" type="text" placeholder="URL, folio o nota del comprobante" />
+      </label>
+    </div>
+  `;
+  summary?.before(panel);
+  refreshCommercePaymentElements();
+  populateOrderPaymentStatusOptions();
+  elements.orderPaymentMethod?.addEventListener("change", updateOrderPaymentFieldVisibility);
+  elements.orderPaymentChannel?.addEventListener("change", () => {
+    populateCommercePaymentMethodSelect(elements.orderPaymentMethod, {
+      selectedId: elements.orderPaymentMethod?.value,
+      channel: elements.orderPaymentChannel?.value,
+      historicalMethodId: elements.orderPaymentMethod?.dataset.historicalId || "",
+    });
+    updateOrderPaymentFieldVisibility();
+  });
+}
+
+function ensureSaleCommercePaymentSection() {
+  if (!elements.saleForm || document.getElementById("saleCommercePaymentPanel")) {
+    refreshCommercePaymentElements();
+    return;
+  }
+
+  const methodLabel = elements.salePaymentMethod?.closest("label");
+  const statusLabel = elements.salePaymentStatus?.closest("label");
+  const grid = methodLabel?.parentElement;
+  const summary = elements.saleForm.querySelector(".order-summary-box");
+
+  if (methodLabel) methodLabel.remove();
+  if (statusLabel) statusLabel.remove();
+  if (grid) grid.remove();
+
+  const panel = document.createElement("section");
+  panel.className = "commerce-payment-panel";
+  panel.id = "saleCommercePaymentPanel";
+  panel.innerHTML = `
+    <h3 class="commerce-payment-title">Pago</h3>
+    <div class="customer-form-grid customer-form-grid--2 commerce-payment-grid">
+      <label>Método de pago
+        <select id="salePaymentMethod"></select>
+      </label>
+      <label>Estado del pago
+        <select id="salePaymentStatus">
+          <option value="pagado">Pagado</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="parcial">Parcial</option>
+        </select>
+      </label>
+      <label>Proveedor / procesador
+        <select id="salePaymentProvider"></select>
+      </label>
+      <label>Canal de pago
+        <select id="salePaymentChannel">
+          <option value="mostrador">Mostrador</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="tiendaOnline">En línea</option>
+          <option value="entregaDomicilio">Entrega a domicilio</option>
+          <option value="otro">Otro</option>
+        </select>
+      </label>
+      <label class="is-full">Referencia de pago
+        <input id="salePaymentReference" type="text" placeholder="Folio o referencia (opcional)" />
+      </label>
+    </div>
+    <div class="commerce-payment-commission-box">
+      <div><span>Total cobrado</span><strong id="salePaymentTotalCollected">$0.00</strong></div>
+      <div><span>Comisión estimada</span><strong id="salePaymentCommissionPreview">$0.00</strong></div>
+      <div class="commerce-payment-net"><span>Total neto</span><strong id="salePaymentNetPreview">$0.00</strong></div>
+    </div>
+  `;
+  summary?.before(panel);
+  refreshCommercePaymentElements();
+  elements.salePaymentMethod?.addEventListener("change", () => {
+    populateSalePaymentProviderSelect(elements.salePaymentMethod?.value || "");
+    updateSalePaymentCommissionPreview();
+  });
+  elements.salePaymentProvider?.addEventListener("change", updateSalePaymentCommissionPreview);
+  elements.salePaymentChannel?.addEventListener("change", () => {
+    populateCommercePaymentMethodSelect(elements.salePaymentMethod, {
+      selectedId: elements.salePaymentMethod?.value,
+      channel: elements.salePaymentChannel?.value,
+      historicalMethodId: elements.salePaymentMethod?.dataset.historicalId || "",
+    });
+    populateSalePaymentProviderSelect(elements.salePaymentMethod?.value || "");
+    updateSalePaymentCommissionPreview();
+  });
+}
+
+function ensureCommercePaymentForms() {
+  ensureOrderCommercePaymentSection();
+  ensureSaleCommercePaymentSection();
+  if (!commercePaymentFormsReady) {
+    elements.orderOriginSelect?.addEventListener("change", syncOrderPaymentChannelFromOrigin);
+    elements.saleOriginSelect?.addEventListener("change", () => {
+      if (elements.salePaymentChannel) {
+        elements.salePaymentChannel.value = inferPaymentChannelFromOrigin(elements.saleOriginSelect?.value);
+      }
+      loadSalePaymentForm();
+    });
+    commercePaymentFormsReady = true;
+  }
+}
+
+function getPaymentConfigSummary() {
+  const methods = state.paymentMethods;
+  const providers = state.paymentProviders;
+  return {
+    activeMethods: methods.filter((method) => method.activo).length,
+    requiresConfirmation: methods.filter((method) => method.activo && method.requiereConfirmacion).length,
+    withCommission: methods.filter(
+      (method) => method.activo && (toNumber(method.comisionPct) > 0 || toNumber(method.comisionFija) > 0),
+    ).length,
+    counterAvailable: methods.filter((method) => method.activo && method.canales.mostrador).length,
+    whatsappAvailable: methods.filter((method) => method.activo && method.canales.whatsapp).length,
+    activeProviders: providers.filter((provider) => provider.activo).length,
+  };
+}
+
+function getPaymentMethodCategoryId(method) {
+  const categoria = normalizePaymentCategory(method.categoria);
+  if (categoria && PAYMENT_METHOD_CATEGORIES.some((category) => category.id === categoria)) {
+    return categoria;
+  }
+  const predefined = PAYMENT_METHOD_CATEGORIES.find((category) => category.methodIds.includes(method.id));
+  if (predefined) return predefined.id;
+  const tipo = normalizePaymentMethodType(method.tipo);
+  const byType = PAYMENT_METHOD_CATEGORIES.find((category) => category.matchTypes.includes(tipo));
+  return byType?.id || "otros";
+}
+
+function getPaymentMethodHint(method) {
+  return PAYMENT_METHOD_HINTS[normalizePaymentMethodType(method.tipo)] || PAYMENT_METHOD_HINTS.otro;
+}
+
+function groupPaymentMethodsByCategory() {
+  const groups = Object.fromEntries(PAYMENT_METHOD_CATEGORIES.map((category) => [category.id, []]));
+  state.paymentMethods.forEach((method) => {
+    const categoryId = getPaymentMethodCategoryId(method);
+    groups[categoryId].push(method);
+  });
+  PAYMENT_METHOD_CATEGORIES.forEach((category) => {
+    groups[category.id].sort((left, right) => {
+      const leftIndex = category.methodIds.indexOf(left.id);
+      const rightIndex = category.methodIds.indexOf(right.id);
+      if (leftIndex >= 0 && rightIndex >= 0) return leftIndex - rightIndex;
+      if (leftIndex >= 0) return -1;
+      if (rightIndex >= 0) return 1;
+      return left.nombre.localeCompare(right.nombre, "es");
+    });
+  });
+  return groups;
+}
+
+function renderPaymentMethodChannels(method) {
+  const chips = Object.entries(PAYMENT_CHANNEL_LABELS)
+    .filter(([key]) => method.canales[key])
+    .map(([, label]) => `<span class="payments-channel-chip">${escapeHTML(label)}</span>`)
+    .join("");
+  return chips || `<span class="payments-muted">Sin canales</span>`;
+}
+
+function renderPaymentMethodCommission(method) {
+  const pct = toNumber(method.comisionPct);
+  const fixed = toNumber(method.comisionFija);
+  if (!pct && !fixed) return `<span class="payments-muted">Sin comisión</span>`;
+  const parts = [];
+  if (pct) parts.push(`${pct}%`);
+  if (fixed) parts.push(currency.format(fixed));
+  return escapeHTML(parts.join(" + "));
+}
+
+function renderPaymentMethodStatusBadge(method) {
+  const label = method.activo ? "Activo" : "Inactivo";
+  const badge = method.activo ? "success" : "neutral";
+  return `<span class="payments-status-badge orders-status-badge is-${badge}">${label}</span>`;
+}
+
+function renderPaymentConfirmBadge(method) {
+  const label = method.requiereConfirmacion ? "Sí" : "No";
+  const badge = method.requiereConfirmacion ? "warning" : "neutral";
+  return `<span class="payments-status-badge orders-status-badge is-${badge}">${label}</span>`;
+}
+
+function renderProviderConnectionBadge(provider) {
+  const status = normalizeProviderConnectionStatus(provider.estadoConexion);
+  const badge =
+    status === "conectado" ? "success" : status === "pendiente" ? "warning" : "neutral";
+  return `<span class="payments-status-badge orders-status-badge is-${badge}">${escapeHTML(getProviderConnectionLabel(status))}</span>`;
+}
+
+function renderLinkedPaymentMethods(provider) {
+  if (!provider.methodIds.length) return `<span class="payments-muted">Sin métodos</span>`;
+  const names = provider.methodIds
+    .map((methodId) => getPaymentMethodConfig(methodId)?.nombre)
+    .filter(Boolean);
+  return escapeHTML(names.join(", ") || "Sin métodos");
+}
+
+function renderPaymentMethodActions(method) {
+  const methodId = escapeHTML(method.id);
+  return `
+    <div class="payments-admin-actions">
+      <button class="payments-action-btn" type="button" data-action="edit-payment-method" data-id="${methodId}">Editar</button>
+      ${
+        method.activo
+          ? `<button class="payments-action-btn is-danger" type="button" data-action="deactivate-payment-method" data-id="${methodId}">Desactivar</button>`
+          : `<button class="payments-action-btn is-success" type="button" data-action="activate-payment-method" data-id="${methodId}">Activar</button>`
+      }
+      <button class="payments-action-btn is-danger is-outline" type="button" data-action="delete-payment-method" data-id="${methodId}">Eliminar</button>
+    </div>
+  `;
+}
+
+function renderPaymentProviderActions(provider) {
+  const providerId = escapeHTML(provider.id);
+  return `
+    <div class="payments-admin-actions">
+      <button class="payments-action-btn" type="button" data-action="edit-payment-provider" data-id="${providerId}">Editar</button>
+      ${
+        provider.activo
+          ? `<button class="payments-action-btn is-danger" type="button" data-action="deactivate-payment-provider" data-id="${providerId}">Desactivar</button>`
+          : `<button class="payments-action-btn is-success" type="button" data-action="activate-payment-provider" data-id="${providerId}">Activar</button>`
+      }
+      <button class="payments-action-btn is-danger is-outline" type="button" data-action="delete-payment-provider" data-id="${providerId}">Eliminar</button>
+    </div>
+  `;
+}
+
+function renderPaymentConfigSummaryCards(summary) {
+  if (!elements.paymentsSummaryCards) return;
+  elements.paymentsSummaryCards.innerHTML = `
+    <article class="payments-summary-card payments-summary-card--primary">
+      <span class="payments-summary-label">Métodos activos</span>
+      <strong>${summary.activeMethods}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--accent">
+      <span class="payments-summary-label">Requieren confirmación</span>
+      <strong>${summary.requiresConfirmation}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--accent">
+      <span class="payments-summary-label">Con comisión</span>
+      <strong>${summary.withCommission}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--meta">
+      <span class="payments-summary-label">Disponibles en mostrador</span>
+      <strong>${summary.counterAvailable}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--meta">
+      <span class="payments-summary-label">Disponibles en WhatsApp</span>
+      <strong>${summary.whatsappAvailable}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--primary">
+      <span class="payments-summary-label">Proveedores activos</span>
+      <strong>${summary.activeProviders}</strong>
+    </article>
+  `;
+}
+
+function renderPaymentMethodNameCell(method) {
+  const hint = getPaymentMethodHint(method);
+  return `
+    <div class="payments-method-name">
+      <strong>${escapeHTML(method.nombre)}</strong>
+      <small class="payments-method-hint" title="${escapeHTML(hint)}">${escapeHTML(hint)}</small>
+    </div>
+  `;
+}
+
+function renderPaymentMethodRow(method) {
+  return `
+    <tr class="payments-admin-row">
+      <td class="payments-col-method">${renderPaymentMethodNameCell(method)}</td>
+      <td class="payments-col-type">${escapeHTML(getPaymentMethodTypeLabel(method.tipo))}</td>
+      <td>${renderPaymentMethodStatusBadge(method)}</td>
+      <td>${renderPaymentConfirmBadge(method)}</td>
+      <td>${renderPaymentMethodCommission(method)}</td>
+      <td>${renderPaymentMethodChannels(method)}</td>
+      <td class="payments-col-actions">${renderPaymentMethodActions(method)}</td>
+    </tr>
+  `;
+}
+
+function renderPaymentCategorySection(category, methods) {
+  if (!methods.length) {
+    return `
+      <section class="panel-card table-panel payments-category-panel">
+        <div class="payments-category-heading">
+          <h4>${escapeHTML(category.title)}</h4>
+          <p class="payments-category-lead">${escapeHTML(category.subtitle)}</p>
+        </div>
+        <p class="payments-category-empty">Sin métodos en esta categoría.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="panel-card table-panel payments-category-panel">
+      <div class="payments-category-heading">
+        <h4>${escapeHTML(category.title)}</h4>
+        <p class="payments-category-lead">${escapeHTML(category.subtitle)}</p>
+      </div>
+      <div class="table-scroll payments-list-scroll">
+        <table class="payments-list-table">
+          <thead>
+            <tr>
+              <th>Método</th>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th>Confirmación</th>
+              <th>Comisión</th>
+              <th>Canales</th>
+              <th class="payments-col-actions">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>${methods.map((method) => renderPaymentMethodRow(method)).join("")}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function renderPaymentMethodsGroups() {
+  if (!elements.paymentMethodsGroups) return;
+  const groups = groupPaymentMethodsByCategory();
+  elements.paymentMethodsGroups.innerHTML = PAYMENT_METHOD_CATEGORIES.map((category) =>
+    renderPaymentCategorySection(category, groups[category.id] || []),
+  ).join("");
+}
+
+function ensurePaymentsView() {
+  injectSalesViewPolishStyles();
+
+  let section = document.getElementById("pagos") || document.getElementById("cobros");
+  if (!section) return;
+
+  if (
+    !paymentsViewReady ||
+    !section.querySelector("#paymentMethodsGroups") ||
+    !document.getElementById("paymentMethodProviderId")
+  ) {
+    document.getElementById("paymentMethodDialog")?.remove();
+    document.getElementById("paymentProviderDialog")?.remove();
+    paymentsViewReady = false;
+  }
+
+  if (!paymentsViewReady) {
+    section.id = "pagos";
+    section.innerHTML = `
+      <div class="payments-page-heading">
+        <div>
+          <p class="eyebrow">Administración</p>
+          <h2>Pagos</h2>
+          <p class="payments-page-lead">Configura métodos de pago, comisiones, confirmaciones y proveedores.</p>
+        </div>
+        <div class="payments-page-actions">
+          <button class="ghost-button" type="button" id="openPaymentProviderDialogButton">Agregar proveedor</button>
+          <button class="primary-button" type="button" id="openPaymentMethodDialogButton">Agregar método de pago</button>
+        </div>
+      </div>
+      <section class="payments-summary-panel" id="paymentsSummaryPanel">
+        <div class="payments-summary-cards" id="paymentsSummaryCards"></div>
+      </section>
+      <section class="payments-methods-wrap">
+        <div class="payments-section-heading payments-section-heading--main">
+          <div>
+            <h3>Métodos de pago</h3>
+            <p class="payments-section-lead">Organizados por categoría para definir reglas de cobro.</p>
+          </div>
+          <span class="payments-list-count" id="paymentMethodsCount">0 métodos</span>
+        </div>
+        <div class="payments-methods-groups" id="paymentMethodsGroups"></div>
+      </section>
+      <section class="panel-card table-panel payments-list-panel payments-providers-panel">
+        <div class="payments-section-heading">
+          <h3>Proveedores de pago</h3>
+          <span class="payments-list-count" id="paymentProvidersCount">0 proveedores</span>
+        </div>
+        <div class="table-scroll payments-list-scroll">
+          <table class="payments-list-table">
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th>Estado</th>
+                <th>Modo</th>
+                <th>Métodos vinculados</th>
+                <th>Última actualización</th>
+                <th class="payments-col-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="paymentProvidersTable"></tbody>
+          </table>
+        </div>
+      </section>
+    `;
+
+    if (!document.getElementById("paymentMethodDialog")) {
+      const methodDialog = document.createElement("dialog");
+      methodDialog.className = "order-dialog payment-dialog";
+      methodDialog.id = "paymentMethodDialog";
+      methodDialog.innerHTML = `
+        <form class="order-dialog-shell payment-dialog-shell" id="paymentMethodForm">
+          <header class="order-dialog-header payment-dialog-header">
+            <div>
+              <h2 id="paymentMethodDialogTitle">Agregar método de pago</h2>
+              <p class="order-dialog-help">Define reglas de cobro, comisiones y canales disponibles.</p>
+            </div>
+            <button class="dialog-close-btn" type="button" data-action="close-payment-method-dialog" aria-label="Cerrar">×</button>
+          </header>
+          <div class="order-dialog-body payment-dialog-body payment-dialog-scroll">
+            <section class="payment-form-block payment-form-card">
+              <h3 class="payment-form-block-title">Datos generales</h3>
+              <div class="payment-dialog-grid">
+                <label>Nombre del método
+                  <input id="paymentMethodName" type="text" required />
+                </label>
+                <label>Categoría
+                  <select id="paymentMethodCategory">
+                    ${Object.entries(PAYMENT_CATEGORY_LABELS)
+                      .map(([value, label]) => `<option value="${value}">${label}</option>`)
+                      .join("")}
+                  </select>
+                </label>
+                <label>Proveedor / procesador
+                  <select id="paymentMethodProviderId">
+                    <option value="">Sin proveedor / no aplica</option>
+                  </select>
+                </label>
+                <label class="payment-check-label payment-check-label--status">
+                  <input id="paymentMethodActive" type="checkbox" checked />
+                  <span>Método activo</span>
+                </label>
+              </div>
+            </section>
+            <section class="payment-form-block payment-form-card">
+              <h3 class="payment-form-block-title">Reglas de cobro</h3>
+              <div class="payment-dialog-grid payment-dialog-grid--checks">
+                <label class="payment-check-label">
+                  <input id="paymentMethodRequiresReference" type="checkbox" />
+                  <span>Requiere referencia</span>
+                </label>
+                <label class="payment-check-label">
+                  <input id="paymentMethodRequiresProof" type="checkbox" />
+                  <span>Requiere comprobante</span>
+                </label>
+                <label class="payment-check-label">
+                  <input id="paymentMethodRequiresAuthorization" type="checkbox" />
+                  <span>Requiere autorización</span>
+                </label>
+                <label>Tiempo estimado de confirmación
+                  <select id="paymentMethodConfirmationTime">
+                    ${Object.entries(PAYMENT_CONFIRMATION_TIME_LABELS)
+                      .map(([value, label]) => `<option value="${value}">${label}</option>`)
+                      .join("")}
+                  </select>
+                </label>
+                <label class="is-full">Observaciones de regla
+                  <textarea id="paymentMethodRulesNotes" rows="2" placeholder="Instrucciones internas para validar el cobro"></textarea>
+                </label>
+              </div>
+            </section>
+            <section class="payment-form-block payment-form-card">
+              <h3 class="payment-form-block-title">Comisiones</h3>
+              <div class="payment-dialog-grid">
+                <label>Tipo de comisión
+                  <select id="paymentMethodCommissionType">
+                    ${Object.entries(PAYMENT_COMMISSION_TYPE_LABELS)
+                      .map(([value, label]) => `<option value="${value}">${label}</option>`)
+                      .join("")}
+                  </select>
+                </label>
+                <label>Quién absorbe comisión
+                  <select id="paymentMethodCommissionAbsorb">
+                    ${Object.entries(PAYMENT_COMMISSION_ABSORB_LABELS)
+                      .map(([value, label]) => `<option value="${value}">${label}</option>`)
+                      .join("")}
+                  </select>
+                </label>
+                <label id="paymentMethodCommissionPctWrap">Porcentaje %
+                  <input id="paymentMethodCommissionPct" type="number" min="0" step="0.01" value="0" />
+                </label>
+                <label id="paymentMethodCommissionFixedWrap">Comisión fija
+                  <input id="paymentMethodCommissionFixed" type="number" min="0" step="0.01" value="0" />
+                </label>
+              </div>
+            </section>
+            <section class="payment-form-block payment-form-card">
+              <h3 class="payment-form-block-title">Canales disponibles</h3>
+              <div class="payment-channel-checks">
+                <label class="payment-check-label"><input id="paymentMethodChannelCounter" type="checkbox" checked /><span>Mostrador</span></label>
+                <label class="payment-check-label"><input id="paymentMethodChannelWhatsapp" type="checkbox" /><span>WhatsApp</span></label>
+                <label class="payment-check-label"><input id="paymentMethodChannelStore" type="checkbox" /><span>En línea</span></label>
+                <label class="payment-check-label"><input id="paymentMethodChannelDelivery" type="checkbox" /><span>Entrega a domicilio</span></label>
+                <label class="payment-check-label"><input id="paymentMethodChannelOther" type="checkbox" /><span>Otro canal</span></label>
+              </div>
+            </section>
+            <section class="payment-form-block payment-form-card">
+              <h3 class="payment-form-block-title">Notas</h3>
+              <label class="is-full payment-notes-field">
+                <textarea id="paymentMethodNotes" rows="3" placeholder="Descripción o notas internas del método"></textarea>
+              </label>
+            </section>
+          </div>
+          <footer class="payment-dialog-footer payment-dialog-footer--sticky">
+            <button class="ghost-button" type="button" data-action="close-payment-method-dialog">Cancelar</button>
+            <button class="primary-button" type="submit" id="savePaymentMethodButton">Guardar método</button>
+          </footer>
+        </form>
+      `;
+      document.body.appendChild(methodDialog);
+    }
+
+    if (!document.getElementById("paymentProviderDialog")) {
+      const providerDialog = document.createElement("dialog");
+      providerDialog.className = "order-dialog payment-dialog";
+      providerDialog.id = "paymentProviderDialog";
+      providerDialog.innerHTML = `
+        <form class="order-dialog-shell payment-dialog-shell" id="paymentProviderForm">
+          <header class="order-dialog-header payment-dialog-header">
+            <div>
+              <h2 id="paymentProviderDialogTitle">Agregar proveedor</h2>
+              <p class="order-dialog-help">Administra integraciones sin guardar claves secretas en el navegador.</p>
+            </div>
+            <button class="dialog-close-btn" type="button" data-action="close-payment-provider-dialog" aria-label="Cerrar">×</button>
+          </header>
+          <div class="order-dialog-body payment-dialog-body payment-dialog-scroll">
+            <div class="payment-dialog-grid">
+              <label>Nombre
+                <input id="paymentProviderName" type="text" required />
+              </label>
+              <label class="payment-check-label">
+                <input id="paymentProviderActive" type="checkbox" checked />
+                <span>Activo</span>
+              </label>
+              <label>Modo
+                <select id="paymentProviderMode">
+                  <option value="prueba">Prueba</option>
+                  <option value="produccion">Producción</option>
+                </select>
+              </label>
+              <label>Estado de conexión
+                <select id="paymentProviderConnectionStatus">
+                  ${Object.entries(PROVIDER_CONNECTION_LABELS)
+                    .map(([value, label]) => `<option value="${value}">${label}</option>`)
+                    .join("")}
+                </select>
+              </label>
+              <label>URL webhook
+                <input id="paymentProviderWebhookUrl" type="url" placeholder="https://..." />
+              </label>
+              <label>Clave pública (opcional)
+                <input id="paymentProviderPublicKey" type="text" placeholder="Solo referencia visible" />
+              </label>
+              <label class="is-full payment-secret-key-note">Claves secretas
+                <input type="text" disabled value="Configurar en servidor / .env" />
+              </label>
+              <label class="is-full">Métodos vinculados
+                <select id="paymentProviderMethodIds" multiple size="5"></select>
+              </label>
+              <label class="is-full">Notas
+                <textarea id="paymentProviderNotes" rows="3"></textarea>
+              </label>
+            </div>
+          </div>
+          <footer class="payment-dialog-footer payment-dialog-footer--sticky">
+            <button class="ghost-button" type="button" data-action="close-payment-provider-dialog">Cancelar</button>
+            <button class="primary-button" type="submit" id="savePaymentProviderButton">Guardar proveedor</button>
+          </footer>
+        </form>
+      `;
+      document.body.appendChild(providerDialog);
+    }
+
+    document.getElementById("deactivatePaymentProviderButton")?.remove();
+    const providerDialogFooter = document.querySelector("#paymentProviderDialog .payment-dialog-footer");
+    if (providerDialogFooter) {
+      providerDialogFooter.classList.add("payment-dialog-footer--sticky");
+    }
+
+    elements.paymentsSummaryCards = $("#paymentsSummaryCards");
+    elements.paymentMethodsGroups = $("#paymentMethodsGroups");
+    elements.paymentProvidersTable = $("#paymentProvidersTable");
+    elements.paymentMethodsCount = $("#paymentMethodsCount");
+    elements.paymentProvidersCount = $("#paymentProvidersCount");
+    elements.openPaymentMethodDialogButton = $("#openPaymentMethodDialogButton");
+    elements.openPaymentProviderDialogButton = $("#openPaymentProviderDialogButton");
+    elements.paymentMethodDialog = $("#paymentMethodDialog");
+    elements.paymentMethodForm = $("#paymentMethodForm");
+    elements.paymentMethodDialogTitle = $("#paymentMethodDialogTitle");
+    elements.paymentMethodName = $("#paymentMethodName");
+    elements.paymentMethodCategory = $("#paymentMethodCategory");
+    elements.paymentMethodProviderId = $("#paymentMethodProviderId");
+    elements.paymentMethodActive = $("#paymentMethodActive");
+    elements.paymentMethodRequiresReference = $("#paymentMethodRequiresReference");
+    elements.paymentMethodRequiresProof = $("#paymentMethodRequiresProof");
+    elements.paymentMethodRequiresAuthorization = $("#paymentMethodRequiresAuthorization");
+    elements.paymentMethodConfirmationTime = $("#paymentMethodConfirmationTime");
+    elements.paymentMethodRulesNotes = $("#paymentMethodRulesNotes");
+    elements.paymentMethodCommissionType = $("#paymentMethodCommissionType");
+    elements.paymentMethodCommissionAbsorb = $("#paymentMethodCommissionAbsorb");
+    elements.paymentMethodCommissionPct = $("#paymentMethodCommissionPct");
+    elements.paymentMethodCommissionFixed = $("#paymentMethodCommissionFixed");
+    elements.paymentMethodCommissionPctWrap = $("#paymentMethodCommissionPctWrap");
+    elements.paymentMethodCommissionFixedWrap = $("#paymentMethodCommissionFixedWrap");
+    elements.paymentMethodChannelCounter = $("#paymentMethodChannelCounter");
+    elements.paymentMethodChannelWhatsapp = $("#paymentMethodChannelWhatsapp");
+    elements.paymentMethodChannelStore = $("#paymentMethodChannelStore");
+    elements.paymentMethodChannelDelivery = $("#paymentMethodChannelDelivery");
+    elements.paymentMethodChannelOther = $("#paymentMethodChannelOther");
+    elements.paymentMethodNotes = $("#paymentMethodNotes");
+    elements.paymentProviderDialog = $("#paymentProviderDialog");
+    elements.paymentProviderForm = $("#paymentProviderForm");
+    elements.paymentProviderDialogTitle = $("#paymentProviderDialogTitle");
+    elements.paymentProviderName = $("#paymentProviderName");
+    elements.paymentProviderActive = $("#paymentProviderActive");
+    elements.paymentProviderMode = $("#paymentProviderMode");
+    elements.paymentProviderConnectionStatus = $("#paymentProviderConnectionStatus");
+    elements.paymentProviderWebhookUrl = $("#paymentProviderWebhookUrl");
+    elements.paymentProviderPublicKey = $("#paymentProviderPublicKey");
+    elements.paymentProviderMethodIds = $("#paymentProviderMethodIds");
+    elements.paymentProviderNotes = $("#paymentProviderNotes");
+
+    elements.openPaymentMethodDialogButton?.addEventListener("click", () => openPaymentMethodDialog());
+    elements.openPaymentProviderDialogButton?.addEventListener("click", () => openPaymentProviderDialog());
+    elements.paymentMethodForm?.addEventListener("submit", savePaymentMethod);
+    elements.paymentProviderForm?.addEventListener("submit", savePaymentProvider);
+    elements.paymentMethodCategory?.addEventListener("change", applyPaymentMethodCategoryDefaultsToForm);
+    elements.paymentMethodCommissionType?.addEventListener("change", applyPaymentCommissionTypeToForm);
+
+    paymentsViewReady = true;
+  }
+}
+
+const PAYMENT_CATEGORY_DEFAULT_TYPE = {
+  efectivo_banco: "efectivo",
+  tarjetas: "tarjeta_debito",
+  pasarelas: "pasarela",
+  contra_entrega: "contra_entrega",
+  otros: "otro",
+};
+
+function applyPaymentCommissionTypeToForm() {
+  const tipo = elements.paymentMethodCommissionType?.value || "ninguna";
+  const showPct = tipo === "porcentaje" || tipo === "mixta";
+  const showFixed = tipo === "fija" || tipo === "mixta";
+  elements.paymentMethodCommissionPctWrap?.classList.toggle("is-hidden", !showPct);
+  elements.paymentMethodCommissionFixedWrap?.classList.toggle("is-hidden", !showFixed);
+  if (tipo === "ninguna") {
+    if (elements.paymentMethodCommissionPct) elements.paymentMethodCommissionPct.value = "0";
+    if (elements.paymentMethodCommissionFixed) elements.paymentMethodCommissionFixed.value = "0";
+  }
+}
+
+function applyPaymentMethodCategoryDefaultsToForm() {
+  if (paymentMethodDraft) return;
+  const categoria = elements.paymentMethodCategory?.value || "efectivo_banco";
+  const tipo = PAYMENT_CATEGORY_DEFAULT_TYPE[categoria] || "otro";
+  const defaults = PAYMENT_METHOD_TYPE_DEFAULTS[tipo] || PAYMENT_METHOD_TYPE_DEFAULTS.otro;
+  if (elements.paymentMethodRequiresReference) {
+    elements.paymentMethodRequiresReference.checked = Boolean(defaults.requiereReferencia);
+  }
+  if (elements.paymentMethodRequiresProof) {
+    elements.paymentMethodRequiresProof.checked = Boolean(defaults.requiereConfirmacion);
+  }
+  if (elements.paymentMethodConfirmationTime) {
+    elements.paymentMethodConfirmationTime.value =
+      defaults.estadoSugerido === "recibido" ? "inmediato" : defaults.estadoSugerido === "pendiente" ? "manual" : "horas_24";
+  }
+}
+
+function populatePaymentMethodProviderOptions(selectedId = "") {
+  if (!elements.paymentMethodProviderId) return;
+  const options = ['<option value="">Sin proveedor / no aplica</option>'];
+  state.paymentProviders
+    .filter((provider) => provider.activo)
+    .sort((left, right) => left.nombre.localeCompare(right.nombre, "es"))
+    .forEach((provider) => {
+      const selected = provider.id === selectedId ? " selected" : "";
+      options.push(`<option value="${escapeHTML(provider.id)}"${selected}>${escapeHTML(provider.nombre)}</option>`);
+    });
+  elements.paymentMethodProviderId.innerHTML = options.join("");
+}
+
+function syncMethodProviderLink(methodId, providerId, previousProviderId = "") {
+  const key = String(methodId || "").trim();
+  if (!key) return;
+  const prevKey = String(previousProviderId || "").trim();
+  if (prevKey && prevKey !== providerId) {
+    const previous = getPaymentProvider(prevKey);
+    if (previous) {
+      previous.methodIds = previous.methodIds.filter((linkedId) => linkedId !== key);
+      previous.updatedAt = new Date().toISOString();
+    }
+  }
+  const nextKey = String(providerId || "").trim();
+  if (!nextKey) return;
+  const provider = getPaymentProvider(nextKey);
+  if (provider && !provider.methodIds.includes(key)) {
+    provider.methodIds.push(key);
+    provider.updatedAt = new Date().toISOString();
+  }
+}
+function populatePaymentProviderMethodOptions(selectedIds = []) {
+  if (!elements.paymentProviderMethodIds) return;
+  const selected = new Set(selectedIds);
+  elements.paymentProviderMethodIds.innerHTML = state.paymentMethods
+    .map(
+      (method) =>
+        `<option value="${escapeHTML(method.id)}"${selected.has(method.id) ? " selected" : ""}>${escapeHTML(method.nombre)}</option>`,
+    )
+    .join("");
+}
+
+function resetPaymentDialogScroll(modalElement) {
+  if (!modalElement) return;
+  const scrollContainer =
+    modalElement.querySelector(".payment-dialog-scroll") ||
+    modalElement.querySelector(".payment-dialog-body") ||
+    modalElement;
+  const reset = () => {
+    scrollContainer.scrollTop = 0;
+    scrollContainer.scrollLeft = 0;
+  };
+  reset();
+  requestAnimationFrame(() => {
+    reset();
+    requestAnimationFrame(reset);
+  });
+}
+
+function showPaymentDialog(dialog) {
+  if (!dialog) return;
+  dialog.showModal();
+  resetPaymentDialogScroll(dialog);
+}
+
+function openPaymentMethodDialog(method = null) {
+  ensurePaymentsView();
+  paymentMethodDraft = method ? { ...method } : null;
+  const isEdit = Boolean(method);
+
+  if (elements.paymentMethodDialogTitle) {
+    elements.paymentMethodDialogTitle.textContent = isEdit ? "Editar método de pago" : "Agregar método de pago";
+  }
+
+  const draft = method ? normalizePaymentMethodConfig(method) : null;
+  populatePaymentMethodProviderOptions(draft?.providerId || "");
+  if (elements.paymentMethodName) elements.paymentMethodName.value = draft?.nombre || "";
+  if (elements.paymentMethodCategory) {
+    elements.paymentMethodCategory.value = draft?.categoria || "efectivo_banco";
+  }
+  if (elements.paymentMethodProviderId) {
+    elements.paymentMethodProviderId.value = draft?.providerId || "";
+  }
+  if (elements.paymentMethodActive) elements.paymentMethodActive.checked = draft ? draft.activo : true;
+  if (elements.paymentMethodRequiresReference) {
+    elements.paymentMethodRequiresReference.checked = draft ? draft.requiereReferencia : false;
+  }
+  if (elements.paymentMethodRequiresProof) {
+    elements.paymentMethodRequiresProof.checked = draft ? draft.requiereComprobante : false;
+  }
+  if (elements.paymentMethodRequiresAuthorization) {
+    elements.paymentMethodRequiresAuthorization.checked = draft ? draft.requiereAutorizacion : false;
+  }
+  if (elements.paymentMethodConfirmationTime) {
+    elements.paymentMethodConfirmationTime.value = draft?.tiempoConfirmacion || "manual";
+  }
+  if (elements.paymentMethodRulesNotes) {
+    elements.paymentMethodRulesNotes.value = draft?.reglasObservaciones || "";
+  }
+  if (elements.paymentMethodCommissionType) {
+    elements.paymentMethodCommissionType.value = draft?.comisionTipo || "ninguna";
+  }
+  if (elements.paymentMethodCommissionAbsorb) {
+    elements.paymentMethodCommissionAbsorb.value = draft?.comisionAbsorbe || "negocio";
+  }
+  if (elements.paymentMethodCommissionPct) elements.paymentMethodCommissionPct.value = String(draft?.comisionPct || 0);
+  if (elements.paymentMethodCommissionFixed) {
+    elements.paymentMethodCommissionFixed.value = String(draft?.comisionFija || 0);
+  }
+  if (elements.paymentMethodChannelCounter) {
+    elements.paymentMethodChannelCounter.checked = draft ? draft.canales.mostrador : true;
+  }
+  if (elements.paymentMethodChannelWhatsapp) {
+    elements.paymentMethodChannelWhatsapp.checked = draft ? draft.canales.whatsapp : false;
+  }
+  if (elements.paymentMethodChannelStore) {
+    elements.paymentMethodChannelStore.checked = draft ? draft.canales.tiendaOnline : false;
+  }
+  if (elements.paymentMethodChannelDelivery) {
+    elements.paymentMethodChannelDelivery.checked = draft ? draft.canales.entregaDomicilio : false;
+  }
+  if (elements.paymentMethodChannelOther) {
+    elements.paymentMethodChannelOther.checked = draft ? draft.canales.otro : false;
+  }
+  if (elements.paymentMethodNotes) elements.paymentMethodNotes.value = draft?.notas || "";
+
+  applyPaymentCommissionTypeToForm();
+  if (!isEdit) applyPaymentMethodCategoryDefaultsToForm();
+  showPaymentDialog(elements.paymentMethodDialog);
+}
+
+function closePaymentMethodDialog() {
+  elements.paymentMethodDialog?.close();
+  paymentMethodDraft = null;
+}
+
+function savePaymentMethod(event) {
+  event.preventDefault();
+  const nombre = elements.paymentMethodName?.value.trim();
+  if (!nombre) return showToast("Ingresa el nombre del método.");
+
+  const categoria = elements.paymentMethodCategory?.value || "otros";
+  const tipo = paymentMethodDraft?.tipo || PAYMENT_CATEGORY_DEFAULT_TYPE[categoria] || "otro";
+  const tiempoConfirmacion = elements.paymentMethodConfirmationTime?.value || "manual";
+  const comisionTipo = elements.paymentMethodCommissionType?.value || "ninguna";
+  const comisionPct =
+    comisionTipo === "porcentaje" || comisionTipo === "mixta" ? elements.paymentMethodCommissionPct?.value : 0;
+  const comisionFija =
+    comisionTipo === "fija" || comisionTipo === "mixta" ? elements.paymentMethodCommissionFixed?.value : 0;
+  const providerId = elements.paymentMethodProviderId?.value || "";
+  const previousProviderId = paymentMethodDraft?.providerId || "";
+
+  const payload = normalizePaymentMethodConfig({
+    id: paymentMethodDraft?.id,
+    nombre,
+    categoria,
+    tipo,
+    providerId,
+    activo: Boolean(elements.paymentMethodActive?.checked),
+    requiereReferencia: Boolean(elements.paymentMethodRequiresReference?.checked),
+    requiereConfirmacion: Boolean(elements.paymentMethodRequiresProof?.checked),
+    requiereComprobante: Boolean(elements.paymentMethodRequiresProof?.checked),
+    requiereAutorizacion: Boolean(elements.paymentMethodRequiresAuthorization?.checked),
+    tiempoConfirmacion,
+    reglasObservaciones: elements.paymentMethodRulesNotes?.value.trim() || "",
+    estadoSugerido: suggestedStatusFromConfirmationTime(tiempoConfirmacion),
+    comisionTipo,
+    comisionAbsorbe: elements.paymentMethodCommissionAbsorb?.value,
+    comisionPct,
+    comisionFija,
+    canales: {
+      mostrador: Boolean(elements.paymentMethodChannelCounter?.checked),
+      whatsapp: Boolean(elements.paymentMethodChannelWhatsapp?.checked),
+      tiendaOnline: Boolean(elements.paymentMethodChannelStore?.checked),
+      entregaDomicilio: Boolean(elements.paymentMethodChannelDelivery?.checked),
+      otro: Boolean(elements.paymentMethodChannelOther?.checked),
+    },
+    notas: elements.paymentMethodNotes?.value.trim() || "",
+    createdAt: paymentMethodDraft?.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  if (paymentMethodDraft?.id) {
+    const existing = getPaymentMethodConfig(paymentMethodDraft.id);
+    if (existing) Object.assign(existing, payload);
+    syncMethodProviderLink(payload.id, providerId, previousProviderId);
+  } else {
+    state.paymentMethods.unshift(payload);
+    syncMethodProviderLink(payload.id, providerId);
+  }
+
+  const wasEdit = Boolean(paymentMethodDraft?.id);
+  persistPaymentConfig();
+  closePaymentMethodDialog();
+  renderPayments();
+  showToast(wasEdit ? "Método actualizado." : "Método agregado.");
+}
+
+function setPaymentMethodActive(methodId, active) {
+  const method = getPaymentMethodConfig(methodId);
+  if (!method) return;
+  method.activo = active;
+  method.updatedAt = new Date().toISOString();
+  persistPaymentConfig();
+  renderPayments();
+  showToast(active ? "Método activado." : "Método desactivado.");
+}
+
+function deletePaymentMethod(methodId) {
+  const method = getPaymentMethodConfig(methodId);
+  if (!method) return;
+
+  if (isPaymentMethodInUse(method)) {
+    showToast(
+      "Este método ya está usado en pedidos o ventas. No se puede eliminar. Puedes desactivarlo para que ya no aparezca en nuevos registros.",
+    );
+    return;
+  }
+
+  if (method.activo && getActivePaymentMethodCount() <= 1) {
+    showToast("No puedes eliminar el último método activo.");
+    return;
+  }
+
+  if (!window.confirm(`¿Eliminar método de pago "${method.nombre}"? Esta acción no se puede deshacer.`)) {
+    return;
+  }
+
+  state.paymentMethods = state.paymentMethods.filter((entry) => entry.id !== method.id);
+  state.paymentProviders.forEach((provider) => {
+    provider.methodIds = provider.methodIds.filter((linkedId) => linkedId !== method.id);
+  });
+  persistPaymentConfig();
+  renderPayments();
+  showToast("Método eliminado.");
+}
+
+function openPaymentProviderDialog(provider = null) {
+  ensurePaymentsView();
+  populatePaymentProviderMethodOptions(provider?.methodIds || []);
+  paymentProviderDraft = provider ? { ...provider } : null;
+  const isEdit = Boolean(provider);
+
+  if (elements.paymentProviderDialogTitle) {
+    elements.paymentProviderDialogTitle.textContent = isEdit ? "Editar proveedor" : "Agregar proveedor";
+  }
+
+  const draft = provider ? normalizePaymentProvider(provider) : null;
+  if (elements.paymentProviderName) elements.paymentProviderName.value = draft?.nombre || "";
+  if (elements.paymentProviderActive) elements.paymentProviderActive.checked = draft ? draft.activo : true;
+  if (elements.paymentProviderMode) elements.paymentProviderMode.value = draft?.modo || "prueba";
+  if (elements.paymentProviderConnectionStatus) {
+    elements.paymentProviderConnectionStatus.value = draft?.estadoConexion || "no_configurado";
+  }
+  if (elements.paymentProviderWebhookUrl) elements.paymentProviderWebhookUrl.value = draft?.webhookUrl || "";
+  if (elements.paymentProviderPublicKey) elements.paymentProviderPublicKey.value = draft?.publicKeyVisible || "";
+  if (elements.paymentProviderNotes) elements.paymentProviderNotes.value = draft?.notas || "";
+  if (draft) populatePaymentProviderMethodOptions(draft.methodIds);
+
+  showPaymentDialog(elements.paymentProviderDialog);
+}
+
+function closePaymentProviderDialog() {
+  elements.paymentProviderDialog?.close();
+  paymentProviderDraft = null;
+}
+
+function savePaymentProvider(event) {
+  event.preventDefault();
+  const nombre = elements.paymentProviderName?.value.trim();
+  if (!nombre) return showToast("Ingresa el nombre del proveedor.");
+
+  const selectedMethodIds = Array.from(elements.paymentProviderMethodIds?.selectedOptions || []).map(
+    (option) => option.value,
+  );
+
+  const payload = normalizePaymentProvider({
+    id: paymentProviderDraft?.id,
+    nombre,
+    activo: Boolean(elements.paymentProviderActive?.checked),
+    modo: elements.paymentProviderMode?.value,
+    estadoConexion: elements.paymentProviderConnectionStatus?.value,
+    webhookUrl: elements.paymentProviderWebhookUrl?.value.trim() || "",
+    publicKeyVisible: elements.paymentProviderPublicKey?.value.trim() || "",
+    methodIds: selectedMethodIds,
+    notas: elements.paymentProviderNotes?.value.trim() || "",
+    updatedAt: new Date().toISOString(),
+  });
+
+  if (paymentProviderDraft?.id) {
+    const existing = getPaymentProvider(paymentProviderDraft.id);
+    if (existing) Object.assign(existing, payload);
+  } else {
+    state.paymentProviders.unshift(payload);
+  }
+
+  const wasEdit = Boolean(paymentProviderDraft?.id);
+  persistPaymentConfig();
+  closePaymentProviderDialog();
+  renderPayments();
+  showToast(wasEdit ? "Proveedor actualizado." : "Proveedor agregado.");
+}
+
+function setPaymentProviderActive(providerId, active) {
+  const provider = getPaymentProvider(providerId);
+  if (!provider) return;
+  provider.activo = active;
+  provider.updatedAt = new Date().toISOString();
+  persistPaymentConfig();
+  renderPayments();
+  showToast(active ? "Proveedor activado." : "Proveedor desactivado.");
+}
+
+function isPaymentProviderInUse(provider) {
+  if (!provider) return false;
+  const id = provider.id;
+  const linkedToMethods =
+    state.paymentMethods.some((method) => method.providerId === id) ||
+    (Array.isArray(provider.methodIds) && provider.methodIds.length > 0);
+  if (linkedToMethods) return true;
+  if (state.orders.some((order) => order.paymentProviderId === id)) return true;
+  if (state.sales.some((sale) => sale.paymentProviderId === id)) return true;
+  return false;
+}
+
+function deletePaymentProvider(providerId) {
+  const provider = getPaymentProvider(providerId);
+  if (!provider) return;
+
+  if (isPaymentProviderInUse(provider)) {
+    showToast(
+      "Este proveedor ya está vinculado a métodos de pago, pedidos o ventas. No se puede eliminar. Puedes desactivarlo para que ya no esté disponible en nuevos registros.",
+    );
+    return;
+  }
+
+  if (!window.confirm("¿Eliminar este proveedor de forma definitiva?")) return;
+
+  state.paymentProviders = state.paymentProviders.filter((entry) => entry.id !== provider.id);
+  state.paymentMethods.forEach((method) => {
+    if (method.providerId === provider.id) {
+      method.providerId = "";
+      method.updatedAt = new Date().toISOString();
+    }
+  });
+  persistPaymentConfig();
+  renderPayments();
+  showToast("Proveedor eliminado.");
+}
+
+function syncOrderPaymentRecord(order) {}
 
 function syncOrderShipmentRecord(order) {
   const existing = state.shipments.find((shipment) => shipment.orderId === order.id);
@@ -9726,10 +11898,8 @@ function updateOrderRecord(order) {
   const index = state.orders.findIndex((item) => item.id === order.id);
   if (index >= 0) state.orders[index] = order;
   order.updatedAt = new Date().toISOString();
-  syncOrderPaymentRecord(order);
   syncOrderShipmentRecord(order);
   persist(storageKeys.orders, state.orders);
-  persist(storageKeys.payments, state.payments);
   persist(storageKeys.shipments, state.shipments);
 }
 
@@ -9838,7 +12008,12 @@ function upsertSaleFromOrder(order, overrides = {}, options = {}) {
     origin: order.origin,
     status: overrides.status || resolveSaleStatusFromOrder(order),
     paymentStatus: overrides.paymentStatus || order.paymentStatus,
+    paymentMethodId: order.paymentMethodId,
     paymentMethod: order.paymentMethod,
+    paymentProviderId: order.paymentProviderId || getPaymentMethodConfig(order.paymentMethodId)?.providerId || "",
+    paymentReference: order.paymentReference || "",
+    paymentChannel: order.paymentChannel || "",
+    paymentCommission: calculatePaymentMethodCommission(getPaymentMethodConfig(order.paymentMethodId), order.total),
     deliveryType: order.deliveryType,
     total: order.total,
     items: order.items,
@@ -12363,35 +14538,40 @@ function markShipmentSent(shipmentId) {
 }
 
 function renderPayments() {
-  elements.paymentsTable.innerHTML = state.payments.length
-    ? state.payments
+  ensurePaymentsView();
+  const summary = getPaymentConfigSummary();
+  renderPaymentConfigSummaryCards(summary);
+
+  const methods = state.paymentMethods;
+  const providers = [...state.paymentProviders].sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+
+  if (elements.paymentMethodsCount) {
+    elements.paymentMethodsCount.textContent = `${methods.length} método${methods.length === 1 ? "" : "s"}`;
+  }
+  if (elements.paymentProvidersCount) {
+    elements.paymentProvidersCount.textContent = `${providers.length} proveedor${providers.length === 1 ? "" : "es"}`;
+  }
+
+  renderPaymentMethodsGroups();
+
+  if (!elements.paymentProvidersTable) return;
+
+  elements.paymentProvidersTable.innerHTML = providers.length
+    ? providers
         .map(
-          (payment) => `
-            <tr>
-              <td><strong>${escapeHTML(payment.orderId)}</strong></td>
-              <td>${escapeHTML(payment.customerName)}</td>
-              <td>${escapeHTML(payment.method)}</td>
-              <td>${currency.format(payment.total)}</td>
-              <td><span class="badge ${payment.status === "Pagado" ? "success" : "warning"}">${escapeHTML(payment.status)}</span></td>
-              <td><button class="ghost-button small" type="button" data-action="mark-paid" data-id="${payment.id}">Marcar pagado</button></td>
+          (provider) => `
+            <tr class="payments-admin-row">
+              <td><strong>${escapeHTML(provider.nombre)}</strong></td>
+              <td>${renderProviderConnectionBadge(provider)}</td>
+              <td>${escapeHTML(getProviderModeLabel(provider.modo))}</td>
+              <td>${renderLinkedPaymentMethods(provider)}</td>
+              <td class="payments-col-date">${escapeHTML(formatCompactDateTime(provider.updatedAt) || "—")}</td>
+              <td class="payments-col-actions">${renderPaymentProviderActions(provider)}</td>
             </tr>
           `,
         )
         .join("")
-    : tableEmpty(6, "No hay cobros.");
-}
-
-function markPaymentPaid(paymentId) {
-  const payment = state.payments.find((item) => item.id === paymentId);
-  if (!payment || payment.status === "Pagado") return;
-  payment.status = "Pagado";
-  payment.method = payment.method === "Pendiente" ? "Transferencia" : payment.method;
-  const order = getOrder(payment.orderId);
-  if (order) markOrderPaid(order.id);
-  else {
-    persist(storageKeys.payments, state.payments);
-    renderAll();
-  }
+    : tableEmpty(6, "No hay proveedores configurados.");
 }
 
 function createSaleFromOrder(order, options = {}) {
@@ -12913,7 +15093,8 @@ function resetDemoData() {
   state.customers = initialCustomers.map(normalizeCustomer);
   state.commercialProfiles = initialCommercialProfiles.map(normalizeCommercialProfile);
   state.orders = [];
-  state.payments = [];
+  state.paymentMethods = [];
+  state.paymentProviders = [];
   state.shipments = [];
   state.sales = [];
   localStorage.removeItem(storageKeys.orderSeq);
@@ -12923,6 +15104,9 @@ function resetDemoData() {
   persistAll();
   localStorage.setItem(storageKeys.catalogVersion, PRODUCT_CATALOG_VERSION);
   ensureCommerceDemoData();
+  ensurePaymentConfigDemoData();
+  persist(storageKeys.paymentMethods, state.paymentMethods);
+  persist(storageKeys.paymentProviders, state.paymentProviders);
   seedChat();
   renderAll();
   loadProducts();
@@ -12937,7 +15121,8 @@ function persistAll() {
   persist(storageKeys.customers, state.customers);
   persist(storageKeys.commercialProfiles, state.commercialProfiles);
   persist(storageKeys.orders, state.orders);
-  persist(storageKeys.payments, state.payments);
+  persist(storageKeys.paymentMethods, state.paymentMethods);
+  persist(storageKeys.paymentProviders, state.paymentProviders);
   persist(storageKeys.shipments, state.shipments);
   persist(storageKeys.sales, state.sales);
   persist(storageKeys.conversations, state.conversations);
