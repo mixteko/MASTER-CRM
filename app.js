@@ -5463,6 +5463,9 @@ const PAYMENT_METHOD_LABELS = {
 };
 
 const DELIVERY_TYPE_LABELS = {
+  mostrador: "Mostrador",
+  recoleccion: "Recoger en tienda",
+  domicilio: "Envío a domicilio",
   venta_directa: "Venta directa",
   recoger_tienda: "Recoger en tienda",
   envio_local: "Envío local",
@@ -5486,6 +5489,9 @@ const COMPACT_PAYMENT_STATUS_LABELS = {
 };
 
 const COMPACT_DELIVERY_TYPE_LABELS = {
+  mostrador: "Mostrador",
+  recoleccion: "Recoger",
+  domicilio: "Domicilio",
   envio_local: "Envío local",
   recoger_tienda: "Recoger",
   paqueteria: "Paq.",
@@ -5505,6 +5511,7 @@ const LEGACY_ORDER_STATUS_MAP = {
 
 let commercePaymentFormsReady = false;
 let orderDeliveryFormsReady = false;
+let orderDiscountControlsReady = false;
 let orderFormDraft = { items: [] };
 let saleFormDraft = { items: [] };
 let orderFormEditingId = null;
@@ -5638,6 +5645,7 @@ const elements = {
   orderStatusFilters: $("#orderStatusFilters"),
   openOrderDialogButton: $("#openOrderDialogButton"),
   orderDialog: $("#orderDialog"),
+  orderDialogTitle: $("#orderDialogTitle"),
   orderForm: $("#orderForm"),
   orderCustomerSelect: $("#orderCustomerSelect"),
   orderOriginSelect: $("#orderOriginSelect"),
@@ -5646,6 +5654,11 @@ const elements = {
   orderLineItems: $("#orderLineItems"),
   orderLinesEmpty: $("#orderLinesEmpty"),
   orderDiscount: $("#orderDiscount"),
+  orderDiscountPercent: $("#orderDiscountPercent"),
+  orderCompactSubtotal: $("#orderCompactSubtotal"),
+  orderCompactIva: $("#orderCompactIva"),
+  orderCompactDiscount: $("#orderCompactDiscount"),
+  orderCompactTotal: $("#orderCompactTotal"),
   orderShipping: $("#orderShipping"),
   orderPaymentStatus: $("#orderPaymentStatus"),
   orderPaymentMethod: $("#orderPaymentMethod"),
@@ -6011,8 +6024,6 @@ function bindEvents() {
     renderOrderProfileDiscountPanel();
     updateOrderFormPreview();
   });
-  elements.orderShipping?.addEventListener("input", updateOrderFormPreview);
-  elements.orderShipping?.addEventListener("change", updateOrderFormPreview);
   elements.orderDiscount?.addEventListener("change", () => {
     orderFormDiscountManual = true;
     renderOrderProfileDiscountPanel();
@@ -6174,7 +6185,7 @@ function bindEvents() {
       renderInventoryTable();
     });
   }
-  elements.openInventoryProductModal?.addEventListener("click", () => elements.inventoryProductDialog.showModal());
+  elements.openInventoryProductModal?.addEventListener("click", () => showFloatingDialog(elements.inventoryProductDialog));
   elements.inventoryProductVisualForm?.addEventListener("submit", saveInventoryProduct);
   elements.openProductLotFormButton?.addEventListener("click", () => {
     const productId = elements.productId?.value || elements.openProductLotFormButton?.dataset.productId;
@@ -6515,6 +6526,7 @@ function showView(viewId, options = {}) {
       viewDescriptions["product-form"],
     );
     scrollWorkspaceToTop();
+    resetFloatingPanelScroll(document.getElementById("product-form"));
     return;
   }
 
@@ -6523,6 +6535,7 @@ function showView(viewId, options = {}) {
     $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === "clientes"));
     updateViewHeader(elements.customerFormTitle.textContent || "Cliente", viewDescriptions["customer-form"]);
     scrollWorkspaceToTop();
+    resetFloatingPanelScroll(document.getElementById("customer-form"));
     return;
   }
 
@@ -7446,6 +7459,38 @@ function scrollWorkspaceToTop() {
   window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   document.documentElement.scrollTop = 0;
   document.body.scrollTop = 0;
+}
+
+function resetFloatingPanelScroll(panel) {
+  if (!panel) return;
+  const reset = () => {
+    const scrollTarget =
+      panel.querySelector(".order-dialog-body") ||
+      panel.querySelector(".payment-dialog-scroll") ||
+      panel.querySelector(".payment-dialog-body") ||
+      panel.querySelector(".customer-profiles-dialog-scroll") ||
+      panel.querySelector(".customer-contact-dialog-body") ||
+      panel.querySelector(".modal-body") ||
+      panel.querySelector(".dialog-body") ||
+      panel.querySelector(".modal-content") ||
+      panel.querySelector(".panel-body") ||
+      panel;
+    if (scrollTarget) {
+      scrollTarget.scrollTop = 0;
+      scrollTarget.scrollLeft = 0;
+    }
+  };
+  reset();
+  requestAnimationFrame(() => {
+    reset();
+    requestAnimationFrame(reset);
+  });
+}
+
+function showFloatingDialog(dialog) {
+  if (!dialog) return;
+  dialog.showModal();
+  resetFloatingPanelScroll(dialog);
 }
 
 function hydrateSettings() {
@@ -8433,7 +8478,7 @@ function createOnlineOrder(event) {
 
 function openLoginDialog() {
   showAccountView("login");
-  elements.customerDialog.showModal();
+  showFloatingDialog(elements.customerDialog);
 }
 
 function showAccountView(view) {
@@ -8659,7 +8704,7 @@ function openCommercialProfilesDialog() {
   renderCommercialProfilesList();
   clearCommercialProfileForm();
   setCommercialProfileFormMode("new");
-  elements.customerCommercialProfilesDialog?.showModal();
+  showFloatingDialog(elements.customerCommercialProfilesDialog);
 }
 
 function closeCommercialProfilesDialog() {
@@ -8790,7 +8835,7 @@ function openCustomerContactDialog(id) {
       <div class="customer-contact-summary-row"><span>Preferencia</span><strong>${escapeHTML(customer.contactPreference || "—")}</strong></div>
     `;
   }
-  elements.customerContactDialog?.showModal();
+  showFloatingDialog(elements.customerContactDialog);
 }
 
 function handleCustomerContactEmail() {
@@ -9080,12 +9125,60 @@ function normalizeOrderOrigin(origin) {
 }
 
 function normalizeDeliveryType(value) {
-  const raw = String(value || "pendiente").trim().toLowerCase();
-  if (DELIVERY_TYPE_LABELS[raw]) return raw;
-  if (raw === "local") return "envio_local";
-  if (raw === "nacional") return "paqueteria";
-  if (raw.includes("directa") || raw.includes("sin entrega")) return "venta_directa";
-  return "pendiente";
+  const raw = String(value || "mostrador")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "_");
+  const canonical = {
+    mostrador: "mostrador",
+    venta_directa: "mostrador",
+    recoleccion: "recoleccion",
+    recoger_tienda: "recoleccion",
+    domicilio: "domicilio",
+    envio_local: "domicilio",
+    paqueteria: "domicilio",
+    entrega_domicilio: "domicilio",
+    local: "domicilio",
+    nacional: "domicilio",
+    pendiente: "mostrador",
+  };
+  if (canonical[raw]) return canonical[raw];
+  if (raw.includes("domicilio") || raw.includes("envio") || raw.includes("paqueter")) return "domicilio";
+  if (raw.includes("recog") || raw.includes("pickup") || raw.includes("tienda")) return "recoleccion";
+  if (raw.includes("mostrador") || raw.includes("directa")) return "mostrador";
+  return "mostrador";
+}
+
+function normalizeOrderShippingStatus(value) {
+  const raw = String(value || "sin_envio")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "_");
+  const aliases = {
+    sin_envio: "sin_envio",
+    pendiente: "pendiente",
+    asignado: "asignado",
+    en_camino: "en_camino",
+    entregado: "entregado",
+    cancelado: "cancelado",
+    preparando: "pendiente",
+  };
+  if (aliases[raw]) return aliases[raw];
+  if (raw.includes("sin") && raw.includes("envio")) return "sin_envio";
+  if (raw.includes("asign")) return "asignado";
+  if (raw.includes("camino")) return "en_camino";
+  if (raw.includes("entreg")) return "entregado";
+  if (raw.includes("cancel")) return "cancelado";
+  if (raw.includes("pend")) return "pendiente";
+  return "sin_envio";
+}
+
+function isOrderHomeDelivery(deliveryType) {
+  return normalizeDeliveryType(deliveryType) === "domicilio";
 }
 
 function getOrderFlowProfile(origin, deliveryType) {
@@ -9093,10 +9186,10 @@ function getOrderFlowProfile(origin, deliveryType) {
   const normalizedDelivery = normalizeDeliveryType(deliveryType);
 
   if (normalizedOrigin === "mostrador") {
-    return normalizedDelivery === "recoger_tienda" ? "mostrador_pickup" : "mostrador_direct";
+    return normalizedDelivery === "recoleccion" ? "mostrador_pickup" : "mostrador_direct";
   }
-  if (normalizedDelivery === "recoger_tienda") return "pickup";
-  if (normalizedDelivery === "envio_local" || normalizedDelivery === "paqueteria") return "shipping";
+  if (normalizedDelivery === "recoleccion") return "pickup";
+  if (normalizedDelivery === "domicilio") return "shipping";
   return "shipping";
 }
 
@@ -9242,7 +9335,11 @@ function normalizeOrder(order = {}) {
     deliveryType,
     address: order.address || "",
     shippingZoneId: order.shippingZoneId || "",
+    shippingZoneName: order.shippingZoneName || "",
     shippingProviderId: order.shippingProviderId || "",
+    shippingProviderName: order.shippingProviderName || "",
+    shippingStatus: normalizeOrderShippingStatus(order.shippingStatus),
+    shippingCost: toNumber(order.shippingCost),
     subtotal,
     discount,
     shipping,
@@ -10215,9 +10312,9 @@ function resetOrderFormDraft() {
     elements.orderDiscount.value = "0";
     elements.orderDiscount.classList.remove("is-blocked");
   }
+  if (elements.orderDiscountPercent) elements.orderDiscountPercent.value = "0";
   if (elements.orderShipping) elements.orderShipping.value = "0";
   loadOrderPaymentForm();
-  if (elements.orderDeliveryType) elements.orderDeliveryType.value = "venta_directa";
   if (elements.orderNotes) elements.orderNotes.value = "";
   if (elements.orderProfileDiscountWarning) elements.orderProfileDiscountWarning.hidden = true;
   const saveButton = elements.orderForm?.querySelector('button[type="submit"]');
@@ -10244,12 +10341,12 @@ function openOrderDialog() {
   populateCommerceCustomerSelect(elements.orderCustomerSelect);
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = "whatsapp";
   if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = "pendiente";
-  if (elements.orderDeliveryType) elements.orderDeliveryType.value = "envio_local";
+  if (elements.orderDeliveryType) elements.orderDeliveryType.value = "domicilio";
   updateOrderDeliveryFieldVisibility();
   loadOrderPaymentForm();
   ensureOrderProfileDiscountPanel();
   applyOrderCustomerProfileDiscount();
-  elements.orderDialog?.showModal();
+  showFloatingDialog(elements.orderDialog);
   renderOrderLineItems();
 }
 
@@ -10266,20 +10363,14 @@ function openOrderEditor(orderId) {
   orderFormDraft = { items: order.items.map((item) => ({ ...item })) };
   populateCommerceCustomerSelect(elements.orderCustomerSelect, order.customerId || "__walkin__");
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = order.origin || "manual";
-  if (elements.orderDeliveryType) elements.orderDeliveryType.value = order.deliveryType || "pendiente";
-  updateOrderDeliveryFieldVisibility();
-  if (elements.orderDiscount) elements.orderDiscount.value = String(order.discount ?? 0);
-  if (elements.orderShipping) elements.orderShipping.value = String(order.shipping ?? 0);
+  loadOrderDeliveryForm(order);
+  loadOrderDiscountForm(order);
   if (elements.orderNotes) elements.orderNotes.value = order.notes || "";
   if (elements.orderDialogTitle) elements.orderDialogTitle.textContent = `Editar pedido ${order.id}`;
   loadOrderPaymentForm(order);
   ensureOrderProfileDiscountPanel();
-  const profileInfo = resolveOrderProfileDiscount(order.customerId || "");
-  orderFormProfilePercent = profileInfo.percent;
-  const autoDiscount = computeProfileDiscountAmount(computeDraftSubtotal(order.items), profileInfo.percent);
-  orderFormDiscountManual = Math.abs(toNumber(order.discount) - autoDiscount) > 0.009;
   renderOrderProfileDiscountPanel();
-  elements.orderDialog?.showModal();
+  showFloatingDialog(elements.orderDialog);
   renderOrderLineItems();
 }
 
@@ -10294,7 +10385,7 @@ function openSaleDialog() {
   if (elements.saleOriginSelect) elements.saleOriginSelect.value = "mostrador";
   resetSaleFormDraft();
   loadSalePaymentForm();
-  elements.saleDialog?.showModal();
+  showFloatingDialog(elements.saleDialog);
 }
 
 function closeSaleDialog() {
@@ -10449,13 +10540,163 @@ function calculateDraftTotals(items, discount = 0, shipping = 0) {
   return { subtotal, discount: discountValue, shipping: shippingValue, total };
 }
 
+function computeDraftIvaAmount(items) {
+  const taxes = state.settings?.taxes || DEFAULT_SETTINGS.taxes;
+  if (!taxes.ivaEnabled) return 0;
+  const rate = Math.max(0, toNumber(taxes.ivaRate)) / 100;
+  return (items || []).reduce((sum, item) => {
+    const product = getProduct(item.productId);
+    if (!product?.iva) return sum;
+    return sum + toNumber(item.subtotal) * rate;
+  }, 0);
+}
+
+function readOrderDiscountPercent() {
+  if (elements.orderDiscountPercent) return Math.min(100, Math.max(0, toNumber(elements.orderDiscountPercent.value)));
+  const subtotal = computeDraftSubtotal(orderFormDraft.items);
+  if (subtotal <= 0) return orderFormProfilePercent;
+  return Math.min(100, Math.max(0, (toNumber(elements.orderDiscount?.value) / subtotal) * 100));
+}
+
+function readOrderDiscountAmount(subtotal = computeDraftSubtotal(orderFormDraft.items)) {
+  return computeProfileDiscountAmount(subtotal, readOrderDiscountPercent());
+}
+
+function handleOrderDiscountPercentInput() {
+  orderFormDiscountManual = true;
+  renderOrderProfileDiscountPanel();
+  updateOrderFormPreview();
+}
+
+function loadOrderDiscountForm(order = null) {
+  const subtotal = order ? computeDraftSubtotal(order.items) : 0;
+  const profileInfo = resolveOrderProfileDiscount(order?.customerId || readOrderCustomerSelection().customerId);
+  if (!order) {
+    orderFormDiscountManual = false;
+    orderFormProfilePercent = profileInfo.percent;
+    if (elements.orderDiscountPercent) elements.orderDiscountPercent.value = String(profileInfo.percent);
+    updateOrderFormPreview();
+    return;
+  }
+
+  const savedPercent = subtotal > 0 ? (toNumber(order.discount) / subtotal) * 100 : profileInfo.percent;
+  const roundedPercent = Math.round(savedPercent * 100) / 100;
+  orderFormProfilePercent = profileInfo.percent;
+  orderFormDiscountManual = Math.abs(roundedPercent - profileInfo.percent) > 0.009;
+  if (elements.orderDiscountPercent) elements.orderDiscountPercent.value = String(roundedPercent);
+  updateOrderFormPreview();
+}
+
+function refreshOrderDiscountElements() {
+  elements.orderDiscountPercent = $("#orderDiscountPercent");
+  elements.orderDiscount = $("#orderDiscount");
+  elements.orderDiscountAuthWarning = $("#orderDiscountAuthWarning");
+  elements.orderDiscountAuthWarningText = $("#orderDiscountAuthWarningText");
+  elements.orderCompactSubtotal = $("#orderCompactSubtotal");
+  elements.orderCompactIva = $("#orderCompactIva");
+  elements.orderCompactDiscount = $("#orderCompactDiscount");
+  elements.orderCompactTotal = $("#orderCompactTotal");
+}
+
+function patchOrderDiscountAuthWarning() {
+  const wrap = document.querySelector(".order-discount-compact-wrap");
+  if (!wrap || document.getElementById("orderDiscountAuthWarning")) return;
+  wrap.insertAdjacentHTML(
+    "beforeend",
+    `<div class="order-discount-auth-alert" id="orderDiscountAuthWarning" role="status" hidden>
+      <span id="orderDiscountAuthWarningText"></span>
+    </div>`,
+  );
+  refreshOrderDiscountElements();
+}
+
+function ensureOrderDiscountSection() {
+  if (!elements.orderForm || document.getElementById("orderDiscountControls")) {
+    refreshOrderDiscountElements();
+    patchOrderDiscountAuthWarning();
+    return;
+  }
+
+  const discountLabel = elements.orderDiscount?.closest("label");
+  const discountGrid = discountLabel?.closest(".customer-form-grid");
+  if (discountGrid) discountGrid.remove();
+
+  const anchor = document.getElementById("orderCommercePaymentPanel") || elements.orderForm.querySelector(".order-summary-box");
+  const row = document.createElement("div");
+  row.id = "orderDiscountControls";
+  row.className = "order-discount-totals-row";
+  row.innerHTML = `
+    <div class="order-discount-compact-wrap">
+      <label class="order-discount-percent-label">Descuento (%)
+        <input id="orderDiscountPercent" type="number" min="0" max="100" step="0.01" value="0" />
+      </label>
+      <input id="orderDiscount" type="hidden" value="0" />
+      <div class="order-discount-auth-alert" id="orderDiscountAuthWarning" role="status" hidden>
+        <span id="orderDiscountAuthWarningText"></span>
+      </div>
+    </div>
+    <div class="order-commerce-totals-compact" id="orderCommerceTotalsCompact">
+      <div><span>Subtotal</span><strong id="orderCompactSubtotal">$0.00</strong></div>
+      <div><span>IVA</span><strong id="orderCompactIva">$0.00</strong></div>
+      <div><span>Descuento</span><strong id="orderCompactDiscount">$0.00</strong></div>
+      <div class="order-commerce-totals-total"><span>Total</span><strong id="orderCompactTotal">$0.00</strong></div>
+    </div>
+  `;
+  anchor?.before(row);
+  refreshOrderDiscountElements();
+
+  if (!orderDiscountControlsReady) {
+    elements.orderDiscountPercent?.addEventListener("input", handleOrderDiscountPercentInput);
+    elements.orderDiscountPercent?.addEventListener("change", handleOrderDiscountPercentInput);
+    orderDiscountControlsReady = true;
+  }
+}
+
+function isCashPaymentMethod(methodConfig) {
+  if (!methodConfig) return false;
+  return (
+    normalizePaymentMethodType(methodConfig.tipo) === "efectivo" ||
+    getLegacyPaymentKeyFromMethod(methodConfig) === "efectivo"
+  );
+}
+
+function isOrderPaymentReferenceRequired(paymentStatus, methodConfig) {
+  const status = normalizePaymentStatus(paymentStatus);
+  if (status !== "pagado") return false;
+  if (!methodConfig?.requiereReferencia) return false;
+  if (isCashPaymentMethod(methodConfig)) return false;
+  return true;
+}
+
+function patchOrderPaymentPanelUi() {
+  const proofInput = document.getElementById("orderPaymentProof");
+  if (proofInput) {
+    proofInput.placeholder = "URL, folio, nota o descripción del comprobante";
+  }
+  if (!document.getElementById("orderPaymentReferenceHelp")) {
+    const wrap = document.getElementById("orderPaymentReferenceWrap");
+    wrap?.insertAdjacentHTML(
+      "afterend",
+      '<p class="order-payment-reference-help" id="orderPaymentReferenceHelp">Agrega referencia cuando el pago ya esté confirmado.</p>',
+    );
+  }
+}
+
 function updateOrderFormPreview() {
   refreshOrderProfileDiscountFromSubtotal();
+  const discountAmount = readOrderDiscountAmount();
+  if (elements.orderDiscount) elements.orderDiscount.value = String(discountAmount);
   const totals = calculateDraftTotals(
     orderFormDraft.items,
-    elements.orderDiscount?.value,
+    discountAmount,
     elements.orderShipping?.value,
   );
+  const ivaAmount = computeDraftIvaAmount(orderFormDraft.items);
+  const totalWithDiscount = Math.max(0, totals.subtotal - totals.discount);
+  if (elements.orderCompactSubtotal) elements.orderCompactSubtotal.textContent = currency.format(totals.subtotal);
+  if (elements.orderCompactIva) elements.orderCompactIva.textContent = currency.format(ivaAmount);
+  if (elements.orderCompactDiscount) elements.orderCompactDiscount.textContent = currency.format(totals.discount);
+  if (elements.orderCompactTotal) elements.orderCompactTotal.textContent = currency.format(totalWithDiscount);
   if (elements.orderSubtotalPreview) elements.orderSubtotalPreview.textContent = currency.format(totals.subtotal);
   if (elements.orderDiscountPreview) elements.orderDiscountPreview.textContent = currency.format(totals.discount);
   if (elements.orderShippingPreview) elements.orderShippingPreview.textContent = currency.format(totals.shipping);
@@ -10550,21 +10791,35 @@ function getMaxAllowedOrderDiscount(subtotal, customerId = "") {
   return computeProfileDiscountAmount(subtotal, info.percent);
 }
 
-function validateOrderDiscountAuthorization({ discountAmount, subtotal, customerId = "" }) {
+function validateOrderDiscountAuthorization({ discountAmount, discountPercent, subtotal, customerId = "" }) {
   const info = resolveOrderProfileDiscount(customerId);
-  const maxAllowed = computeProfileDiscountAmount(subtotal, info.percent);
-  const discount = Math.max(0, toNumber(discountAmount));
-  const withinLimit = discount <= maxAllowed + 0.009;
+  const allowedPercent = toNumber(info.percent);
+  const baseSubtotal = Math.max(0, toNumber(subtotal));
+  const requestedPercent =
+    discountPercent != null
+      ? Math.min(100, Math.max(0, toNumber(discountPercent)))
+      : baseSubtotal > 0
+        ? (Math.max(0, toNumber(discountAmount)) / baseSubtotal) * 100
+        : Math.min(100, Math.max(0, readOrderDiscountPercent()));
+  const withinLimit = requestedPercent <= allowedPercent + 0.009;
   const adminOverride = canOverrideDiscount(getCurrentAppUser());
   const valid = withinLimit || adminOverride;
+  const allowedLabel = formatOrderDiscountPercent(allowedPercent);
+  const requestedLabel = formatOrderDiscountPercent(requestedPercent);
   return {
     valid,
-    allowedPercent: info.percent,
-    maxAllowed,
+    allowedPercent,
+    requestedPercent,
+    maxAllowed: computeProfileDiscountAmount(baseSubtotal, allowedPercent),
     message: valid
       ? ""
-      : "No puedes guardar este pedido con un descuento mayor al autorizado. Requiere autorización de administrador.",
+      : `Este descuento supera el límite permitido para este perfil. Descuento permitido: ${allowedLabel}%. Descuento solicitado: ${requestedLabel}%. Requiere autorización de administrador.`,
   };
+}
+
+function formatOrderDiscountPercent(value) {
+  const normalized = Math.round(toNumber(value) * 100) / 100;
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2).replace(/\.?0+$/, "");
 }
 
 function isOrderDiscountAuthorized(discountAmount, subtotal, customerId = "") {
@@ -10632,27 +10887,32 @@ function applyOrderCustomerProfileDiscount() {
 }
 
 function refreshOrderProfileDiscountFromSubtotal() {
-  if (orderFormDiscountManual || !elements.orderDiscount) return;
-  const subtotal = computeDraftSubtotal(orderFormDraft.items);
-  elements.orderDiscount.value = String(computeProfileDiscountAmount(subtotal, orderFormProfilePercent));
+  if (orderFormDiscountManual || !elements.orderDiscountPercent) return;
+  elements.orderDiscountPercent.value = String(orderFormProfilePercent);
 }
 
 function updateOrderDiscountAuthorizationFeedback(subtotal, discountAmount, customerId = "") {
   const result = validateOrderDiscountAuthorization({
     discountAmount,
+    discountPercent: readOrderDiscountPercent(),
     subtotal,
     customerId: customerId || readOrderCustomerSelection().customerId,
   });
-  if (elements.orderProfileDiscountWarning) {
+  if (elements.orderDiscountAuthWarning && elements.orderDiscountAuthWarningText) {
     if (!result.valid) {
-      elements.orderProfileDiscountWarning.textContent =
-        "Este descuento requiere autorización de administrador.";
-      elements.orderProfileDiscountWarning.hidden = false;
+      elements.orderDiscountAuthWarningText.textContent = result.message;
+      elements.orderDiscountAuthWarning.hidden = false;
     } else {
-      elements.orderProfileDiscountWarning.hidden = true;
+      elements.orderDiscountAuthWarningText.textContent = "";
+      elements.orderDiscountAuthWarning.hidden = true;
     }
   }
+  if (elements.orderProfileDiscountWarning) {
+    elements.orderProfileDiscountWarning.hidden = true;
+    elements.orderProfileDiscountWarning.textContent = "";
+  }
   elements.orderDiscount?.classList.toggle("is-blocked", !result.valid);
+  elements.orderDiscountPercent?.classList.toggle("is-blocked", !result.valid);
   const saveButton = elements.orderForm?.querySelector('button[type="submit"]');
   if (saveButton) {
     saveButton.disabled = !result.valid;
@@ -10669,20 +10929,22 @@ function saveManualOrder(event) {
   const origin = elements.orderOriginSelect?.value || "manual";
   const paymentPayload = readOrderPaymentPayload();
   const paymentStatus = paymentPayload.paymentStatus;
-  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
+  const deliveryPayload = readOrderDeliveryPayload();
+  const discountAmount = readOrderDiscountAmount();
   const totals = calculateDraftTotals(
     orderFormDraft.items,
-    elements.orderDiscount?.value,
+    discountAmount,
     elements.orderShipping?.value,
   );
 
   const methodConfig = getPaymentMethodConfig(paymentPayload.paymentMethodId);
-  if (methodConfig?.requiereReferencia && !paymentPayload.paymentReference) {
-    return showToast("Este método requiere referencia de pago.");
+  if (isOrderPaymentReferenceRequired(paymentStatus, methodConfig) && !paymentPayload.paymentReference) {
+    return showToast("Agrega referencia cuando el pago ya esté confirmado.");
   }
 
   const discountCheck = validateOrderDiscountAuthorization({
     discountAmount: totals.discount,
+    discountPercent: readOrderDiscountPercent(),
     subtotal: totals.subtotal,
     customerId: customer.customerId,
   });
@@ -10702,7 +10964,7 @@ function saveManualOrder(event) {
       origin,
       ...paymentPayload,
       paymentStatus,
-      deliveryType,
+      ...deliveryPayload,
       subtotal: totals.subtotal,
       discount: totals.discount,
       shipping: totals.shipping,
@@ -10721,7 +10983,7 @@ function saveManualOrder(event) {
     return;
   }
 
-  const status = resolveInitialOrderStatus({ origin, paymentStatus, deliveryType });
+  const status = resolveInitialOrderStatus({ origin, paymentStatus, deliveryType: deliveryPayload.deliveryType });
   const order = normalizeOrder({
     id: getNextOrderFolio(),
     ...customer,
@@ -10729,7 +10991,7 @@ function saveManualOrder(event) {
     status,
     ...paymentPayload,
     paymentStatus: resolveInitialOrderPaymentStatus(paymentStatus, status),
-    deliveryType,
+    ...deliveryPayload,
     subtotal: totals.subtotal,
     discount: totals.discount,
     shipping: totals.shipping,
@@ -11328,15 +11590,19 @@ function readSalePaymentPayload(total) {
 function updateOrderPaymentFieldVisibility() {
   const methodId = elements.orderPaymentMethod?.value || "";
   const config = getPaymentMethodConfig(methodId);
-  const needsRef = Boolean(config?.requiereReferencia);
+  const paymentStatus = normalizePaymentStatus(elements.orderPaymentStatus?.value);
+  const needsRef = isOrderPaymentReferenceRequired(paymentStatus, config);
   const needsProof = Boolean(config?.requiereComprobante);
   elements.orderPaymentReferenceWrap?.classList.toggle("is-important", needsRef);
   elements.orderPaymentProofWrap?.classList.toggle("is-hidden", !needsProof);
   if (elements.orderPaymentReference) {
-    elements.orderPaymentReference.required = needsRef;
+    elements.orderPaymentReference.required = false;
     elements.orderPaymentReference.placeholder = needsRef
-      ? "Requerido: folio, SPEI o referencia"
+      ? "Folio, SPEI o referencia (requerido si está pagado)"
       : "Folio, SPEI o referencia (opcional)";
+  }
+  if (elements.orderPaymentReferenceHelp) {
+    elements.orderPaymentReferenceHelp.hidden = false;
   }
 }
 
@@ -11430,6 +11696,7 @@ function refreshCommercePaymentElements() {
   elements.orderPaymentProof = $("#orderPaymentProof");
   elements.orderPaymentReferenceWrap = $("#orderPaymentReferenceWrap");
   elements.orderPaymentProofWrap = $("#orderPaymentProofWrap");
+  elements.orderPaymentReferenceHelp = $("#orderPaymentReferenceHelp");
   elements.salePaymentMethod = $("#salePaymentMethod");
   elements.salePaymentStatus = $("#salePaymentStatus");
   elements.salePaymentChannel = $("#salePaymentChannel");
@@ -11443,6 +11710,7 @@ function refreshCommercePaymentElements() {
 function ensureOrderCommercePaymentSection() {
   if (!elements.orderForm || document.getElementById("orderCommercePaymentPanel")) {
     refreshCommercePaymentElements();
+    patchOrderPaymentPanelUi();
     return;
   }
 
@@ -11477,10 +11745,11 @@ function ensureOrderCommercePaymentSection() {
         </select>
       </label>
       <label id="orderPaymentReferenceWrap">Referencia de pago
-        <input id="orderPaymentReference" type="text" placeholder="Folio, SPEI o referencia" />
+        <input id="orderPaymentReference" type="text" placeholder="Folio, SPEI o referencia (opcional)" />
       </label>
+      <p class="order-payment-reference-help" id="orderPaymentReferenceHelp">Agrega referencia cuando el pago ya esté confirmado.</p>
       <label id="orderPaymentProofWrap" class="is-full">Comprobante / nota
-        <input id="orderPaymentProof" type="text" placeholder="URL, folio o nota del comprobante" />
+        <input id="orderPaymentProof" type="text" placeholder="URL, folio, nota o descripción del comprobante" />
       </label>
     </div>
   `;
@@ -11488,6 +11757,7 @@ function ensureOrderCommercePaymentSection() {
   refreshCommercePaymentElements();
   populateOrderPaymentStatusOptions();
   elements.orderPaymentMethod?.addEventListener("change", updateOrderPaymentFieldVisibility);
+  elements.orderPaymentStatus?.addEventListener("change", updateOrderPaymentFieldVisibility);
   elements.orderPaymentChannel?.addEventListener("change", () => {
     populateCommercePaymentMethodSelect(elements.orderPaymentMethod, {
       selectedId: elements.orderPaymentMethod?.value,
@@ -11569,23 +11839,131 @@ function ensureSaleCommercePaymentSection() {
   });
 }
 
+function handleOrderDeliveryTypeChange() {
+  updateOrderDeliveryFieldVisibility();
+}
+
+function bindOrderDeliveryFieldListeners() {
+  if (orderDeliveryFormsReady) return;
+  elements.orderShipping?.addEventListener("input", updateOrderFormPreview);
+  elements.orderShipping?.addEventListener("change", updateOrderFormPreview);
+  elements.orderDeliveryType?.addEventListener("change", handleOrderDeliveryTypeChange);
+  orderDeliveryFormsReady = true;
+}
+
+function syncOrderDeliveryTypeOptions(selectedValue = "") {
+  const select = elements.orderDeliveryType || $("#orderDeliveryType");
+  if (!select) return;
+  const selected = normalizeDeliveryType(selectedValue || select.value);
+  select.innerHTML = `
+    <option value="mostrador">Venta directa / sin entrega</option>
+    <option value="recoleccion">Recoger en tienda</option>
+    <option value="domicilio">Envío local / Paquetería</option>
+  `;
+  select.value = selected;
+}
+
+function syncOrderShippingStatusOptions(selectedValue = "") {
+  const select = elements.orderShippingStatus || $("#orderShippingStatus");
+  if (!select) return;
+  const selected = normalizeOrderShippingStatus(selectedValue || select.value);
+  select.innerHTML = `
+    <option value="sin_envio">Sin envío</option>
+    <option value="pendiente">Pendiente</option>
+    <option value="asignado">Asignado</option>
+    <option value="en_camino">En camino</option>
+    <option value="entregado">Entregado</option>
+    <option value="cancelado">Cancelado</option>
+  `;
+  select.value = selected;
+}
+
 function refreshOrderDeliveryElements() {
   elements.orderDeliveryType = $("#orderDeliveryType");
+  elements.orderDeliveryZone = $("#orderDeliveryZone");
+  elements.orderShippingProvider = $("#orderShippingProvider");
+  elements.orderShippingStatus = $("#orderShippingStatus");
   elements.orderShipping = $("#orderShipping");
   elements.orderDeliveryZoneWrap = $("#orderDeliveryZoneWrap");
   elements.orderShippingProviderWrap = $("#orderShippingProviderWrap");
+  elements.orderDeliveryCostWrap = $("#orderDeliveryCostWrap");
+}
+
+function populateOrderDeliveryZoneSelect(selectedId = "") {
+  const select = elements.orderDeliveryZone || $("#orderDeliveryZone");
+  if (!select) return;
+  const zones = getSelectableShippingZones(selectedId);
+  select.innerHTML = `<option value="">Seleccionar zona</option>${zones
+    .map((zone) => `<option value="${escapeHTML(zone.id)}">${escapeHTML(zone.nombre)}</option>`)
+    .join("")}`;
+  if (selectedId) select.value = selectedId;
+}
+
+function populateOrderDeliveryProviderSelect(selectedId = "") {
+  const select = elements.orderShippingProvider || $("#orderShippingProvider");
+  if (!select) return;
+  const active = getActiveShippingProviders();
+  const historical = selectedId ? getShippingProvider(selectedId) : null;
+  const providers = [...active];
+  if (historical && !providers.some((provider) => provider.id === historical.id)) {
+    providers.push(historical);
+  }
+  select.innerHTML = `<option value="">Seleccionar proveedor</option>${providers
+    .map((provider) => `<option value="${escapeHTML(provider.id)}">${escapeHTML(provider.nombre)}</option>`)
+    .join("")}`;
+  if (selectedId) select.value = selectedId;
+}
+
+function readOrderDeliveryPayload() {
+  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
+  const zoneId = String(elements.orderDeliveryZone?.value || "").trim();
+  const providerId = String(elements.orderShippingProvider?.value || "").trim();
+  const zone = zoneId ? getShippingZone(zoneId) : null;
+  const provider = providerId ? getShippingProvider(providerId) : null;
+  return {
+    deliveryType,
+    shippingZoneId: zoneId,
+    shippingZoneName: zone?.nombre || "",
+    shippingProviderId: providerId,
+    shippingProviderName: provider?.nombre || "",
+    shippingStatus: normalizeOrderShippingStatus(elements.orderShippingStatus?.value),
+    shippingCost: toNumber(elements.orderShipping?.value),
+  };
+}
+
+function loadOrderDeliveryForm(order = null) {
+  const zoneId = order?.shippingZoneId || "";
+  const providerId = order?.shippingProviderId || "";
+  populateOrderDeliveryZoneSelect(zoneId);
+  populateOrderDeliveryProviderSelect(providerId);
+
+  const deliveryType = order?.deliveryType ? normalizeDeliveryType(order.deliveryType) : "mostrador";
+  const shippingStatus = order ? normalizeOrderShippingStatus(order.shippingStatus) : "sin_envio";
+  const shippingCost = order ? toNumber(order.shippingCost ?? order.shipping ?? 0) : 0;
+
+  syncOrderDeliveryTypeOptions(deliveryType);
+  if (elements.orderDeliveryZone) elements.orderDeliveryZone.value = zoneId;
+  if (elements.orderShippingProvider) elements.orderShippingProvider.value = providerId;
+  syncOrderShippingStatusOptions(shippingStatus);
+  if (elements.orderShipping) elements.orderShipping.value = String(shippingCost);
+  updateOrderDeliveryFieldVisibility();
 }
 
 function updateOrderDeliveryFieldVisibility() {
-  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
-  const needsShippingDetails = deliveryType === "envio_local" || deliveryType === "paqueteria";
+  const needsShippingDetails = isOrderHomeDelivery(elements.orderDeliveryType?.value);
   elements.orderDeliveryZoneWrap?.classList.toggle("is-hidden", !needsShippingDetails);
   elements.orderShippingProviderWrap?.classList.toggle("is-hidden", !needsShippingDetails);
+  elements.orderDeliveryCostWrap?.classList.toggle("is-hidden", !needsShippingDetails);
 }
 
 function ensureOrderDeliverySection() {
   if (!elements.orderForm || document.getElementById("orderDeliveryPanel")) {
     refreshOrderDeliveryElements();
+    const costLabel = document.getElementById("orderShipping")?.closest("label");
+    if (costLabel && !costLabel.id) costLabel.id = "orderDeliveryCostWrap";
+    syncOrderDeliveryTypeOptions();
+    syncOrderShippingStatusOptions();
+    bindOrderDeliveryFieldListeners();
     return;
   }
 
@@ -11606,11 +11984,9 @@ function ensureOrderDeliverySection() {
     <div class="customer-form-grid customer-form-grid--2 commerce-payment-grid">
       <label>Tipo de entrega
         <select id="orderDeliveryType">
-          <option value="venta_directa">Venta directa / sin entrega</option>
-          <option value="recoger_tienda">Recoger en tienda</option>
-          <option value="envio_local">Envío local</option>
-          <option value="paqueteria">Paquetería</option>
-          <option value="pendiente">Pendiente definir</option>
+          <option value="mostrador">Venta directa / sin entrega</option>
+          <option value="recoleccion">Recoger en tienda</option>
+          <option value="domicilio">Envío local / Paquetería</option>
         </select>
       </label>
       <label id="orderDeliveryZoneWrap">Zona de entrega
@@ -11625,31 +12001,32 @@ function ensureOrderDeliverySection() {
       </label>
       <label>Estado de envío
         <select id="orderShippingStatus">
+          <option value="sin_envio">Sin envío</option>
           <option value="pendiente">Pendiente</option>
-          <option value="preparando">Preparando</option>
+          <option value="asignado">Asignado</option>
           <option value="en_camino">En camino</option>
           <option value="entregado">Entregado</option>
+          <option value="cancelado">Cancelado</option>
         </select>
       </label>
-      <label>Costo de envío ($)
+      <label id="orderDeliveryCostWrap">Costo de envío ($)
         <input id="orderShipping" type="number" min="0" step="0.01" value="0" />
       </label>
     </div>
   `;
   summary?.before(panel);
   refreshOrderDeliveryElements();
-
-  if (!orderDeliveryFormsReady) {
-    elements.orderShipping?.addEventListener("input", updateOrderFormPreview);
-    elements.orderShipping?.addEventListener("change", updateOrderFormPreview);
-    elements.orderDeliveryType?.addEventListener("change", updateOrderDeliveryFieldVisibility);
-    orderDeliveryFormsReady = true;
-  }
+  populateOrderDeliveryZoneSelect();
+  populateOrderDeliveryProviderSelect();
+  syncOrderDeliveryTypeOptions();
+  syncOrderShippingStatusOptions();
+  bindOrderDeliveryFieldListeners();
   updateOrderDeliveryFieldVisibility();
 }
 
 function ensureCommercePaymentForms() {
   ensureOrderCommercePaymentSection();
+  ensureOrderDiscountSection();
   ensureOrderDeliverySection();
   ensureSaleCommercePaymentSection();
   if (!commercePaymentFormsReady) {
@@ -12273,27 +12650,8 @@ function populatePaymentProviderMethodOptions(selectedIds = []) {
     .join("");
 }
 
-function resetPaymentDialogScroll(modalElement) {
-  if (!modalElement) return;
-  const scrollContainer =
-    modalElement.querySelector(".payment-dialog-scroll") ||
-    modalElement.querySelector(".payment-dialog-body") ||
-    modalElement;
-  const reset = () => {
-    scrollContainer.scrollTop = 0;
-    scrollContainer.scrollLeft = 0;
-  };
-  reset();
-  requestAnimationFrame(() => {
-    reset();
-    requestAnimationFrame(reset);
-  });
-}
-
 function showPaymentDialog(dialog) {
-  if (!dialog) return;
-  dialog.showModal();
-  resetPaymentDialogScroll(dialog);
+  showFloatingDialog(dialog);
 }
 
 function openPaymentMethodDialog(method = null) {
@@ -13141,7 +13499,7 @@ function openCategoryDeleteBlockedDialog(category, deps) {
       const showHide = deps.productCount > 0;
       elements.categoryDependencyHideButton.hidden = !showHide;
     }
-    elements.categoryDependencyDialog.showModal();
+    showFloatingDialog(elements.categoryDependencyDialog);
   });
 }
 
@@ -13287,7 +13645,7 @@ function openClassificationDeleteBlockedDialog(classification, productCount) {
     if (elements.classificationDependencyDeactivateButton) {
       elements.classificationDependencyDeactivateButton.hidden = false;
     }
-    elements.classificationDependencyDialog.showModal();
+    showFloatingDialog(elements.classificationDependencyDialog);
   });
 }
 
@@ -14275,7 +14633,7 @@ function openStockAdjustmentDialog(productId, options = {}) {
     elements.stockAdjustmentHelp.textContent = STOCK_ADJUST_ACTION_COPY.add.help;
   }
   setStockAdjustmentMode(options.mode === "new-lot" ? "new-lot" : "existing");
-  elements.stockAdjustmentDialog?.showModal();
+  showFloatingDialog(elements.stockAdjustmentDialog);
 }
 
 function closeStockAdjustmentDialog() {
@@ -14472,7 +14830,7 @@ async function openInventoryMovementsDialog(productId) {
   if (elements.inventoryMovementsContent) {
     elements.inventoryMovementsContent.innerHTML = `<p class="inventory-movements-loading">Cargando movimientos…</p>`;
   }
-  elements.inventoryMovementsDialog?.showModal();
+  showFloatingDialog(elements.inventoryMovementsDialog);
 
   try {
     const movements = await fetchInventoryMovements(productId);
@@ -14560,7 +14918,7 @@ function openInventoryDetail(id) {
       ${renderProductLotsTableMarkup(product, { showActions: true })}
     </section>
   `;
-  elements.inventoryDetailDialog.showModal();
+  showFloatingDialog(elements.inventoryDetailDialog);
 }
 
 function inventoryDetailItem(label, value, options = {}) {
@@ -14751,7 +15109,7 @@ function openProductActionDialog({ title, message, confirmLabel, confirmClass = 
     elements.productActionDialogMessage.textContent = message;
     elements.productActionDialogConfirm.textContent = confirmLabel;
     elements.productActionDialogConfirm.className = confirmClass;
-    elements.productActionDialog.showModal();
+    showFloatingDialog(elements.productActionDialog);
   });
 }
 
@@ -14774,7 +15132,7 @@ function openProductPermanentDeleteDialog(product) {
     elements.productPermanentDeleteConfirmInput.value = "";
     elements.productPermanentDeleteError.hidden = true;
     elements.productPermanentDeleteError.textContent = "";
-    elements.productPermanentDeleteDialog.showModal();
+    showFloatingDialog(elements.productPermanentDeleteDialog);
     elements.productPermanentDeleteConfirmInput.focus();
   });
 }
@@ -16346,7 +16704,7 @@ function openProductLotDialog(productId, lotId = "") {
   elements.productLotExpiresAt.value = lot.expiresAt || "";
   elements.productLotCost.value = String(lot.cost || 0);
   elements.productLotDialogTitle.textContent = "Editar lote";
-  elements.productLotDialog.showModal();
+  showFloatingDialog(elements.productLotDialog);
 }
 
 async function saveProductLot(event) {
@@ -16420,7 +16778,7 @@ function openProductLotDeleteDialog(productId, lot) {
     elements.productLotDeleteConfirmInput.value = "";
     elements.productLotDeleteError.hidden = true;
     elements.productLotDeleteError.textContent = "";
-    elements.productLotDeleteDialog.showModal();
+    showFloatingDialog(elements.productLotDeleteDialog);
     elements.productLotDeleteConfirmInput.focus();
   });
 }
