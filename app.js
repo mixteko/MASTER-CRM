@@ -5463,22 +5463,13 @@ const PAYMENT_METHOD_LABELS = {
 };
 
 const DELIVERY_TYPE_LABELS = {
-  venta_directa: "Mostrador",
-  recoger_tienda: "Recolección en sucursal",
-  envio_local: "Entrega a domicilio",
+  venta_directa: "Venta directa",
+  recoger_tienda: "Recoger en tienda",
+  envio_local: "Envío local",
   paqueteria: "Paquetería",
   pendiente: "Pendiente definir",
-  Local: "Entrega a domicilio",
+  Local: "Envío local",
   Nacional: "Paquetería",
-};
-
-const SHIPPING_STATUS_LABELS = {
-  sin_envio: "Sin envío",
-  pendiente: "Pendiente",
-  asignado: "Asignado",
-  en_camino: "En camino",
-  entregado: "Entregado",
-  cancelado: "Cancelado",
 };
 
 const COMPACT_PAYMENT_METHOD_LABELS = {
@@ -5495,10 +5486,10 @@ const COMPACT_PAYMENT_STATUS_LABELS = {
 };
 
 const COMPACT_DELIVERY_TYPE_LABELS = {
-  envio_local: "Domicilio",
-  recoger_tienda: "Recolección",
+  envio_local: "Envío local",
+  recoger_tienda: "Recoger",
   paqueteria: "Paq.",
-  venta_directa: "Mostrador",
+  venta_directa: "Directa",
 };
 
 const LEGACY_ORDER_STATUS_MAP = {
@@ -5518,7 +5509,6 @@ let saleFormDraft = { items: [] };
 let orderFormEditingId = null;
 let orderFormProfilePercent = 0;
 let orderFormDiscountManual = false;
-let orderFormShippingManual = false;
 let orderProfilePanelReady = false;
 let salesViewPolishReady = false;
 let paymentsViewReady = false;
@@ -9093,28 +9083,8 @@ function normalizeDeliveryType(value) {
   if (DELIVERY_TYPE_LABELS[raw]) return raw;
   if (raw === "local") return "envio_local";
   if (raw === "nacional") return "paqueteria";
-  if (raw.includes("directa") || raw.includes("sin entrega") || raw === "mostrador") return "venta_directa";
-  if (raw.includes("recoleccion") || raw.includes("recoger") || raw.includes("sucursal")) return "recoger_tienda";
-  if (raw.includes("domicilio")) return "envio_local";
+  if (raw.includes("directa") || raw.includes("sin entrega")) return "venta_directa";
   return "pendiente";
-}
-
-function isOrderHomeDelivery(deliveryType) {
-  return normalizeDeliveryType(deliveryType) === "envio_local";
-}
-
-function normalizeShippingStatus(status, deliveryType = "") {
-  if (!isOrderHomeDelivery(deliveryType) && normalizeDeliveryType(deliveryType) !== "paqueteria") {
-    return "sin_envio";
-  }
-  const key = String(status || "").trim().toLowerCase();
-  if (SHIPPING_STATUS_LABELS[key]) return key;
-  return "pendiente";
-}
-
-function getShippingStatusLabel(status) {
-  const key = String(status || "").trim().toLowerCase();
-  return SHIPPING_STATUS_LABELS[key] || status || "—";
 }
 
 function getOrderFlowProfile(origin, deliveryType) {
@@ -9252,16 +9222,9 @@ function normalizeOrder(order = {}) {
   const items = Array.isArray(order.items) ? order.items.map(normalizeOrderItem) : [];
   const subtotal = toNumber(order.subtotal ?? items.reduce((sum, item) => sum + item.subtotal, 0));
   const discount = toNumber(order.discount);
-  const shippingCost = Math.max(0, toNumber(order.shippingCost ?? order.shipping));
-  const shipping = shippingCost;
-  const total = toNumber(order.total ?? order.totalWithShipping ?? subtotal - discount + shippingCost);
+  const shipping = toNumber(order.shipping ?? order.shippingCost);
+  const total = toNumber(order.total ?? subtotal - discount + shipping);
   const paymentMethodId = resolvePaymentMethodIdForRecord(order);
-  const shippingZoneName =
-    String(order.shippingZoneName || "").trim() ||
-    (order.shippingZoneId ? getShippingZone(order.shippingZoneId)?.nombre || "" : "");
-  const shippingProviderName =
-    String(order.shippingProviderName || "").trim() ||
-    (order.shippingProviderId ? getShippingProvider(order.shippingProviderId)?.nombre || "" : "");
 
   const normalized = {
     id: order.id || getNextOrderFolio(),
@@ -9278,16 +9241,11 @@ function normalizeOrder(order = {}) {
     deliveryType,
     address: order.address || "",
     shippingZoneId: order.shippingZoneId || "",
-    shippingZoneName,
     shippingProviderId: order.shippingProviderId || "",
-    shippingProviderName,
-    shippingStatus: normalizeShippingStatus(order.shippingStatus, deliveryType),
-    shippingCost,
     subtotal,
     discount,
     shipping,
     total,
-    totalWithShipping: total,
     items,
     notes: order.notes || "",
     inventoryDeducted: Boolean(order.inventoryDeducted),
@@ -10083,26 +10041,6 @@ function renderSaleStatusBadge(sale) {
   return `<span class="sales-status-badge is-${meta.badge}">${escapeHTML(meta.label)}</span>`;
 }
 
-function renderOrderDeliveryCell(order) {
-  const typeLabel = getDeliveryTypeLabel(order.deliveryType);
-  if (!isOrderHomeDelivery(order.deliveryType) && normalizeDeliveryType(order.deliveryType) !== "paqueteria") {
-    return `<span>${escapeHTML(typeLabel)}</span>`;
-  }
-  const statusLabel = getShippingStatusLabel(order.shippingStatus);
-  const cost = currency.format(order.shippingCost ?? order.shipping ?? 0);
-  const meta = [];
-  if (order.shippingZoneName) meta.push(order.shippingZoneName);
-  if (order.shippingProviderName) meta.push(order.shippingProviderName);
-  const metaLine = meta.length ? `<small class="orders-muted">${escapeHTML(meta.join(" · "))}</small>` : "";
-  return `
-    <div class="orders-delivery-cell">
-      <strong>${escapeHTML(typeLabel)}</strong>
-      <small class="orders-muted">${escapeHTML(statusLabel)} · ${cost}</small>
-      ${metaLine}
-    </div>
-  `;
-}
-
 function renderOrderActionsMarkup(order) {
   const status = normalizeOrderStatus(order.status);
   const orderId = escapeHTML(order.id);
@@ -10166,7 +10104,7 @@ function renderOrders() {
               <td>${escapeHTML(getOrderOriginLabel(order.origin))}</td>
               <td><strong>${currency.format(order.total || 0)}</strong></td>
               <td><span class="orders-payment-badge ${paymentClass}">${escapeHTML(paymentLabel)}</span></td>
-              <td>${renderOrderDeliveryCell(order)}</td>
+              <td>${escapeHTML(getDeliveryTypeLabel(order.deliveryType))}</td>
               <td>${renderOrderStatusBadge(order)}</td>
               <td class="orders-col-actions">${renderOrderActionsMarkup(order)}</td>
             </tr>
@@ -10266,7 +10204,6 @@ function resetOrderFormDraft() {
   orderFormDraft = { items: [] };
   orderFormProfilePercent = 0;
   orderFormDiscountManual = false;
-  orderFormShippingManual = false;
   if (elements.orderDialogTitle) elements.orderDialogTitle.textContent = "Crear pedido";
   if (elements.orderProductSearch) elements.orderProductSearch.value = "";
   if (elements.orderProductResults) {
@@ -10277,8 +10214,9 @@ function resetOrderFormDraft() {
     elements.orderDiscount.value = "0";
     elements.orderDiscount.classList.remove("is-blocked");
   }
+  if (elements.orderShipping) elements.orderShipping.value = "0";
   loadOrderPaymentForm();
-  loadOrderDeliveryForm();
+  if (elements.orderDeliveryType) elements.orderDeliveryType.value = "venta_directa";
   if (elements.orderNotes) elements.orderNotes.value = "";
   if (elements.orderProfileDiscountWarning) elements.orderProfileDiscountWarning.hidden = true;
   const saveButton = elements.orderForm?.querySelector('button[type="submit"]');
@@ -10305,10 +10243,8 @@ function openOrderDialog() {
   populateCommerceCustomerSelect(elements.orderCustomerSelect);
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = "whatsapp";
   if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = "pendiente";
-  loadOrderPaymentForm();
-  loadOrderDeliveryForm();
   if (elements.orderDeliveryType) elements.orderDeliveryType.value = "envio_local";
-  updateOrderDeliveryFieldVisibility();
+  loadOrderPaymentForm();
   ensureOrderProfileDiscountPanel();
   applyOrderCustomerProfileDiscount();
   elements.orderDialog?.showModal();
@@ -10328,11 +10264,12 @@ function openOrderEditor(orderId) {
   orderFormDraft = { items: order.items.map((item) => ({ ...item })) };
   populateCommerceCustomerSelect(elements.orderCustomerSelect, order.customerId || "__walkin__");
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = order.origin || "manual";
+  if (elements.orderDeliveryType) elements.orderDeliveryType.value = order.deliveryType || "pendiente";
   if (elements.orderDiscount) elements.orderDiscount.value = String(order.discount ?? 0);
+  if (elements.orderShipping) elements.orderShipping.value = String(order.shipping ?? 0);
   if (elements.orderNotes) elements.orderNotes.value = order.notes || "";
   if (elements.orderDialogTitle) elements.orderDialogTitle.textContent = `Editar pedido ${order.id}`;
   loadOrderPaymentForm(order);
-  loadOrderDeliveryForm(order);
   ensureOrderProfileDiscountPanel();
   const profileInfo = resolveOrderProfileDiscount(order.customerId || "");
   orderFormProfilePercent = profileInfo.percent;
@@ -10511,7 +10448,6 @@ function calculateDraftTotals(items, discount = 0, shipping = 0) {
 
 function updateOrderFormPreview() {
   refreshOrderProfileDiscountFromSubtotal();
-  if (!orderFormShippingManual) recalculateOrderShippingCost();
   const totals = calculateDraftTotals(
     orderFormDraft.items,
     elements.orderDiscount?.value,
@@ -10729,13 +10665,12 @@ function saveManualOrder(event) {
   const customer = readOrderCustomerSelection();
   const origin = elements.orderOriginSelect?.value || "manual";
   const paymentPayload = readOrderPaymentPayload();
-  const deliveryPayload = readOrderDeliveryPayload();
   const paymentStatus = paymentPayload.paymentStatus;
-  const deliveryType = deliveryPayload.deliveryType;
+  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
   const totals = calculateDraftTotals(
     orderFormDraft.items,
     elements.orderDiscount?.value,
-    deliveryPayload.shippingCost,
+    elements.orderShipping?.value,
   );
 
   const methodConfig = getPaymentMethodConfig(paymentPayload.paymentMethodId);
@@ -10763,15 +10698,12 @@ function saveManualOrder(event) {
       ...customer,
       origin,
       ...paymentPayload,
-      ...deliveryPayload,
       paymentStatus,
       deliveryType,
       subtotal: totals.subtotal,
       discount: totals.discount,
       shipping: totals.shipping,
-      shippingCost: totals.shipping,
       total: totals.total,
-      totalWithShipping: totals.total,
       items: orderFormDraft.items.map((item) => ({ ...item })),
       notes: elements.orderNotes?.value.trim() || "",
     });
@@ -10793,15 +10725,12 @@ function saveManualOrder(event) {
     origin,
     status,
     ...paymentPayload,
-    ...deliveryPayload,
     paymentStatus: resolveInitialOrderPaymentStatus(paymentStatus, status),
     deliveryType,
     subtotal: totals.subtotal,
     discount: totals.discount,
     shipping: totals.shipping,
-    shippingCost: totals.shipping,
     total: totals.total,
-    totalWithShipping: totals.total,
     items: orderFormDraft.items.map((item) => ({ ...item })),
     notes: elements.orderNotes?.value.trim() || "",
     createdAt: new Date().toISOString(),
@@ -11508,222 +11437,6 @@ function refreshCommercePaymentElements() {
   elements.salePaymentNetPreview = $("#salePaymentNetPreview");
 }
 
-function refreshOrderDeliveryElements() {
-  elements.orderDeliveryType = $("#orderDeliveryType");
-  elements.orderShippingZoneSelect = $("#orderShippingZoneSelect");
-  elements.orderShippingProviderSelect = $("#orderShippingProviderSelect");
-  elements.orderShippingStatus = $("#orderShippingStatus");
-  elements.orderShipping = $("#orderShipping");
-  elements.orderShippingZoneWrap = $("#orderShippingZoneWrap");
-  elements.orderShippingProviderWrap = $("#orderShippingProviderWrap");
-  elements.orderShippingCostWrap = $("#orderShippingCostWrap");
-  elements.orderShippingStatusWrap = $("#orderShippingStatusWrap");
-}
-
-function populateOrderShippingZoneOptions(historicalZoneId = "") {
-  if (!elements.orderShippingZoneSelect) return;
-  const zones = getSelectableShippingZones(historicalZoneId);
-  const selected = historicalZoneId || elements.orderShippingZoneSelect.value || "";
-  elements.orderShippingZoneSelect.innerHTML = [
-    `<option value="">Sin zona (costo base)</option>`,
-    ...zones.map((zone) => {
-      const inactive = zone.activo ? "" : " (inactiva)";
-      return `<option value="${escapeHTML(zone.id)}">${escapeHTML(zone.nombre)}${inactive}</option>`;
-    }),
-  ].join("");
-  if (selected && zones.some((zone) => zone.id === selected)) {
-    elements.orderShippingZoneSelect.value = selected;
-  }
-}
-
-function populateOrderShippingProviderOptions(historicalProviderId = "") {
-  if (!elements.orderShippingProviderSelect) return;
-  const providers = getSelectableShippingProviders(historicalProviderId);
-  const selected = historicalProviderId || elements.orderShippingProviderSelect.value || "";
-  elements.orderShippingProviderSelect.innerHTML = [
-    `<option value="">Sin asignar</option>`,
-    ...providers.map((provider) => {
-      const inactive = provider.activo ? "" : " (inactivo)";
-      return `<option value="${escapeHTML(provider.id)}">${escapeHTML(provider.nombre)}${inactive}</option>`;
-    }),
-  ].join("");
-  if (selected && providers.some((provider) => provider.id === selected)) {
-    elements.orderShippingProviderSelect.value = selected;
-  }
-}
-
-function recalculateOrderShippingCost() {
-  if (orderFormShippingManual || !elements.orderShipping) return;
-  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
-  if (!isOrderHomeDelivery(deliveryType)) {
-    elements.orderShipping.value = "0";
-    return;
-  }
-  const subtotal = computeDraftSubtotal(orderFormDraft.items);
-  const zoneId = elements.orderShippingZoneSelect?.value || "";
-  elements.orderShipping.value = String(calculateShippingCost(subtotal, zoneId));
-}
-
-function updateOrderDeliveryFieldVisibility() {
-  refreshOrderDeliveryElements();
-  const isHome = isOrderHomeDelivery(elements.orderDeliveryType?.value);
-  elements.orderShippingZoneWrap?.classList.toggle("is-hidden", !isHome);
-  elements.orderShippingProviderWrap?.classList.toggle("is-hidden", !isHome);
-  elements.orderShippingCostWrap?.classList.toggle("is-hidden", !isHome);
-  elements.orderShippingStatusWrap?.classList.toggle("is-hidden", !isHome);
-  if (elements.orderShippingZoneSelect) elements.orderShippingZoneSelect.disabled = !isHome;
-  if (elements.orderShippingProviderSelect) elements.orderShippingProviderSelect.disabled = !isHome;
-  if (elements.orderShipping) elements.orderShipping.disabled = !isHome;
-  if (elements.orderShippingStatus) elements.orderShippingStatus.disabled = !isHome;
-  if (!isHome) {
-    if (elements.orderShippingStatus) elements.orderShippingStatus.value = "sin_envio";
-    if (elements.orderShipping) elements.orderShipping.value = "0";
-    orderFormShippingManual = false;
-  } else if (elements.orderShippingStatus?.value === "sin_envio") {
-    elements.orderShippingStatus.value = "pendiente";
-  }
-  if (isHome) recalculateOrderShippingCost();
-}
-
-function readOrderDeliveryPayload() {
-  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
-  const isHome = isOrderHomeDelivery(deliveryType);
-  const zoneId = isHome ? elements.orderShippingZoneSelect?.value || "" : "";
-  const providerId = isHome ? elements.orderShippingProviderSelect?.value || "" : "";
-  const zone = zoneId ? getShippingZone(zoneId) : null;
-  const provider = providerId ? getShippingProvider(providerId) : null;
-  const zoneOption = elements.orderShippingZoneSelect?.selectedOptions?.[0];
-  const providerOption = elements.orderShippingProviderSelect?.selectedOptions?.[0];
-  const shippingCost = isHome ? Math.max(0, toNumber(elements.orderShipping?.value)) : 0;
-  return {
-    deliveryType,
-    shippingZoneId: zoneId,
-    shippingZoneName:
-      zone?.nombre || String(zoneOption?.textContent || "").replace(/\s+\(inactiva\)$/i, "").trim(),
-    shippingProviderId: providerId,
-    shippingProviderName:
-      provider?.nombre || String(providerOption?.textContent || "").replace(/\s+\(inactivo\)$/i, "").trim(),
-    shippingStatus: isHome
-      ? normalizeShippingStatus(elements.orderShippingStatus?.value, deliveryType)
-      : "sin_envio",
-    shippingCost,
-    shipping: shippingCost,
-  };
-}
-
-function loadOrderDeliveryForm(order = null) {
-  refreshOrderDeliveryElements();
-  populateOrderShippingZoneOptions(order?.shippingZoneId || "");
-  populateOrderShippingProviderOptions(order?.shippingProviderId || "");
-  if (elements.orderDeliveryType) {
-    elements.orderDeliveryType.value = normalizeDeliveryType(order?.deliveryType || "envio_local");
-  }
-  if (elements.orderShippingZoneSelect && order?.shippingZoneId) {
-    elements.orderShippingZoneSelect.value = order.shippingZoneId;
-  }
-  if (elements.orderShippingProviderSelect && order?.shippingProviderId) {
-    elements.orderShippingProviderSelect.value = order.shippingProviderId;
-  }
-  if (elements.orderShippingStatus) {
-    elements.orderShippingStatus.value = normalizeShippingStatus(order?.shippingStatus, order?.deliveryType);
-  }
-  if (elements.orderShipping) {
-    elements.orderShipping.value = String(order?.shippingCost ?? order?.shipping ?? 0);
-  }
-  if (order) {
-    const subtotal = toNumber(order.subtotal);
-    const calculated = isOrderHomeDelivery(order.deliveryType)
-      ? calculateShippingCost(subtotal, order.shippingZoneId || "")
-      : 0;
-    orderFormShippingManual = Math.abs(toNumber(order.shippingCost ?? order.shipping) - calculated) > 0.009;
-  } else {
-    orderFormShippingManual = false;
-  }
-  updateOrderDeliveryFieldVisibility();
-}
-
-let orderDeliveryFormsReady = false;
-
-function ensureOrderDeliverySection() {
-  if (!elements.orderForm || document.getElementById("orderDeliveryPanel")) {
-    refreshOrderDeliveryElements();
-    return;
-  }
-
-  const shippingLabel = elements.orderShipping?.closest("label");
-  const deliveryLabel = elements.orderDeliveryType?.closest("label");
-  shippingLabel?.remove();
-  deliveryLabel?.remove();
-
-  const panel = document.createElement("section");
-  panel.className = "commerce-payment-panel order-delivery-panel";
-  panel.id = "orderDeliveryPanel";
-  panel.innerHTML = `
-    <h3 class="commerce-payment-title">Entrega</h3>
-    <div class="customer-form-grid customer-form-grid--2 commerce-payment-grid">
-      <label>Tipo de entrega
-        <select id="orderDeliveryType">
-          <option value="venta_directa">Mostrador</option>
-          <option value="recoger_tienda">Recolección en sucursal</option>
-          <option value="envio_local">Entrega a domicilio</option>
-        </select>
-      </label>
-      <label id="orderShippingStatusWrap">Estado de envío
-        <select id="orderShippingStatus">
-          <option value="sin_envio">Sin envío</option>
-          <option value="pendiente">Pendiente</option>
-          <option value="asignado">Asignado</option>
-          <option value="en_camino">En camino</option>
-          <option value="entregado">Entregado</option>
-          <option value="cancelado">Cancelado</option>
-        </select>
-      </label>
-      <label id="orderShippingZoneWrap">Zona de entrega
-        <select id="orderShippingZoneSelect"></select>
-      </label>
-      <label id="orderShippingProviderWrap">Proveedor / repartidor
-        <select id="orderShippingProviderSelect"></select>
-      </label>
-      <label id="orderShippingCostWrap">Costo de envío
-        <input id="orderShipping" type="number" min="0" step="0.01" value="0" />
-      </label>
-    </div>
-  `;
-
-  const anchor =
-    document.getElementById("orderCommercePaymentPanel") ||
-    elements.orderForm.querySelector(".order-summary-box");
-  anchor?.before(panel);
-  refreshOrderDeliveryElements();
-  populateOrderShippingZoneOptions();
-  populateOrderShippingProviderOptions();
-  updateOrderDeliveryFieldVisibility();
-
-  if (!orderDeliveryFormsReady) {
-    elements.orderDeliveryType?.addEventListener("change", () => {
-      orderFormShippingManual = false;
-      updateOrderDeliveryFieldVisibility();
-      updateOrderFormPreview();
-    });
-    elements.orderShippingZoneSelect?.addEventListener("change", () => {
-      orderFormShippingManual = false;
-      recalculateOrderShippingCost();
-      updateOrderFormPreview();
-    });
-    elements.orderShippingProviderSelect?.addEventListener("change", updateOrderFormPreview);
-    elements.orderShippingStatus?.addEventListener("change", updateOrderFormPreview);
-    elements.orderShipping?.addEventListener("input", () => {
-      orderFormShippingManual = true;
-      updateOrderFormPreview();
-    });
-    elements.orderShipping?.addEventListener("change", () => {
-      orderFormShippingManual = true;
-      updateOrderFormPreview();
-    });
-    orderDeliveryFormsReady = true;
-  }
-}
-
 function ensureOrderCommercePaymentSection() {
   if (!elements.orderForm || document.getElementById("orderCommercePaymentPanel")) {
     refreshCommercePaymentElements();
@@ -11854,7 +11567,6 @@ function ensureSaleCommercePaymentSection() {
 }
 
 function ensureCommercePaymentForms() {
-  ensureOrderDeliverySection();
   ensureOrderCommercePaymentSection();
   ensureSaleCommercePaymentSection();
   if (!commercePaymentFormsReady) {
@@ -15576,15 +15288,6 @@ function getSelectableShippingZones(historicalZoneId = "") {
   const active = getActiveShippingZones();
   const historical = historicalZoneId ? getShippingZone(historicalZoneId) : null;
   if (historical && !historical.activo && !active.some((zone) => zone.id === historical.id)) {
-    return [...active, historical];
-  }
-  return active;
-}
-
-function getSelectableShippingProviders(historicalProviderId = "") {
-  const active = getActiveShippingProviders();
-  const historical = historicalProviderId ? getShippingProvider(historicalProviderId) : null;
-  if (historical && !historical.activo && !active.some((provider) => provider.id === historical.id)) {
     return [...active, historical];
   }
   return active;
