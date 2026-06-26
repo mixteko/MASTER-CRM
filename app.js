@@ -7,6 +7,9 @@ const storageKeys = {
   paymentProviders: "minifarmacia_crm_payment_providers",
   paymentConfigVersion: "minifarmacia_crm_payment_config_version",
   shipments: "minifarmacia_crm_shipments",
+  shippingConfig: "minifarmacia_crm_shipping_config",
+  shippingZones: "minifarmacia_crm_shipping_zones",
+  shippingProviders: "minifarmacia_crm_shipping_providers",
   sales: "minifarmacia_crm_sales",
   orderSeq: "minifarmacia_crm_order_seq",
   saleSeq: "minifarmacia_crm_sale_seq",
@@ -4440,6 +4443,9 @@ const state = {
   paymentMethods: [],
   paymentProviders: [],
   shipments: readJSON(storageKeys.shipments, []),
+  shippingConfig: {},
+  shippingZones: [],
+  shippingProviders: [],
   sales: readJSON(storageKeys.sales, []),
   conversations: [],
   settings: readJSON(storageKeys.settings, {}),
@@ -4650,6 +4656,115 @@ function getAppSettings() {
   return normalizeSettings(state.settings);
 }
 
+const SHIPPING_PROVIDER_TYPE_LABELS = {
+  propio: "Repartidor propio",
+  motociclista_convenio: "Motociclista externo por convenio",
+  cuota_fija: "Repartidor por cuota",
+  plataforma: "Plataforma",
+  paqueteria: "Paquetería",
+  otro: "Otro",
+};
+
+const DEFAULT_SHIPPING_CONFIG = {
+  homeDeliveryEnabled: true,
+  pickupEnabled: true,
+  freeShippingEnabled: true,
+  freeShippingMinimum: 999,
+  baseShippingCost: 49,
+  estimatedTime: "1-2 horas",
+  generalNotes: "",
+};
+
+const INITIAL_DEMO_SHIPPING_ZONES = [
+  {
+    id: "sz-cercana",
+    nombre: "Cercana",
+    descripcion: "Entregas dentro del perímetro urbano cercano",
+    costo: 49,
+    minimoGratis: 0,
+    tiempoEstimado: "30-60 min",
+    activo: true,
+    notas: "",
+  },
+  {
+    id: "sz-media",
+    nombre: "Media",
+    descripcion: "Zona intermedia de la ciudad",
+    costo: 79,
+    minimoGratis: 999,
+    tiempoEstimado: "1-2 hrs",
+    activo: true,
+    notas: "",
+  },
+  {
+    id: "sz-lejana",
+    nombre: "Lejana",
+    descripcion: "Colindancias o zona extendida",
+    costo: 129,
+    minimoGratis: 0,
+    tiempoEstimado: "2-4 hrs",
+    activo: true,
+    notas: "",
+  },
+  {
+    id: "sz-fuera",
+    nombre: "Fuera de zona",
+    descripcion: "Sujeto a cotización o paquetería",
+    costo: 199,
+    minimoGratis: 0,
+    tiempoEstimado: "Por definir",
+    activo: false,
+    notas: "",
+  },
+];
+
+const INITIAL_DEMO_SHIPPING_PROVIDERS = [
+  {
+    id: "sp-propio",
+    nombre: "Repartidor propio",
+    tipo: "propio",
+    contactoNombre: "",
+    telefono: "",
+    tarifaFija: 0,
+    tarifaVariable: 0,
+    activo: true,
+    notas: "",
+  },
+  {
+    id: "sp-moto",
+    nombre: "Motociclista convenio",
+    tipo: "motociclista_convenio",
+    contactoNombre: "Juan Pérez",
+    telefono: "8180000000",
+    tarifaFija: 35,
+    tarifaVariable: 0,
+    activo: true,
+    notas: "",
+  },
+  {
+    id: "sp-cuota",
+    nombre: "Repartidor por cuota",
+    tipo: "cuota_fija",
+    contactoNombre: "",
+    telefono: "",
+    tarifaFija: 120,
+    tarifaVariable: 0,
+    activo: true,
+    notas: "Cuota diaria referencial",
+  },
+  {
+    id: "sp-paqueteria",
+    nombre: "Paquetería local",
+    tipo: "paqueteria",
+    contactoNombre: "",
+    telefono: "",
+    tarifaFija: 0,
+    tarifaVariable: 0,
+    activo: true,
+    notas: "",
+  },
+];
+
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
 
 // Backend local (Node en localhost:3090): /api/*. Otros dominios: backend remoto.
@@ -4707,7 +4822,7 @@ const viewDescriptions = {
   pedidos: "Gestiona pedidos de tienda, WhatsApp, teléfono y mostrador.",
   ventas: "Historial económico: totales vendidos, cobrados, pendientes y ganancia estimada.",
   pagos: "Configura métodos de pago, comisiones, confirmaciones y proveedores.",
-  envios: "Seguimiento de entregas locales y nacionales.",
+  envios: "Configura zonas, costos, proveedores y reglas de entrega.",
   canales: "Tienda online y puntos de venta digital.",
   "whatsapp-manager": "Atiende conversaciones y automatiza respuestas de WhatsApp.",
   configuracion: "Configuración general del negocio, operación, impuestos, tickets y canales.",
@@ -5399,6 +5514,8 @@ let salesViewPolishReady = false;
 let paymentsViewReady = false;
 let paymentMethodDraft = null;
 let paymentProviderDraft = null;
+let shippingZoneDraft = null;
+let shippingProviderDraft = null;
 const currency = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => document.querySelectorAll(selector);
@@ -5807,6 +5924,7 @@ init();
 function init() {
   migrateCommerceState();
   migratePaymentConfigState();
+  migrateShippingState();
   ensureCommercePaymentForms();
   ensureAdminSettingsView();
   state.settings = normalizeSettings(state.settings);
@@ -6320,6 +6438,24 @@ function handleDocumentAction(event) {
   if (action.dataset.action === "activate-payment-provider") setPaymentProviderActive(id, true);
   if (action.dataset.action === "delete-payment-provider") deletePaymentProvider(id);
   if (action.dataset.action === "close-payment-provider-dialog") closePaymentProviderDialog();
+  if (action.dataset.action === "open-shipping-zone-dialog") openShippingZoneDialog();
+  if (action.dataset.action === "edit-shipping-zone") {
+    const zone = getShippingZone(id);
+    if (zone) openShippingZoneDialog(zone);
+  }
+  if (action.dataset.action === "deactivate-shipping-zone") setShippingZoneActive(id, false);
+  if (action.dataset.action === "activate-shipping-zone") setShippingZoneActive(id, true);
+  if (action.dataset.action === "delete-shipping-zone") deleteShippingZone(id);
+  if (action.dataset.action === "close-shipping-zone-dialog") closeShippingZoneDialog();
+  if (action.dataset.action === "open-shipping-provider-dialog") openShippingProviderDialog();
+  if (action.dataset.action === "edit-shipping-provider") {
+    const provider = getShippingProvider(id);
+    if (provider) openShippingProviderDialog(provider);
+  }
+  if (action.dataset.action === "deactivate-shipping-provider") setShippingProviderActive(id, false);
+  if (action.dataset.action === "activate-shipping-provider") setShippingProviderActive(id, true);
+  if (action.dataset.action === "delete-shipping-provider") deleteShippingProvider(id);
+  if (action.dataset.action === "close-shipping-provider-dialog") closeShippingProviderDialog();
   if (action.dataset.action === "mark-shipped") markShipmentSent(id);
   if (action.dataset.action === "take-conversation") updateLatestConversation("Asesor humano");
   if (action.dataset.action === "mark-conversation-order") updateLatestConversation("Pedido");
@@ -6412,6 +6548,12 @@ function showView(viewId, options = {}) {
   if (targetViewId === "configuracion") {
     ensureAdminSettingsView();
     loadAdminSettingsForm();
+  }
+
+  if (targetViewId === "envios") {
+    ensureShippingView();
+    loadShippingConfigForm();
+    renderShippingAdmin();
   }
 
   updateViewHeader(
@@ -9098,6 +9240,8 @@ function normalizeOrder(order = {}) {
     paymentProof: order.paymentProof || "",
     deliveryType,
     address: order.address || "",
+    shippingZoneId: order.shippingZoneId || "",
+    shippingProviderId: order.shippingProviderId || "",
     subtotal,
     discount,
     shipping,
@@ -15007,23 +15151,768 @@ function getProductCommercialMetrics(product, options = {}) {
   };
 }
 
+function normalizeShippingProviderType(type) {
+  const key = String(type || "otro")
+    .trim()
+    .toLowerCase();
+  if (key === "externo") return "motociclista_convenio";
+  if (SHIPPING_PROVIDER_TYPE_LABELS[key]) return key;
+  return "otro";
+}
+
+function normalizeShippingConfig(config = {}) {
+  const source = config && typeof config === "object" ? config : {};
+  return {
+    homeDeliveryEnabled:
+      source.homeDeliveryEnabled != null ? Boolean(source.homeDeliveryEnabled) : DEFAULT_SHIPPING_CONFIG.homeDeliveryEnabled,
+    pickupEnabled:
+      source.pickupEnabled != null ? Boolean(source.pickupEnabled) : DEFAULT_SHIPPING_CONFIG.pickupEnabled,
+    freeShippingEnabled:
+      source.freeShippingEnabled != null ? Boolean(source.freeShippingEnabled) : DEFAULT_SHIPPING_CONFIG.freeShippingEnabled,
+    freeShippingMinimum: toNumber(source.freeShippingMinimum ?? DEFAULT_SHIPPING_CONFIG.freeShippingMinimum),
+    baseShippingCost: toNumber(source.baseShippingCost ?? DEFAULT_SHIPPING_CONFIG.baseShippingCost),
+    estimatedTime: String(source.estimatedTime || DEFAULT_SHIPPING_CONFIG.estimatedTime).trim(),
+    generalNotes: String(source.generalNotes || "").trim(),
+    updatedAt: source.updatedAt || new Date().toISOString(),
+  };
+}
+
+function normalizeShippingZone(zone = {}) {
+  const minimoGratis = zone.minimoGratis != null && zone.minimoGratis !== "" ? toNumber(zone.minimoGratis) : 0;
+  return {
+    id: zone.id || createId("szone"),
+    nombre: String(zone.nombre || "").trim() || "Zona sin nombre",
+    descripcion: String(zone.descripcion || "").trim(),
+    costo: toNumber(zone.costo),
+    minimoGratis,
+    tiempoEstimado: String(zone.tiempoEstimado || "").trim(),
+    activo: zone.activo !== false,
+    notas: String(zone.notas || "").trim(),
+    createdAt: zone.createdAt || new Date().toISOString(),
+    updatedAt: zone.updatedAt || zone.createdAt || new Date().toISOString(),
+  };
+}
+
+function normalizeShippingProviderRecord(provider = {}) {
+  return {
+    id: provider.id || createId("sprovider"),
+    nombre: String(provider.nombre || "").trim() || "Proveedor sin nombre",
+    tipo: normalizeShippingProviderType(provider.tipo),
+    contactoNombre: String(provider.contactoNombre || "").trim(),
+    telefono: String(provider.telefono || "").trim(),
+    tarifaFija: toNumber(provider.tarifaFija ?? provider.costoFijo),
+    tarifaVariable: toNumber(provider.tarifaVariable ?? provider.tarifa),
+    activo: provider.activo !== false,
+    notas: String(provider.notas || "").trim(),
+    createdAt: provider.createdAt || new Date().toISOString(),
+    updatedAt: provider.updatedAt || provider.createdAt || new Date().toISOString(),
+  };
+}
+
+function formatShippingProviderTariff(provider) {
+  const fixed = toNumber(provider?.tarifaFija);
+  const variable = toNumber(provider?.tarifaVariable);
+  if (!fixed && !variable) return "—";
+  const parts = [];
+  if (fixed) parts.push(`Fija ${currency.format(fixed)}`);
+  if (variable) parts.push(`Var. ${currency.format(variable)}`);
+  return parts.join(" · ");
+}
+
+function renderShippingStatusBadge(active, feminine = false) {
+  if (active) {
+    return `<span class="orders-status-badge is-success">${feminine ? "Activa" : "Activo"}</span>`;
+  }
+  return `<span class="orders-status-badge is-warning">${feminine ? "Inactiva" : "Inactivo"}</span>`;
+}
+
+function migrateShippingState() {
+  state.shippingConfig = normalizeShippingConfig(readJSON(storageKeys.shippingConfig, {}));
+  state.shippingZones = readJSON(storageKeys.shippingZones, []).map(normalizeShippingZone);
+  state.shippingProviders = readJSON(storageKeys.shippingProviders, []).map(normalizeShippingProviderRecord);
+  ensureShippingDemoData();
+  persistShippingState();
+}
+
+function ensureShippingDemoData() {
+  if (!state.shippingZones.length) {
+    state.shippingZones = INITIAL_DEMO_SHIPPING_ZONES.map((zone) => normalizeShippingZone(zone));
+  } else {
+    INITIAL_DEMO_SHIPPING_ZONES.forEach((demo) => {
+      if (!getShippingZone(demo.id)) state.shippingZones.push(normalizeShippingZone(demo));
+    });
+  }
+  if (!state.shippingProviders.length) {
+    state.shippingProviders = INITIAL_DEMO_SHIPPING_PROVIDERS.map((provider) =>
+      normalizeShippingProviderRecord(provider),
+    );
+  } else {
+    INITIAL_DEMO_SHIPPING_PROVIDERS.forEach((demo) => {
+      if (!getShippingProvider(demo.id)) state.shippingProviders.push(normalizeShippingProviderRecord(demo));
+    });
+  }
+  state.shippingConfig = normalizeShippingConfig(state.shippingConfig);
+}
+
+function persistShippingState() {
+  persist(storageKeys.shippingConfig, state.shippingConfig);
+  persist(storageKeys.shippingZones, state.shippingZones);
+  persist(storageKeys.shippingProviders, state.shippingProviders);
+}
+
+function getShippingZone(zoneId) {
+  const key = String(zoneId || "").trim();
+  if (!key) return null;
+  return state.shippingZones.find((zone) => zone.id === key) || null;
+}
+
+function getShippingProvider(providerId) {
+  const key = String(providerId || "").trim();
+  if (!key) return null;
+  return state.shippingProviders.find((provider) => provider.id === key) || null;
+}
+
+function getActiveShippingZones() {
+  return state.shippingZones
+    .filter((zone) => zone.activo)
+    .sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+}
+
+function getActiveShippingProviders() {
+  return state.shippingProviders
+    .filter((provider) => provider.activo)
+    .sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+}
+
+function getSelectableShippingZones(historicalZoneId = "") {
+  const active = getActiveShippingZones();
+  const historical = historicalZoneId ? getShippingZone(historicalZoneId) : null;
+  if (historical && !historical.activo && !active.some((zone) => zone.id === historical.id)) {
+    return [...active, historical];
+  }
+  return active;
+}
+
+function calculateShippingCost(orderSubtotal, zoneId = "") {
+  const subtotal = Math.max(0, toNumber(orderSubtotal));
+  const config = normalizeShippingConfig(state.shippingConfig);
+  const zone = zoneId ? getShippingZone(zoneId) : null;
+
+  if (config.freeShippingEnabled && subtotal >= config.freeShippingMinimum) return 0;
+  if (zone?.minimoGratis && subtotal >= zone.minimoGratis) return 0;
+  if (zone) return Math.max(0, toNumber(zone.costo));
+  return Math.max(0, toNumber(config.baseShippingCost));
+}
+
+function getShippingAdminSummary() {
+  const config = normalizeShippingConfig(state.shippingConfig);
+  const activeZones = getActiveShippingZones();
+  const activeProviders = getActiveShippingProviders();
+  const avgCost = activeZones.length
+    ? activeZones.reduce((sum, zone) => sum + toNumber(zone.costo), 0) / activeZones.length
+    : toNumber(config.baseShippingCost);
+
+  return {
+    activeZones: activeZones.length,
+    averageCost: avgCost,
+    freeShippingFrom: config.freeShippingEnabled ? config.freeShippingMinimum : 0,
+    activeProviders: activeProviders.length,
+  };
+}
+
+function isShippingZoneInUse(zone) {
+  if (!zone) return false;
+  return state.orders.some((order) => order.shippingZoneId === zone.id);
+}
+
+function isShippingProviderInUse(provider) {
+  if (!provider) return false;
+  if (state.orders.some((order) => order.shippingProviderId === provider.id)) return true;
+  return state.shipments.some((shipment) => shipment.shippingProviderId === provider.id);
+}
+
+function ensureShippingDialogs() {
+  if (!document.getElementById("shippingZoneDialog")) {
+    const zoneDialog = document.createElement("dialog");
+    zoneDialog.className = "order-dialog payment-dialog";
+    zoneDialog.id = "shippingZoneDialog";
+    zoneDialog.innerHTML = `
+      <form class="order-dialog-shell payment-dialog-shell" id="shippingZoneForm">
+        <header class="order-dialog-header payment-dialog-header">
+          <div>
+            <h2 id="shippingZoneDialogTitle">Agregar zona</h2>
+            <p class="order-dialog-help">Define costo, tiempos y reglas por zona de entrega.</p>
+          </div>
+          <button class="dialog-close-btn" type="button" data-action="close-shipping-zone-dialog" aria-label="Cerrar">×</button>
+        </header>
+        <div class="order-dialog-body payment-dialog-body payment-dialog-scroll">
+          <div class="payment-dialog-grid">
+            <label>Nombre de zona <input id="shippingZoneName" type="text" required /></label>
+            <label class="shipping-switch-row shipping-switch-row--modal">
+              <input id="shippingZoneActive" type="checkbox" checked />
+              <span>Activa</span>
+            </label>
+            <label>Costo de envío <input id="shippingZoneCost" type="number" min="0" step="0.01" /></label>
+            <label>Mínimo envío gratis (opcional) <input id="shippingZoneFreeMinimum" type="number" min="0" step="0.01" placeholder="0 = no aplica" /></label>
+            <label>Tiempo estimado <input id="shippingZoneEstimatedTime" type="text" placeholder="Ej. 30-60 min" /></label>
+            <label class="is-full">Descripción <input id="shippingZoneDescription" type="text" /></label>
+            <label class="is-full">Notas <textarea id="shippingZoneNotes" rows="3"></textarea></label>
+          </div>
+        </div>
+        <footer class="payment-dialog-footer payment-dialog-footer--sticky">
+          <button class="ghost-button" type="button" data-action="close-shipping-zone-dialog">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar zona</button>
+        </footer>
+      </form>
+    `;
+    document.body.appendChild(zoneDialog);
+  }
+
+  if (!document.getElementById("shippingProviderDialog")) {
+    const providerDialog = document.createElement("dialog");
+    providerDialog.className = "order-dialog payment-dialog";
+    providerDialog.id = "shippingProviderDialog";
+    providerDialog.innerHTML = `
+      <form class="order-dialog-shell payment-dialog-shell" id="shippingProviderForm">
+        <header class="order-dialog-header payment-dialog-header">
+          <div>
+            <h2 id="shippingProviderDialogTitle">Agregar proveedor</h2>
+            <p class="order-dialog-help">Registra repartidores propios, externos o paquetería.</p>
+          </div>
+          <button class="dialog-close-btn" type="button" data-action="close-shipping-provider-dialog" aria-label="Cerrar">×</button>
+        </header>
+        <div class="order-dialog-body payment-dialog-body payment-dialog-scroll">
+          <div class="payment-dialog-grid">
+            <label>Nombre visible <input id="shippingProviderName" type="text" required /></label>
+            <label class="shipping-switch-row shipping-switch-row--modal">
+              <input id="shippingProviderActive" type="checkbox" checked />
+              <span>Activo</span>
+            </label>
+            <label>Tipo
+              <select id="shippingProviderType">
+                ${Object.entries(SHIPPING_PROVIDER_TYPE_LABELS)
+                  .map(([value, label]) => `<option value="${value}">${label}</option>`)
+                  .join("")}
+              </select>
+            </label>
+            <label>Conductor / contacto (opcional) <input id="shippingProviderContactName" type="text" /></label>
+            <label>Teléfono (opcional) <input id="shippingProviderPhone" type="tel" /></label>
+            <label>Tarifa fija (opcional) <input id="shippingProviderFixedFee" type="number" min="0" step="0.01" /></label>
+            <label>Comisión / tarifa variable (opcional) <input id="shippingProviderVariableFee" type="number" min="0" step="0.01" /></label>
+            <label class="is-full">Notas <textarea id="shippingProviderNotes" rows="3"></textarea></label>
+          </div>
+        </div>
+        <footer class="payment-dialog-footer payment-dialog-footer--sticky">
+          <button class="ghost-button" type="button" data-action="close-shipping-provider-dialog">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar proveedor</button>
+        </footer>
+      </form>
+    `;
+    document.body.appendChild(providerDialog);
+  }
+}
+
+function bindShippingForms() {
+  refreshShippingElements();
+  const configForm = elements.shippingConfigForm;
+  if (configForm && configForm.dataset.shippingBound !== "true") {
+    configForm.addEventListener("submit", saveShippingConfig);
+    configForm.dataset.shippingBound = "true";
+  }
+  const zoneForm = elements.shippingZoneForm;
+  if (zoneForm && zoneForm.dataset.shippingBound !== "true") {
+    zoneForm.addEventListener("submit", saveShippingZone);
+    zoneForm.dataset.shippingBound = "true";
+  }
+  const providerForm = elements.shippingProviderForm;
+  if (providerForm && providerForm.dataset.shippingBound !== "true") {
+    providerForm.addEventListener("submit", saveShippingProvider);
+    providerForm.dataset.shippingBound = "true";
+  }
+}
+
+function ensureShippingView() {
+  injectSalesViewPolishStyles();
+  const view = document.getElementById("envios");
+  if (view?.dataset.shippingReady === "true" && !document.getElementById("shippingConfigSwitches")) {
+    view.dataset.shippingReady = "";
+  }
+  if (!document.getElementById("shippingProviderContactName")) {
+    document.getElementById("shippingProviderDialog")?.remove();
+  }
+  if (
+    document.getElementById("shippingZoneDialog") &&
+    !document.getElementById("shippingZoneActive")?.closest(".shipping-switch-row")
+  ) {
+    document.getElementById("shippingZoneDialog")?.remove();
+  }
+  if (!view || view.dataset.shippingReady === "true") {
+    ensureShippingDialogs();
+    bindShippingForms();
+    return;
+  }
+
+  view.innerHTML = `
+    <div class="shipping-admin-layout">
+      <div class="panel-card shipping-page-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Logística</p>
+            <h2>Envíos</h2>
+          </div>
+        </div>
+        <p class="section-description shipping-page-lead">Configura reglas de entrega, zonas y repartidores. Los pedidos seguirán usando su propio flujo; aquí defines la base operativa.</p>
+      </div>
+      <div class="payments-summary-cards shipping-summary-cards" id="shippingSummaryCards"></div>
+      <section class="panel-card shipping-config-panel">
+        <div class="shipping-section-heading">
+          <h3>Configuración general</h3>
+          <button class="primary-button" type="submit" form="shippingConfigForm">Guardar configuración</button>
+        </div>
+        <p class="admin-settings-note" id="shippingChannelsHint"></p>
+        <form id="shippingConfigForm">
+          <div class="shipping-config-switches" id="shippingConfigSwitches">
+            <label class="shipping-switch-row">
+              <input id="shippingHomeDeliveryEnabled" type="checkbox" />
+              <span>Entrega a domicilio activa</span>
+            </label>
+            <label class="shipping-switch-row">
+              <input id="shippingPickupEnabled" type="checkbox" />
+              <span>Recolección en sucursal activa</span>
+            </label>
+            <label class="shipping-switch-row">
+              <input id="shippingFreeEnabled" type="checkbox" />
+              <span>Envío gratis activo</span>
+            </label>
+          </div>
+          <div class="customer-form-grid customer-form-grid--2 shipping-config-fields">
+            <label>Monto mínimo para envío gratis <input id="shippingFreeMinimum" type="number" min="0" step="0.01" /></label>
+            <label>Costo base de envío <input id="shippingBaseCost" type="number" min="0" step="0.01" /></label>
+            <label>Tiempo estimado general <input id="shippingEstimatedTime" type="text" placeholder="Ej. 1-2 horas" /></label>
+            <label class="is-full">Notas generales <textarea id="shippingGeneralNotes" rows="2"></textarea></label>
+          </div>
+        </form>
+      </section>
+      <section class="panel-card table-panel shipping-table-panel">
+        <div class="shipping-section-heading">
+          <div>
+            <h3>Zonas de entrega</h3>
+            <span class="payments-list-count" id="shippingZonesCount">0 zonas</span>
+          </div>
+          <button class="ghost-button" type="button" data-action="open-shipping-zone-dialog">Agregar zona</button>
+        </div>
+        <div class="table-scroll payments-list-scroll">
+          <table class="payments-list-table">
+            <thead>
+              <tr>
+                <th>Zona</th>
+                <th>Costo</th>
+                <th>Envío gratis desde</th>
+                <th>Tiempo</th>
+                <th>Estado</th>
+                <th class="payments-col-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="shippingZonesTable"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel-card table-panel shipping-table-panel">
+        <div class="shipping-section-heading">
+          <div>
+            <h3>Proveedores / repartidores</h3>
+            <span class="payments-list-count" id="shippingProvidersCount">0 proveedores</span>
+          </div>
+          <button class="ghost-button" type="button" data-action="open-shipping-provider-dialog">Agregar proveedor</button>
+        </div>
+        <div class="table-scroll payments-list-scroll">
+          <table class="payments-list-table">
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th>Tipo</th>
+                <th>Teléfono</th>
+                <th>Tarifa</th>
+                <th>Estado</th>
+                <th class="payments-col-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="shippingProvidersTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+  view.dataset.shippingReady = "true";
+  ensureShippingDialogs();
+  bindShippingForms();
+}
+
+function refreshShippingElements() {
+  elements.shippingSummaryCards = $("#shippingSummaryCards");
+  elements.shippingChannelsHint = $("#shippingChannelsHint");
+  elements.shippingConfigForm = $("#shippingConfigForm");
+  elements.shippingHomeDeliveryEnabled = $("#shippingHomeDeliveryEnabled");
+  elements.shippingPickupEnabled = $("#shippingPickupEnabled");
+  elements.shippingFreeEnabled = $("#shippingFreeEnabled");
+  elements.shippingFreeMinimum = $("#shippingFreeMinimum");
+  elements.shippingBaseCost = $("#shippingBaseCost");
+  elements.shippingEstimatedTime = $("#shippingEstimatedTime");
+  elements.shippingGeneralNotes = $("#shippingGeneralNotes");
+  elements.shippingZonesCount = $("#shippingZonesCount");
+  elements.shippingZonesTable = $("#shippingZonesTable");
+  elements.shippingProvidersCount = $("#shippingProvidersCount");
+  elements.shippingProvidersTable = $("#shippingProvidersTable");
+  elements.shippingZoneDialog = $("#shippingZoneDialog");
+  elements.shippingZoneForm = $("#shippingZoneForm");
+  elements.shippingZoneDialogTitle = $("#shippingZoneDialogTitle");
+  elements.shippingZoneName = $("#shippingZoneName");
+  elements.shippingZoneActive = $("#shippingZoneActive");
+  elements.shippingZoneCost = $("#shippingZoneCost");
+  elements.shippingZoneFreeMinimum = $("#shippingZoneFreeMinimum");
+  elements.shippingZoneEstimatedTime = $("#shippingZoneEstimatedTime");
+  elements.shippingZoneDescription = $("#shippingZoneDescription");
+  elements.shippingZoneNotes = $("#shippingZoneNotes");
+  elements.shippingProviderDialog = $("#shippingProviderDialog");
+  elements.shippingProviderForm = $("#shippingProviderForm");
+  elements.shippingProviderDialogTitle = $("#shippingProviderDialogTitle");
+  elements.shippingProviderName = $("#shippingProviderName");
+  elements.shippingProviderActive = $("#shippingProviderActive");
+  elements.shippingProviderType = $("#shippingProviderType");
+  elements.shippingProviderContactName = $("#shippingProviderContactName");
+  elements.shippingProviderPhone = $("#shippingProviderPhone");
+  elements.shippingProviderFixedFee = $("#shippingProviderFixedFee");
+  elements.shippingProviderVariableFee = $("#shippingProviderVariableFee");
+  elements.shippingProviderNotes = $("#shippingProviderNotes");
+}
+
+function loadShippingConfigForm() {
+  if (!elements.shippingConfigForm) return;
+  const config = normalizeShippingConfig(state.shippingConfig);
+  const channels = getAppSettings().channels;
+
+  if (elements.shippingHomeDeliveryEnabled) {
+    elements.shippingHomeDeliveryEnabled.checked = config.homeDeliveryEnabled;
+  }
+  if (elements.shippingPickupEnabled) elements.shippingPickupEnabled.checked = config.pickupEnabled;
+  if (elements.shippingFreeEnabled) elements.shippingFreeEnabled.checked = config.freeShippingEnabled;
+  if (elements.shippingFreeMinimum) elements.shippingFreeMinimum.value = String(config.freeShippingMinimum);
+  if (elements.shippingBaseCost) elements.shippingBaseCost.value = String(config.baseShippingCost);
+  if (elements.shippingEstimatedTime) elements.shippingEstimatedTime.value = config.estimatedTime;
+  if (elements.shippingGeneralNotes) elements.shippingGeneralNotes.value = config.generalNotes;
+
+  if (elements.shippingChannelsHint) {
+    const hints = [];
+    if (!channels.homeDelivery) hints.push("Entrega a domicilio desactivada en Administración");
+    if (!channels.pickup) hints.push("Recolección en sucursal desactivada en Administración");
+    elements.shippingChannelsHint.textContent = hints.length
+      ? `${hints.join(". ")}. Puedes ajustar canales en Configuración.`
+      : "Canales de entrega y recolección activos en Administración.";
+  }
+}
+
+function saveShippingConfig(event) {
+  event.preventDefault();
+  state.shippingConfig = normalizeShippingConfig({
+    ...state.shippingConfig,
+    homeDeliveryEnabled: Boolean(elements.shippingHomeDeliveryEnabled?.checked),
+    pickupEnabled: Boolean(elements.shippingPickupEnabled?.checked),
+    freeShippingEnabled: Boolean(elements.shippingFreeEnabled?.checked),
+    freeShippingMinimum: elements.shippingFreeMinimum?.value,
+    baseShippingCost: elements.shippingBaseCost?.value,
+    estimatedTime: elements.shippingEstimatedTime?.value.trim() || "",
+    generalNotes: elements.shippingGeneralNotes?.value.trim() || "",
+    updatedAt: new Date().toISOString(),
+  });
+  persistShippingState();
+  renderShippingAdmin();
+  showToast("Configuración de envíos guardada.");
+}
+
+function renderShippingZoneActions(zone) {
+  const zoneId = escapeHTML(zone.id);
+  return `
+    <div class="orders-admin-actions">
+      <button class="orders-action-btn" type="button" data-action="edit-shipping-zone" data-id="${zoneId}">Editar</button>
+      ${
+        zone.activo
+          ? `<button class="orders-action-btn is-warning" type="button" data-action="deactivate-shipping-zone" data-id="${zoneId}">Desactivar</button>`
+          : `<button class="orders-action-btn is-success" type="button" data-action="activate-shipping-zone" data-id="${zoneId}">Activar</button>`
+      }
+      <button class="orders-action-btn is-danger" type="button" data-action="delete-shipping-zone" data-id="${zoneId}">Eliminar</button>
+    </div>
+  `;
+}
+
+function renderShippingProviderActions(provider) {
+  const providerId = escapeHTML(provider.id);
+  return `
+    <div class="orders-admin-actions">
+      <button class="orders-action-btn" type="button" data-action="edit-shipping-provider" data-id="${providerId}">Editar</button>
+      ${
+        provider.activo
+          ? `<button class="orders-action-btn is-warning" type="button" data-action="deactivate-shipping-provider" data-id="${providerId}">Desactivar</button>`
+          : `<button class="orders-action-btn is-success" type="button" data-action="activate-shipping-provider" data-id="${providerId}">Activar</button>`
+      }
+      <button class="orders-action-btn is-danger" type="button" data-action="delete-shipping-provider" data-id="${providerId}">Eliminar</button>
+    </div>
+  `;
+}
+
+function renderShippingSummaryCards(summary) {
+  if (!elements.shippingSummaryCards) return;
+  elements.shippingSummaryCards.innerHTML = `
+    <article class="payments-summary-card payments-summary-card--primary">
+      <span class="payments-summary-label">Zonas activas</span>
+      <strong>${summary.activeZones}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--accent">
+      <span class="payments-summary-label">Costo promedio de envío</span>
+      <strong>${currency.format(summary.averageCost)}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--accent">
+      <span class="payments-summary-label">Envío gratis desde</span>
+      <strong>${summary.freeShippingFrom > 0 ? currency.format(summary.freeShippingFrom) : "—"}</strong>
+    </article>
+    <article class="payments-summary-card payments-summary-card--primary">
+      <span class="payments-summary-label">Proveedores activos</span>
+      <strong>${summary.activeProviders}</strong>
+    </article>
+  `;
+}
+
+function renderShippingAdmin() {
+  ensureShippingView();
+  const summary = getShippingAdminSummary();
+  renderShippingSummaryCards(summary);
+
+  const zones = [...state.shippingZones].sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+  const providers = [...state.shippingProviders].sort((left, right) =>
+    left.nombre.localeCompare(right.nombre, "es"),
+  );
+
+  if (elements.shippingZonesCount) {
+    elements.shippingZonesCount.textContent = `${zones.length} zona${zones.length === 1 ? "" : "s"}`;
+  }
+  if (elements.shippingProvidersCount) {
+    elements.shippingProvidersCount.textContent = `${providers.length} proveedor${providers.length === 1 ? "" : "es"}`;
+  }
+
+  if (elements.shippingZonesTable) {
+    elements.shippingZonesTable.innerHTML = zones.length
+      ? zones
+          .map(
+            (zone) => `
+              <tr class="payments-admin-row">
+                <td>
+                  <strong>${escapeHTML(zone.nombre)}</strong>
+                  ${zone.descripcion ? `<small class="payments-method-hint">${escapeHTML(zone.descripcion)}</small>` : ""}
+                </td>
+                <td>${currency.format(zone.costo)}</td>
+                <td>${zone.minimoGratis > 0 ? currency.format(zone.minimoGratis) : "—"}</td>
+                <td>${escapeHTML(zone.tiempoEstimado || "—")}</td>
+                <td>${renderShippingStatusBadge(zone.activo, true)}</td>
+                <td class="payments-col-actions">${renderShippingZoneActions(zone)}</td>
+              </tr>
+            `,
+          )
+          .join("")
+      : tableEmpty(6, "Sin zonas registradas.");
+  }
+
+  if (elements.shippingProvidersTable) {
+    elements.shippingProvidersTable.innerHTML = providers.length
+      ? providers
+          .map(
+            (provider) => `
+              <tr class="payments-admin-row">
+                <td>
+                  <strong>${escapeHTML(provider.nombre)}</strong>
+                  ${provider.contactoNombre ? `<small class="payments-method-hint">${escapeHTML(provider.contactoNombre)}</small>` : ""}
+                </td>
+                <td>${escapeHTML(SHIPPING_PROVIDER_TYPE_LABELS[provider.tipo] || provider.tipo)}</td>
+                <td>${escapeHTML(provider.telefono || "—")}</td>
+                <td>${escapeHTML(formatShippingProviderTariff(provider))}</td>
+                <td>${renderShippingStatusBadge(provider.activo)}</td>
+                <td class="payments-col-actions">${renderShippingProviderActions(provider)}</td>
+              </tr>
+            `,
+          )
+          .join("")
+      : tableEmpty(6, "Sin proveedores registrados.");
+  }
+}
+
+function openShippingZoneDialog(zone = null) {
+  ensureShippingView();
+  shippingZoneDraft = zone ? { ...zone } : null;
+  const isEdit = Boolean(zone);
+  if (elements.shippingZoneDialogTitle) {
+    elements.shippingZoneDialogTitle.textContent = isEdit ? "Editar zona" : "Agregar zona";
+  }
+  const draft = zone ? normalizeShippingZone(zone) : null;
+  if (elements.shippingZoneName) elements.shippingZoneName.value = draft?.nombre || "";
+  if (elements.shippingZoneActive) elements.shippingZoneActive.checked = draft ? draft.activo : true;
+  if (elements.shippingZoneCost) elements.shippingZoneCost.value = String(draft?.costo ?? 0);
+  if (elements.shippingZoneFreeMinimum) {
+    elements.shippingZoneFreeMinimum.value = draft?.minimoGratis ? String(draft.minimoGratis) : "";
+  }
+  if (elements.shippingZoneEstimatedTime) elements.shippingZoneEstimatedTime.value = draft?.tiempoEstimado || "";
+  if (elements.shippingZoneDescription) elements.shippingZoneDescription.value = draft?.descripcion || "";
+  if (elements.shippingZoneNotes) elements.shippingZoneNotes.value = draft?.notas || "";
+  showPaymentDialog(elements.shippingZoneDialog);
+}
+
+function closeShippingZoneDialog() {
+  elements.shippingZoneDialog?.close();
+  shippingZoneDraft = null;
+}
+
+function saveShippingZone(event) {
+  event.preventDefault();
+  const nombre = elements.shippingZoneName?.value.trim();
+  if (!nombre) return showToast("Ingresa el nombre de la zona.");
+
+  const payload = normalizeShippingZone({
+    id: shippingZoneDraft?.id,
+    nombre,
+    activo: Boolean(elements.shippingZoneActive?.checked),
+    costo: elements.shippingZoneCost?.value,
+    minimoGratis: elements.shippingZoneFreeMinimum?.value,
+    tiempoEstimado: elements.shippingZoneEstimatedTime?.value.trim() || "",
+    descripcion: elements.shippingZoneDescription?.value.trim() || "",
+    notas: elements.shippingZoneNotes?.value.trim() || "",
+    createdAt: shippingZoneDraft?.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  if (shippingZoneDraft?.id) {
+    const existing = getShippingZone(shippingZoneDraft.id);
+    if (existing) Object.assign(existing, payload);
+  } else {
+    state.shippingZones.unshift(payload);
+  }
+
+  const wasEdit = Boolean(shippingZoneDraft?.id);
+  persistShippingState();
+  closeShippingZoneDialog();
+  renderShippingAdmin();
+  showToast(wasEdit ? "Zona actualizada." : "Zona agregada.");
+}
+
+function setShippingZoneActive(zoneId, active) {
+  const zone = getShippingZone(zoneId);
+  if (!zone) return;
+  zone.activo = active;
+  zone.updatedAt = new Date().toISOString();
+  persistShippingState();
+  renderShippingAdmin();
+  showToast(active ? "Zona activada." : "Zona desactivada.");
+}
+
+function deleteShippingZone(zoneId) {
+  const zone = getShippingZone(zoneId);
+  if (!zone) return;
+  if (isShippingZoneInUse(zone)) {
+    showToast(
+      "Esta zona ya está usada en pedidos. No se puede eliminar. Puedes desactivarla para que ya no aparezca en nuevos pedidos.",
+    );
+    return;
+  }
+  if (!window.confirm(`¿Eliminar zona "${zone.nombre}" de forma definitiva?`)) return;
+  state.shippingZones = state.shippingZones.filter((entry) => entry.id !== zone.id);
+  persistShippingState();
+  renderShippingAdmin();
+  showToast("Zona eliminada.");
+}
+
+function openShippingProviderDialog(provider = null) {
+  ensureShippingView();
+  shippingProviderDraft = provider ? { ...provider } : null;
+  const isEdit = Boolean(provider);
+  if (elements.shippingProviderDialogTitle) {
+    elements.shippingProviderDialogTitle.textContent = isEdit ? "Editar proveedor" : "Agregar proveedor";
+  }
+  const draft = provider ? normalizeShippingProviderRecord(provider) : null;
+  if (elements.shippingProviderName) elements.shippingProviderName.value = draft?.nombre || "";
+  if (elements.shippingProviderActive) elements.shippingProviderActive.checked = draft ? draft.activo : true;
+  if (elements.shippingProviderType) elements.shippingProviderType.value = draft?.tipo || "propio";
+  if (elements.shippingProviderContactName) elements.shippingProviderContactName.value = draft?.contactoNombre || "";
+  if (elements.shippingProviderPhone) elements.shippingProviderPhone.value = draft?.telefono || "";
+  if (elements.shippingProviderFixedFee) elements.shippingProviderFixedFee.value = String(draft?.tarifaFija || 0);
+  if (elements.shippingProviderVariableFee) {
+    elements.shippingProviderVariableFee.value = String(draft?.tarifaVariable || 0);
+  }
+  if (elements.shippingProviderNotes) elements.shippingProviderNotes.value = draft?.notas || "";
+  showPaymentDialog(elements.shippingProviderDialog);
+}
+
+function closeShippingProviderDialog() {
+  elements.shippingProviderDialog?.close();
+  shippingProviderDraft = null;
+}
+
+function saveShippingProvider(event) {
+  event.preventDefault();
+  const nombre = elements.shippingProviderName?.value.trim();
+  if (!nombre) return showToast("Ingresa el nombre del proveedor.");
+
+  const payload = normalizeShippingProviderRecord({
+    id: shippingProviderDraft?.id,
+    nombre,
+    activo: Boolean(elements.shippingProviderActive?.checked),
+    tipo: elements.shippingProviderType?.value,
+    contactoNombre: elements.shippingProviderContactName?.value.trim() || "",
+    telefono: elements.shippingProviderPhone?.value.trim() || "",
+    tarifaFija: elements.shippingProviderFixedFee?.value,
+    tarifaVariable: elements.shippingProviderVariableFee?.value,
+    notas: elements.shippingProviderNotes?.value.trim() || "",
+    createdAt: shippingProviderDraft?.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  if (shippingProviderDraft?.id) {
+    const existing = getShippingProvider(shippingProviderDraft.id);
+    if (existing) Object.assign(existing, payload);
+  } else {
+    state.shippingProviders.unshift(payload);
+  }
+
+  const wasEdit = Boolean(shippingProviderDraft?.id);
+  persistShippingState();
+  closeShippingProviderDialog();
+  renderShippingAdmin();
+  showToast(wasEdit ? "Proveedor actualizado." : "Proveedor agregado.");
+}
+
+function setShippingProviderActive(providerId, active) {
+  const provider = getShippingProvider(providerId);
+  if (!provider) return;
+  provider.activo = active;
+  provider.updatedAt = new Date().toISOString();
+  persistShippingState();
+  renderShippingAdmin();
+  showToast(active ? "Proveedor activado." : "Proveedor desactivado.");
+}
+
+function deleteShippingProvider(providerId) {
+  const provider = getShippingProvider(providerId);
+  if (!provider) return;
+  if (isShippingProviderInUse(provider)) {
+    showToast(
+      "Este proveedor ya está vinculado a pedidos o envíos. No se puede eliminar. Puedes desactivarlo para que ya no esté disponible en nuevos registros.",
+    );
+    return;
+  }
+  if (!window.confirm(`¿Eliminar proveedor "${provider.nombre}" de forma definitiva?`)) return;
+  state.shippingProviders = state.shippingProviders.filter((entry) => entry.id !== provider.id);
+  persistShippingState();
+  renderShippingAdmin();
+  showToast("Proveedor eliminado.");
+}
+
 function renderShipments() {
-  elements.shipmentsTable.innerHTML = state.shipments.length
-    ? state.shipments
-        .map(
-          (shipment) => `
-            <tr>
-              <td><strong>${escapeHTML(shipment.orderId)}</strong></td>
-              <td>${escapeHTML(shipment.customerName)}</td>
-              <td>${escapeHTML(shipment.type)}</td>
-              <td>${escapeHTML(shipment.address)}</td>
-              <td><span class="badge info">${escapeHTML(shipment.status)}</span></td>
-              <td><button class="ghost-button small" type="button" data-action="mark-shipped" data-id="${shipment.id}">Marcar enviado</button></td>
-            </tr>
-          `,
-        )
-        .join("")
-    : tableEmpty(6, "No hay envios.");
+  renderShippingAdmin();
 }
 
 function markShipmentSent(shipmentId) {
@@ -15597,6 +16486,9 @@ function resetDemoData() {
   state.paymentMethods = [];
   state.paymentProviders = [];
   state.shipments = [];
+  state.shippingZones = [];
+  state.shippingProviders = [];
+  state.shippingConfig = {};
   state.sales = [];
   localStorage.removeItem(storageKeys.orderSeq);
   localStorage.removeItem(storageKeys.saleSeq);
@@ -15608,6 +16500,8 @@ function resetDemoData() {
   ensurePaymentConfigDemoData();
   persist(storageKeys.paymentMethods, state.paymentMethods);
   persist(storageKeys.paymentProviders, state.paymentProviders);
+  ensureShippingDemoData();
+  persistShippingState();
   seedChat();
   renderAll();
   loadProducts();

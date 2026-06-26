@@ -1002,3 +1002,145 @@
     flex: 1 1 180px;
   }
 }
+
+#envios .shipping-admin-layout {
+  display: grid;
+  gap: 16px;
+}
+
+#envios .shipping-page-lead {
+  margin: 8px 0 0;
+}
+
+#envios .shipping-summary-cards {
+  margin-top: 0;
+}
+
+#envios .shipping-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+#envios .shipping-section-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+#envios .shipping-config-panel .customer-form-grid {
+  margin-top: 4px;
+}
+
+#envios .shipping-config-switches {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--master-border);
+}
+
+#envios .shipping-switch-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--master-text);
+  cursor: pointer;
+}
+
+#envios .shipping-switch-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+#envios .shipping-switch-row span {
+  line-height: 1.35;
+}
+
+#envios .shipping-switch-row--modal {
+  align-self: center;
+}
+
+#shippingZoneDialog .shipping-switch-row,
+#shippingProviderDialog .shipping-switch-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--master-text);
+  cursor: pointer;
+}
+
+#shippingZoneDialog .shipping-switch-row input[type="checkbox"],
+#shippingProviderDialog .shipping-switch-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+#envios .shipping-config-fields {
+  margin-top: 0;
+}
+
+#envios .orders-admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  flex-wrap: nowrap;
+  min-width: max-content;
+}
+
+#envios .orders-action-btn {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: var(--radius-input);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#envios .orders-action-btn.is-success {
+  border-color: var(--master-success-text);
+  background: var(--master-success-soft);
+  color: var(--master-success-text);
+}
+
+#envios .orders-action-btn.is-warning {
+  border-color: var(--master-warning-text);
+  background: var(--master-warning-soft);
+  color: var(--master-warning-text);
+}
+
+#envios .orders-action-btn.is-danger {
+  border-color: var(--master-danger-text);
+  background: var(--master-danger-soft);
+  color: var(--master-danger-text);
+}
+
+#envios .orders-status-badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  min-width: max-content;
+  flex-shrink: 0;
+}
+
+#envios .payments-col-actions {
+  vertical-align: middle;
+  min-width: 248px;
+  width: 248px;
+  white-space: nowrap;
+}
