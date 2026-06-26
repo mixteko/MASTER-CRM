@@ -5504,6 +5504,7 @@ const LEGACY_ORDER_STATUS_MAP = {
 };
 
 let commercePaymentFormsReady = false;
+let orderDeliveryFormsReady = false;
 let orderFormDraft = { items: [] };
 let saleFormDraft = { items: [] };
 let orderFormEditingId = null;
@@ -10244,6 +10245,7 @@ function openOrderDialog() {
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = "whatsapp";
   if (elements.orderPaymentStatus) elements.orderPaymentStatus.value = "pendiente";
   if (elements.orderDeliveryType) elements.orderDeliveryType.value = "envio_local";
+  updateOrderDeliveryFieldVisibility();
   loadOrderPaymentForm();
   ensureOrderProfileDiscountPanel();
   applyOrderCustomerProfileDiscount();
@@ -10265,6 +10267,7 @@ function openOrderEditor(orderId) {
   populateCommerceCustomerSelect(elements.orderCustomerSelect, order.customerId || "__walkin__");
   if (elements.orderOriginSelect) elements.orderOriginSelect.value = order.origin || "manual";
   if (elements.orderDeliveryType) elements.orderDeliveryType.value = order.deliveryType || "pendiente";
+  updateOrderDeliveryFieldVisibility();
   if (elements.orderDiscount) elements.orderDiscount.value = String(order.discount ?? 0);
   if (elements.orderShipping) elements.orderShipping.value = String(order.shipping ?? 0);
   if (elements.orderNotes) elements.orderNotes.value = order.notes || "";
@@ -11566,8 +11569,88 @@ function ensureSaleCommercePaymentSection() {
   });
 }
 
+function refreshOrderDeliveryElements() {
+  elements.orderDeliveryType = $("#orderDeliveryType");
+  elements.orderShipping = $("#orderShipping");
+  elements.orderDeliveryZoneWrap = $("#orderDeliveryZoneWrap");
+  elements.orderShippingProviderWrap = $("#orderShippingProviderWrap");
+}
+
+function updateOrderDeliveryFieldVisibility() {
+  const deliveryType = normalizeDeliveryType(elements.orderDeliveryType?.value);
+  const needsShippingDetails = deliveryType === "envio_local" || deliveryType === "paqueteria";
+  elements.orderDeliveryZoneWrap?.classList.toggle("is-hidden", !needsShippingDetails);
+  elements.orderShippingProviderWrap?.classList.toggle("is-hidden", !needsShippingDetails);
+}
+
+function ensureOrderDeliverySection() {
+  if (!elements.orderForm || document.getElementById("orderDeliveryPanel")) {
+    refreshOrderDeliveryElements();
+    return;
+  }
+
+  const deliveryLabel = elements.orderDeliveryType?.closest("label");
+  const shippingLabel = elements.orderShipping?.closest("label");
+  const deliveryGrid = deliveryLabel?.parentElement;
+
+  if (deliveryLabel) deliveryLabel.remove();
+  if (shippingLabel) shippingLabel.remove();
+  if (deliveryGrid && !deliveryGrid.querySelector("label")) deliveryGrid.remove();
+
+  const summary = elements.orderForm.querySelector(".order-summary-box");
+  const panel = document.createElement("section");
+  panel.className = "commerce-payment-panel order-delivery-panel";
+  panel.id = "orderDeliveryPanel";
+  panel.innerHTML = `
+    <h3 class="commerce-payment-title">Entrega</h3>
+    <div class="customer-form-grid customer-form-grid--2 commerce-payment-grid">
+      <label>Tipo de entrega
+        <select id="orderDeliveryType">
+          <option value="venta_directa">Venta directa / sin entrega</option>
+          <option value="recoger_tienda">Recoger en tienda</option>
+          <option value="envio_local">Envío local</option>
+          <option value="paqueteria">Paquetería</option>
+          <option value="pendiente">Pendiente definir</option>
+        </select>
+      </label>
+      <label id="orderDeliveryZoneWrap">Zona de entrega
+        <select id="orderDeliveryZone">
+          <option value="">Seleccionar zona</option>
+        </select>
+      </label>
+      <label id="orderShippingProviderWrap">Proveedor / repartidor
+        <select id="orderShippingProvider">
+          <option value="">Seleccionar proveedor</option>
+        </select>
+      </label>
+      <label>Estado de envío
+        <select id="orderShippingStatus">
+          <option value="pendiente">Pendiente</option>
+          <option value="preparando">Preparando</option>
+          <option value="en_camino">En camino</option>
+          <option value="entregado">Entregado</option>
+        </select>
+      </label>
+      <label>Costo de envío ($)
+        <input id="orderShipping" type="number" min="0" step="0.01" value="0" />
+      </label>
+    </div>
+  `;
+  summary?.before(panel);
+  refreshOrderDeliveryElements();
+
+  if (!orderDeliveryFormsReady) {
+    elements.orderShipping?.addEventListener("input", updateOrderFormPreview);
+    elements.orderShipping?.addEventListener("change", updateOrderFormPreview);
+    elements.orderDeliveryType?.addEventListener("change", updateOrderDeliveryFieldVisibility);
+    orderDeliveryFormsReady = true;
+  }
+  updateOrderDeliveryFieldVisibility();
+}
+
 function ensureCommercePaymentForms() {
   ensureOrderCommercePaymentSection();
+  ensureOrderDeliverySection();
   ensureSaleCommercePaymentSection();
   if (!commercePaymentFormsReady) {
     elements.orderOriginSelect?.addEventListener("change", syncOrderPaymentChannelFromOrigin);
