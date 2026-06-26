@@ -4442,12 +4442,7 @@ const state = {
   shipments: readJSON(storageKeys.shipments, []),
   sales: readJSON(storageKeys.sales, []),
   conversations: [],
-  settings: readJSON(storageKeys.settings, {
-    storeLink: "https://mixteko.github.io/Minifarmacia/",
-    businessPhone: "5218112345678",
-    welcomeMessage:
-      "Gracias por visitar MASTER CRM. Puedes comprar en esta liga: {{liga}}. Registrate para guardar tus datos de entrega y dar seguimiento a tu pedido.",
-  }),
+  settings: readJSON(storageKeys.settings, {}),
   storeCart: [],
   productQuery: "",
   customerQuery: "",
@@ -4496,6 +4491,165 @@ const EXPIRATION_FILTER_LABELS = {
   noAlert: "Sin alerta",
 };
 
+const DEFAULT_SETTINGS = {
+  storeLink: "https://mixteko.github.io/Minifarmacia/",
+  businessPhone: "5218112345678",
+  welcomeMessage:
+    "Gracias por visitar MASTER CRM. Puedes comprar en esta liga: {{liga}}. Registrate para guardar tus datos de entrega y dar seguimiento a tu pedido.",
+  pharmacy: {
+    tradeName: "",
+    legalName: "",
+    rfc: "",
+    phone: "",
+    whatsapp: "",
+    email: "",
+    address: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    logoUrl: "",
+  },
+  operation: {
+    currency: "MXN",
+    timezone: "America/Monterrey",
+    operationMode: "mixto",
+    mainBranch: "",
+    generalHours: "",
+  },
+  taxes: {
+    ivaEnabled: true,
+    ivaRate: 16,
+    pricesIncludeIva: false,
+    showIvaOnTicket: true,
+  },
+  tickets: {
+    title: "MASTER CRM",
+    footerMessage: "Gracias por su compra",
+    showPhone: true,
+    showAddress: true,
+    showWhatsapp: true,
+    saleFolioPrefix: "VTA",
+    orderFolioPrefix: "PED",
+  },
+  commercialRules: {
+    maxDiscountPercent: 10,
+    allowManualDiscounts: true,
+    requireAuthForHighDiscount: true,
+    rounding: "none",
+    allowSaleWithoutStock: false,
+  },
+  channels: {
+    counter: true,
+    whatsapp: true,
+    onlineStore: true,
+    homeDelivery: true,
+    pickup: true,
+  },
+};
+
+function normalizeSettings(settings = {}) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  const pharmacy = source.pharmacy && typeof source.pharmacy === "object" ? source.pharmacy : {};
+  const operation = source.operation && typeof source.operation === "object" ? source.operation : {};
+  const taxes = source.taxes && typeof source.taxes === "object" ? source.taxes : {};
+  const tickets = source.tickets && typeof source.tickets === "object" ? source.tickets : {};
+  const commercialRules =
+    source.commercialRules && typeof source.commercialRules === "object" ? source.commercialRules : {};
+  const channels = source.channels && typeof source.channels === "object" ? source.channels : {};
+  const operationMode = String(operation.operationMode || DEFAULT_SETTINGS.operation.operationMode)
+    .trim()
+    .toLowerCase();
+  const rounding = String(commercialRules.rounding || DEFAULT_SETTINGS.commercialRules.rounding)
+    .trim()
+    .toLowerCase();
+
+  return {
+    storeLink: String(source.storeLink || DEFAULT_SETTINGS.storeLink).trim(),
+    businessPhone: String(source.businessPhone || DEFAULT_SETTINGS.businessPhone).trim(),
+    welcomeMessage: String(source.welcomeMessage || DEFAULT_SETTINGS.welcomeMessage).trim(),
+    pharmacy: {
+      tradeName: String(pharmacy.tradeName || "").trim(),
+      legalName: String(pharmacy.legalName || "").trim(),
+      rfc: String(pharmacy.rfc || "").trim(),
+      phone: String(pharmacy.phone || "").trim(),
+      whatsapp: String(pharmacy.whatsapp || "").trim(),
+      email: String(pharmacy.email || "").trim(),
+      address: String(pharmacy.address || "").trim(),
+      city: String(pharmacy.city || "").trim(),
+      state: String(pharmacy.state || "").trim(),
+      postalCode: String(pharmacy.postalCode || "").trim(),
+      logoUrl: String(pharmacy.logoUrl || "").trim(),
+    },
+    operation: {
+      currency: String(operation.currency || DEFAULT_SETTINGS.operation.currency).trim() || "MXN",
+      timezone: String(operation.timezone || DEFAULT_SETTINGS.operation.timezone).trim() || "America/Monterrey",
+      operationMode: ["mostrador", "en_linea", "mixto"].includes(operationMode)
+        ? operationMode
+        : DEFAULT_SETTINGS.operation.operationMode,
+      mainBranch: String(operation.mainBranch || "").trim(),
+      generalHours: String(operation.generalHours || "").trim(),
+    },
+    taxes: {
+      ivaEnabled: taxes.ivaEnabled != null ? Boolean(taxes.ivaEnabled) : DEFAULT_SETTINGS.taxes.ivaEnabled,
+      ivaRate: toNumber(taxes.ivaRate ?? DEFAULT_SETTINGS.taxes.ivaRate),
+      pricesIncludeIva:
+        taxes.pricesIncludeIva != null ? Boolean(taxes.pricesIncludeIva) : DEFAULT_SETTINGS.taxes.pricesIncludeIva,
+      showIvaOnTicket:
+        taxes.showIvaOnTicket != null ? Boolean(taxes.showIvaOnTicket) : DEFAULT_SETTINGS.taxes.showIvaOnTicket,
+    },
+    tickets: {
+      title: String(tickets.title || DEFAULT_SETTINGS.tickets.title).trim() || DEFAULT_SETTINGS.tickets.title,
+      footerMessage:
+        String(tickets.footerMessage || DEFAULT_SETTINGS.tickets.footerMessage).trim() ||
+        DEFAULT_SETTINGS.tickets.footerMessage,
+      showPhone: tickets.showPhone != null ? Boolean(tickets.showPhone) : DEFAULT_SETTINGS.tickets.showPhone,
+      showAddress:
+        tickets.showAddress != null ? Boolean(tickets.showAddress) : DEFAULT_SETTINGS.tickets.showAddress,
+      showWhatsapp:
+        tickets.showWhatsapp != null ? Boolean(tickets.showWhatsapp) : DEFAULT_SETTINGS.tickets.showWhatsapp,
+      saleFolioPrefix:
+        String(tickets.saleFolioPrefix || DEFAULT_SETTINGS.tickets.saleFolioPrefix).trim() ||
+        DEFAULT_SETTINGS.tickets.saleFolioPrefix,
+      orderFolioPrefix:
+        String(tickets.orderFolioPrefix || DEFAULT_SETTINGS.tickets.orderFolioPrefix).trim() ||
+        DEFAULT_SETTINGS.tickets.orderFolioPrefix,
+    },
+    commercialRules: {
+      maxDiscountPercent: toNumber(
+        commercialRules.maxDiscountPercent ?? DEFAULT_SETTINGS.commercialRules.maxDiscountPercent,
+      ),
+      allowManualDiscounts:
+        commercialRules.allowManualDiscounts != null
+          ? Boolean(commercialRules.allowManualDiscounts)
+          : DEFAULT_SETTINGS.commercialRules.allowManualDiscounts,
+      requireAuthForHighDiscount:
+        commercialRules.requireAuthForHighDiscount != null
+          ? Boolean(commercialRules.requireAuthForHighDiscount)
+          : DEFAULT_SETTINGS.commercialRules.requireAuthForHighDiscount,
+      rounding: ["none", "peso", "fifty_cents"].includes(rounding)
+        ? rounding
+        : DEFAULT_SETTINGS.commercialRules.rounding,
+      allowSaleWithoutStock:
+        commercialRules.allowSaleWithoutStock != null
+          ? Boolean(commercialRules.allowSaleWithoutStock)
+          : DEFAULT_SETTINGS.commercialRules.allowSaleWithoutStock,
+    },
+    channels: {
+      counter: channels.counter != null ? Boolean(channels.counter) : DEFAULT_SETTINGS.channels.counter,
+      whatsapp: channels.whatsapp != null ? Boolean(channels.whatsapp) : DEFAULT_SETTINGS.channels.whatsapp,
+      onlineStore:
+        channels.onlineStore != null ? Boolean(channels.onlineStore) : DEFAULT_SETTINGS.channels.onlineStore,
+      homeDelivery:
+        channels.homeDelivery != null ? Boolean(channels.homeDelivery) : DEFAULT_SETTINGS.channels.homeDelivery,
+      pickup: channels.pickup != null ? Boolean(channels.pickup) : DEFAULT_SETTINGS.channels.pickup,
+    },
+  };
+}
+
+function getAppSettings() {
+  return normalizeSettings(state.settings);
+}
+
 const conversationsApiUrl = "https://minifarmacia.onrender.com/api/conversations";
 
 // Backend local (Node en localhost:3090): /api/*. Otros dominios: backend remoto.
@@ -4536,7 +4690,7 @@ const viewTitles = {
   pagos: "Pagos",
   canales: "Canales",
   "whatsapp-manager": "WhatsApp Manager",
-  configuracion: "Configuración",
+  configuracion: "Administración",
 };
 
 const productsSectionTitles = {
@@ -4556,7 +4710,7 @@ const viewDescriptions = {
   envios: "Seguimiento de entregas locales y nacionales.",
   canales: "Tienda online y puntos de venta digital.",
   "whatsapp-manager": "Atiende conversaciones y automatiza respuestas de WhatsApp.",
-  configuracion: "Plantillas y personalización del negocio.",
+  configuracion: "Configuración general del negocio, operación, impuestos, tickets y canales.",
   whatsapp: "Atiende conversaciones y automatiza respuestas de WhatsApp.",
   cobros: "Controla cobros pendientes y métodos de pago.",
   tienda: "Tienda online y puntos de venta digital.",
@@ -5607,6 +5761,45 @@ const elements = {
   salesTable: $("#salesTable"),
   shipmentsTable: $("#shipmentsTable"),
   resetDemoButton: $("#resetDemoButton"),
+  adminSettingsForm: $("#adminSettingsForm"),
+  resetAdminSettingsButton: $("#resetAdminSettingsButton"),
+  adminPharmacyTradeName: $("#adminPharmacyTradeName"),
+  adminPharmacyLegalName: $("#adminPharmacyLegalName"),
+  adminPharmacyRfc: $("#adminPharmacyRfc"),
+  adminPharmacyPhone: $("#adminPharmacyPhone"),
+  adminPharmacyWhatsapp: $("#adminPharmacyWhatsapp"),
+  adminPharmacyEmail: $("#adminPharmacyEmail"),
+  adminPharmacyAddress: $("#adminPharmacyAddress"),
+  adminPharmacyCity: $("#adminPharmacyCity"),
+  adminPharmacyState: $("#adminPharmacyState"),
+  adminPharmacyPostalCode: $("#adminPharmacyPostalCode"),
+  adminPharmacyLogoUrl: $("#adminPharmacyLogoUrl"),
+  adminOperationCurrency: $("#adminOperationCurrency"),
+  adminOperationTimezone: $("#adminOperationTimezone"),
+  adminOperationMode: $("#adminOperationMode"),
+  adminOperationMainBranch: $("#adminOperationMainBranch"),
+  adminOperationGeneralHours: $("#adminOperationGeneralHours"),
+  adminTaxIvaEnabled: $("#adminTaxIvaEnabled"),
+  adminTaxIvaRate: $("#adminTaxIvaRate"),
+  adminTaxPricesIncludeIva: $("#adminTaxPricesIncludeIva"),
+  adminTaxShowIvaOnTicket: $("#adminTaxShowIvaOnTicket"),
+  adminTicketTitle: $("#adminTicketTitle"),
+  adminTicketFooterMessage: $("#adminTicketFooterMessage"),
+  adminTicketShowPhone: $("#adminTicketShowPhone"),
+  adminTicketShowAddress: $("#adminTicketShowAddress"),
+  adminTicketShowWhatsapp: $("#adminTicketShowWhatsapp"),
+  adminTicketSaleFolioPrefix: $("#adminTicketSaleFolioPrefix"),
+  adminTicketOrderFolioPrefix: $("#adminTicketOrderFolioPrefix"),
+  adminCommercialMaxDiscount: $("#adminCommercialMaxDiscount"),
+  adminCommercialRounding: $("#adminCommercialRounding"),
+  adminCommercialAllowManualDiscounts: $("#adminCommercialAllowManualDiscounts"),
+  adminCommercialRequireAuthDiscount: $("#adminCommercialRequireAuthDiscount"),
+  adminCommercialAllowSaleWithoutStock: $("#adminCommercialAllowSaleWithoutStock"),
+  adminChannelCounter: $("#adminChannelCounter"),
+  adminChannelWhatsapp: $("#adminChannelWhatsapp"),
+  adminChannelOnlineStore: $("#adminChannelOnlineStore"),
+  adminChannelHomeDelivery: $("#adminChannelHomeDelivery"),
+  adminChannelPickup: $("#adminChannelPickup"),
 };
 
 init();
@@ -5615,6 +5808,8 @@ function init() {
   migrateCommerceState();
   migratePaymentConfigState();
   ensureCommercePaymentForms();
+  ensureAdminSettingsView();
+  state.settings = normalizeSettings(state.settings);
   elements.todayLabel.textContent = `Operacion local - ${formatShortDate(new Date().toISOString())}`;
   createProductRefreshButton();
   hydrateSettings();
@@ -6212,6 +6407,11 @@ function showView(viewId, options = {}) {
     updateProductsModuleTitle();
     scrollWorkspaceToTop();
     return;
+  }
+
+  if (targetViewId === "configuracion") {
+    ensureAdminSettingsView();
+    loadAdminSettingsForm();
   }
 
   updateViewHeader(
@@ -7106,9 +7306,309 @@ function scrollWorkspaceToTop() {
 }
 
 function hydrateSettings() {
-  elements.storeLink.value = state.settings.storeLink;
-  elements.businessPhone.value = state.settings.businessPhone;
-  elements.welcomeMessage.value = state.settings.welcomeMessage;
+  const settings = getAppSettings();
+  if (elements.storeLink) elements.storeLink.value = settings.storeLink;
+  if (elements.businessPhone) elements.businessPhone.value = settings.businessPhone;
+  if (elements.welcomeMessage) elements.welcomeMessage.value = settings.welcomeMessage;
+  loadAdminSettingsForm();
+}
+
+function ensureAdminSettingsView() {
+  const view = document.getElementById("configuracion");
+  if (!view || view.dataset.adminReady === "true") {
+    refreshAdminSettingsElements();
+    return;
+  }
+
+  view.innerHTML = `
+    <form id="adminSettingsForm" class="admin-settings-layout">
+      <div class="panel-card admin-settings-toolbar">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Administración</p>
+            <h2>Configuración general</h2>
+          </div>
+        </div>
+        <p class="section-description admin-settings-lead">
+          Base administrativa del sistema. Estos valores se guardan localmente y podrán conectarse después con ventas, pedidos, envíos y canales.
+        </p>
+        <div class="admin-settings-actions">
+          <button class="ghost-button" type="button" id="resetAdminSettingsButton">Restaurar valores predeterminados</button>
+          <button class="primary-button" type="submit" id="saveAdminSettingsButton">Guardar configuración</button>
+        </div>
+      </div>
+      <div class="admin-settings-grid">
+        <section class="panel-card admin-settings-section">
+          <h3>Datos de la farmacia</h3>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Nombre comercial <input id="adminPharmacyTradeName" type="text" placeholder="Ej. Mini Farmacia Centro" /></label>
+            <label>Razón social (opcional) <input id="adminPharmacyLegalName" type="text" /></label>
+            <label>RFC (opcional) <input id="adminPharmacyRfc" type="text" /></label>
+            <label>Teléfono <input id="adminPharmacyPhone" type="tel" /></label>
+            <label>WhatsApp <input id="adminPharmacyWhatsapp" type="tel" /></label>
+            <label>Correo <input id="adminPharmacyEmail" type="email" /></label>
+            <label class="is-full">Dirección <input id="adminPharmacyAddress" type="text" /></label>
+            <label>Ciudad <input id="adminPharmacyCity" type="text" /></label>
+            <label>Estado <input id="adminPharmacyState" type="text" /></label>
+            <label>Código postal <input id="adminPharmacyPostalCode" type="text" /></label>
+            <label class="is-full">Logo (URL) <input id="adminPharmacyLogoUrl" type="url" placeholder="https://..." /></label>
+          </div>
+        </section>
+        <section class="panel-card admin-settings-section">
+          <h3>Configuración de operación</h3>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Moneda
+              <select id="adminOperationCurrency">
+                <option value="MXN">MXN (Peso mexicano)</option>
+                <option value="USD">USD (Dólar)</option>
+              </select>
+            </label>
+            <label>Zona horaria
+              <select id="adminOperationTimezone">
+                <option value="America/Monterrey">America/Monterrey</option>
+                <option value="America/Mexico_City">America/Mexico_City</option>
+                <option value="America/Tijuana">America/Tijuana</option>
+                <option value="America/Cancun">America/Cancun</option>
+              </select>
+            </label>
+            <label>Modo de operación
+              <select id="adminOperationMode">
+                <option value="mostrador">Mostrador</option>
+                <option value="en_linea">En línea</option>
+                <option value="mixto">Mixto</option>
+              </select>
+            </label>
+            <label>Sucursal principal (opcional) <input id="adminOperationMainBranch" type="text" /></label>
+            <label class="is-full">Horario general <textarea id="adminOperationGeneralHours" rows="2"></textarea></label>
+          </div>
+        </section>
+        <section class="panel-card admin-settings-section">
+          <h3>Impuestos</h3>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label class="admin-settings-switch"><input id="adminTaxIvaEnabled" type="checkbox" /><span>IVA activo</span></label>
+            <label>Porcentaje IVA (%) <input id="adminTaxIvaRate" type="number" min="0" max="100" step="0.01" /></label>
+            <label class="admin-settings-switch"><input id="adminTaxPricesIncludeIva" type="checkbox" /><span>Precios incluyen IVA</span></label>
+            <label class="admin-settings-switch"><input id="adminTaxShowIvaOnTicket" type="checkbox" /><span>Mostrar IVA en ticket</span></label>
+          </div>
+        </section>
+        <section class="panel-card admin-settings-section">
+          <h3>Tickets / comprobantes</h3>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Título del ticket <input id="adminTicketTitle" type="text" /></label>
+            <label>Mensaje final del ticket <input id="adminTicketFooterMessage" type="text" /></label>
+            <label class="admin-settings-switch"><input id="adminTicketShowPhone" type="checkbox" /><span>Mostrar teléfono en ticket</span></label>
+            <label class="admin-settings-switch"><input id="adminTicketShowAddress" type="checkbox" /><span>Mostrar dirección en ticket</span></label>
+            <label class="admin-settings-switch"><input id="adminTicketShowWhatsapp" type="checkbox" /><span>Mostrar WhatsApp en ticket</span></label>
+            <label>Prefijo folio de venta <input id="adminTicketSaleFolioPrefix" type="text" maxlength="12" /></label>
+            <label>Prefijo folio de pedido <input id="adminTicketOrderFolioPrefix" type="text" maxlength="12" /></label>
+          </div>
+        </section>
+        <section class="panel-card admin-settings-section">
+          <h3>Reglas comerciales</h3>
+          <p class="admin-settings-note">Preparado para futuros roles y autorizaciones de descuento. Por ahora solo guarda la configuración base.</p>
+          <div class="customer-form-grid customer-form-grid--2">
+            <label>Descuento máximo por defecto (%) <input id="adminCommercialMaxDiscount" type="number" min="0" max="100" step="0.01" /></label>
+            <label>Redondeo de totales
+              <select id="adminCommercialRounding">
+                <option value="none">Ninguno</option>
+                <option value="peso">Al peso</option>
+                <option value="fifty_cents">A 50 centavos</option>
+              </select>
+            </label>
+            <label class="admin-settings-switch"><input id="adminCommercialAllowManualDiscounts" type="checkbox" /><span>Permitir descuentos manuales</span></label>
+            <label class="admin-settings-switch"><input id="adminCommercialRequireAuthDiscount" type="checkbox" /><span>Requerir autorización para descuento mayor</span></label>
+            <label class="admin-settings-switch"><input id="adminCommercialAllowSaleWithoutStock" type="checkbox" /><span>Permitir venta sin stock</span></label>
+          </div>
+        </section>
+        <section class="panel-card admin-settings-section">
+          <h3>Canales activos</h3>
+          <p class="admin-settings-note">Estos interruptores preparan la activación de canales en envíos, tienda y WhatsApp.</p>
+          <div class="admin-settings-switches">
+            <label class="admin-settings-switch"><input id="adminChannelCounter" type="checkbox" /><span>Mostrador</span></label>
+            <label class="admin-settings-switch"><input id="adminChannelWhatsapp" type="checkbox" /><span>WhatsApp</span></label>
+            <label class="admin-settings-switch"><input id="adminChannelOnlineStore" type="checkbox" /><span>Tienda en línea</span></label>
+            <label class="admin-settings-switch"><input id="adminChannelHomeDelivery" type="checkbox" /><span>Entrega a domicilio</span></label>
+            <label class="admin-settings-switch"><input id="adminChannelPickup" type="checkbox" /><span>Recolección en sucursal</span></label>
+          </div>
+        </section>
+      </div>
+    </form>
+  `;
+  view.dataset.adminReady = "true";
+  refreshAdminSettingsElements();
+  elements.adminSettingsForm?.addEventListener("submit", saveAdminSettings);
+  elements.resetAdminSettingsButton?.addEventListener("click", resetAdminSettingsDefaults);
+}
+
+function refreshAdminSettingsElements() {
+  elements.adminSettingsForm = $("#adminSettingsForm");
+  elements.resetAdminSettingsButton = $("#resetAdminSettingsButton");
+  elements.adminPharmacyTradeName = $("#adminPharmacyTradeName");
+  elements.adminPharmacyLegalName = $("#adminPharmacyLegalName");
+  elements.adminPharmacyRfc = $("#adminPharmacyRfc");
+  elements.adminPharmacyPhone = $("#adminPharmacyPhone");
+  elements.adminPharmacyWhatsapp = $("#adminPharmacyWhatsapp");
+  elements.adminPharmacyEmail = $("#adminPharmacyEmail");
+  elements.adminPharmacyAddress = $("#adminPharmacyAddress");
+  elements.adminPharmacyCity = $("#adminPharmacyCity");
+  elements.adminPharmacyState = $("#adminPharmacyState");
+  elements.adminPharmacyPostalCode = $("#adminPharmacyPostalCode");
+  elements.adminPharmacyLogoUrl = $("#adminPharmacyLogoUrl");
+  elements.adminOperationCurrency = $("#adminOperationCurrency");
+  elements.adminOperationTimezone = $("#adminOperationTimezone");
+  elements.adminOperationMode = $("#adminOperationMode");
+  elements.adminOperationMainBranch = $("#adminOperationMainBranch");
+  elements.adminOperationGeneralHours = $("#adminOperationGeneralHours");
+  elements.adminTaxIvaEnabled = $("#adminTaxIvaEnabled");
+  elements.adminTaxIvaRate = $("#adminTaxIvaRate");
+  elements.adminTaxPricesIncludeIva = $("#adminTaxPricesIncludeIva");
+  elements.adminTaxShowIvaOnTicket = $("#adminTaxShowIvaOnTicket");
+  elements.adminTicketTitle = $("#adminTicketTitle");
+  elements.adminTicketFooterMessage = $("#adminTicketFooterMessage");
+  elements.adminTicketShowPhone = $("#adminTicketShowPhone");
+  elements.adminTicketShowAddress = $("#adminTicketShowAddress");
+  elements.adminTicketShowWhatsapp = $("#adminTicketShowWhatsapp");
+  elements.adminTicketSaleFolioPrefix = $("#adminTicketSaleFolioPrefix");
+  elements.adminTicketOrderFolioPrefix = $("#adminTicketOrderFolioPrefix");
+  elements.adminCommercialMaxDiscount = $("#adminCommercialMaxDiscount");
+  elements.adminCommercialRounding = $("#adminCommercialRounding");
+  elements.adminCommercialAllowManualDiscounts = $("#adminCommercialAllowManualDiscounts");
+  elements.adminCommercialRequireAuthDiscount = $("#adminCommercialRequireAuthDiscount");
+  elements.adminCommercialAllowSaleWithoutStock = $("#adminCommercialAllowSaleWithoutStock");
+  elements.adminChannelCounter = $("#adminChannelCounter");
+  elements.adminChannelWhatsapp = $("#adminChannelWhatsapp");
+  elements.adminChannelOnlineStore = $("#adminChannelOnlineStore");
+  elements.adminChannelHomeDelivery = $("#adminChannelHomeDelivery");
+  elements.adminChannelPickup = $("#adminChannelPickup");
+}
+
+function loadAdminSettingsForm() {
+  if (!elements.adminSettingsForm) return;
+  const settings = getAppSettings();
+  const { pharmacy, operation, taxes, tickets, commercialRules, channels } = settings;
+
+  if (elements.adminPharmacyTradeName) elements.adminPharmacyTradeName.value = pharmacy.tradeName;
+  if (elements.adminPharmacyLegalName) elements.adminPharmacyLegalName.value = pharmacy.legalName;
+  if (elements.adminPharmacyRfc) elements.adminPharmacyRfc.value = pharmacy.rfc;
+  if (elements.adminPharmacyPhone) elements.adminPharmacyPhone.value = pharmacy.phone;
+  if (elements.adminPharmacyWhatsapp) elements.adminPharmacyWhatsapp.value = pharmacy.whatsapp;
+  if (elements.adminPharmacyEmail) elements.adminPharmacyEmail.value = pharmacy.email;
+  if (elements.adminPharmacyAddress) elements.adminPharmacyAddress.value = pharmacy.address;
+  if (elements.adminPharmacyCity) elements.adminPharmacyCity.value = pharmacy.city;
+  if (elements.adminPharmacyState) elements.adminPharmacyState.value = pharmacy.state;
+  if (elements.adminPharmacyPostalCode) elements.adminPharmacyPostalCode.value = pharmacy.postalCode;
+  if (elements.adminPharmacyLogoUrl) elements.adminPharmacyLogoUrl.value = pharmacy.logoUrl;
+
+  if (elements.adminOperationCurrency) elements.adminOperationCurrency.value = operation.currency;
+  if (elements.adminOperationTimezone) elements.adminOperationTimezone.value = operation.timezone;
+  if (elements.adminOperationMode) elements.adminOperationMode.value = operation.operationMode;
+  if (elements.adminOperationMainBranch) elements.adminOperationMainBranch.value = operation.mainBranch;
+  if (elements.adminOperationGeneralHours) elements.adminOperationGeneralHours.value = operation.generalHours;
+
+  if (elements.adminTaxIvaEnabled) elements.adminTaxIvaEnabled.checked = taxes.ivaEnabled;
+  if (elements.adminTaxIvaRate) elements.adminTaxIvaRate.value = String(taxes.ivaRate);
+  if (elements.adminTaxPricesIncludeIva) elements.adminTaxPricesIncludeIva.checked = taxes.pricesIncludeIva;
+  if (elements.adminTaxShowIvaOnTicket) elements.adminTaxShowIvaOnTicket.checked = taxes.showIvaOnTicket;
+
+  if (elements.adminTicketTitle) elements.adminTicketTitle.value = tickets.title;
+  if (elements.adminTicketFooterMessage) elements.adminTicketFooterMessage.value = tickets.footerMessage;
+  if (elements.adminTicketShowPhone) elements.adminTicketShowPhone.checked = tickets.showPhone;
+  if (elements.adminTicketShowAddress) elements.adminTicketShowAddress.checked = tickets.showAddress;
+  if (elements.adminTicketShowWhatsapp) elements.adminTicketShowWhatsapp.checked = tickets.showWhatsapp;
+  if (elements.adminTicketSaleFolioPrefix) elements.adminTicketSaleFolioPrefix.value = tickets.saleFolioPrefix;
+  if (elements.adminTicketOrderFolioPrefix) elements.adminTicketOrderFolioPrefix.value = tickets.orderFolioPrefix;
+
+  if (elements.adminCommercialMaxDiscount) {
+    elements.adminCommercialMaxDiscount.value = String(commercialRules.maxDiscountPercent);
+  }
+  if (elements.adminCommercialRounding) elements.adminCommercialRounding.value = commercialRules.rounding;
+  if (elements.adminCommercialAllowManualDiscounts) {
+    elements.adminCommercialAllowManualDiscounts.checked = commercialRules.allowManualDiscounts;
+  }
+  if (elements.adminCommercialRequireAuthDiscount) {
+    elements.adminCommercialRequireAuthDiscount.checked = commercialRules.requireAuthForHighDiscount;
+  }
+  if (elements.adminCommercialAllowSaleWithoutStock) {
+    elements.adminCommercialAllowSaleWithoutStock.checked = commercialRules.allowSaleWithoutStock;
+  }
+
+  if (elements.adminChannelCounter) elements.adminChannelCounter.checked = channels.counter;
+  if (elements.adminChannelWhatsapp) elements.adminChannelWhatsapp.checked = channels.whatsapp;
+  if (elements.adminChannelOnlineStore) elements.adminChannelOnlineStore.checked = channels.onlineStore;
+  if (elements.adminChannelHomeDelivery) elements.adminChannelHomeDelivery.checked = channels.homeDelivery;
+  if (elements.adminChannelPickup) elements.adminChannelPickup.checked = channels.pickup;
+}
+
+function readAdminSettingsForm() {
+  return normalizeSettings({
+    ...state.settings,
+    pharmacy: {
+      tradeName: elements.adminPharmacyTradeName?.value.trim() || "",
+      legalName: elements.adminPharmacyLegalName?.value.trim() || "",
+      rfc: elements.adminPharmacyRfc?.value.trim() || "",
+      phone: elements.adminPharmacyPhone?.value.trim() || "",
+      whatsapp: elements.adminPharmacyWhatsapp?.value.trim() || "",
+      email: elements.adminPharmacyEmail?.value.trim() || "",
+      address: elements.adminPharmacyAddress?.value.trim() || "",
+      city: elements.adminPharmacyCity?.value.trim() || "",
+      state: elements.adminPharmacyState?.value.trim() || "",
+      postalCode: elements.adminPharmacyPostalCode?.value.trim() || "",
+      logoUrl: elements.adminPharmacyLogoUrl?.value.trim() || "",
+    },
+    operation: {
+      currency: elements.adminOperationCurrency?.value || "MXN",
+      timezone: elements.adminOperationTimezone?.value || "America/Monterrey",
+      operationMode: elements.adminOperationMode?.value || "mixto",
+      mainBranch: elements.adminOperationMainBranch?.value.trim() || "",
+      generalHours: elements.adminOperationGeneralHours?.value.trim() || "",
+    },
+    taxes: {
+      ivaEnabled: Boolean(elements.adminTaxIvaEnabled?.checked),
+      ivaRate: elements.adminTaxIvaRate?.value,
+      pricesIncludeIva: Boolean(elements.adminTaxPricesIncludeIva?.checked),
+      showIvaOnTicket: Boolean(elements.adminTaxShowIvaOnTicket?.checked),
+    },
+    tickets: {
+      title: elements.adminTicketTitle?.value.trim() || "",
+      footerMessage: elements.adminTicketFooterMessage?.value.trim() || "",
+      showPhone: Boolean(elements.adminTicketShowPhone?.checked),
+      showAddress: Boolean(elements.adminTicketShowAddress?.checked),
+      showWhatsapp: Boolean(elements.adminTicketShowWhatsapp?.checked),
+      saleFolioPrefix: elements.adminTicketSaleFolioPrefix?.value.trim() || "",
+      orderFolioPrefix: elements.adminTicketOrderFolioPrefix?.value.trim() || "",
+    },
+    commercialRules: {
+      maxDiscountPercent: elements.adminCommercialMaxDiscount?.value,
+      allowManualDiscounts: Boolean(elements.adminCommercialAllowManualDiscounts?.checked),
+      requireAuthForHighDiscount: Boolean(elements.adminCommercialRequireAuthDiscount?.checked),
+      rounding: elements.adminCommercialRounding?.value || "none",
+      allowSaleWithoutStock: Boolean(elements.adminCommercialAllowSaleWithoutStock?.checked),
+    },
+    channels: {
+      counter: Boolean(elements.adminChannelCounter?.checked),
+      whatsapp: Boolean(elements.adminChannelWhatsapp?.checked),
+      onlineStore: Boolean(elements.adminChannelOnlineStore?.checked),
+      homeDelivery: Boolean(elements.adminChannelHomeDelivery?.checked),
+      pickup: Boolean(elements.adminChannelPickup?.checked),
+    },
+  });
+}
+
+function saveAdminSettings(event) {
+  event.preventDefault();
+  state.settings = readAdminSettingsForm();
+  persist(storageKeys.settings, state.settings);
+  hydrateSettings();
+  showToast("Configuración guardada correctamente.");
+}
+
+function resetAdminSettingsDefaults() {
+  if (!window.confirm("¿Restaurar la configuración administrativa a los valores predeterminados?")) return;
+  state.settings = normalizeSettings({ ...DEFAULT_SETTINGS });
+  persist(storageKeys.settings, state.settings);
+  loadAdminSettingsForm();
+  hydrateSettings();
+  showToast("Valores predeterminados restaurados.");
 }
 
 function renderAll() {
@@ -7413,11 +7913,12 @@ async function sendWhatsApp(telefono, mensaje) {
 }
 
 function saveSettings() {
-  state.settings = {
-    storeLink: elements.storeLink.value.trim(),
-    businessPhone: elements.businessPhone.value.trim(),
-    welcomeMessage: elements.welcomeMessage.value.trim(),
-  };
+  state.settings = normalizeSettings({
+    ...state.settings,
+    storeLink: elements.storeLink?.value.trim() || "",
+    businessPhone: elements.businessPhone?.value.trim() || "",
+    welcomeMessage: elements.welcomeMessage?.value.trim() || "",
+  });
   persist(storageKeys.settings, state.settings);
 }
 
