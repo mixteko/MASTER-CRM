@@ -4450,10 +4450,19 @@ const state = {
   conversations: [],
   settings: readJSON(storageKeys.settings, {}),
   storeCart: [],
+  storePrescriptionUpload: {
+    attached: false,
+    fileName: "",
+    fileType: "",
+    notes: "",
+    file: null,
+  },
+  storeQuickCartOpen: false,
+  storeCheckoutStep: "cart",
   productQuery: "",
   customerQuery: "",
   storeQuery: "",
-  storeCategory: "Todas",
+  storeCategory: "",
   conversationQuery: "",
   selectedConversationId: "",
   usingRealConversations: false,
@@ -4487,6 +4496,9 @@ const state = {
   saleDateFrom: "",
   saleDateTo: "",
 };
+
+let storefrontStructureReady = false;
+let storefrontHeroTimer = null;
 
 const EXPIRATION_FILTER_LABELS = {
   red: "Rojo / 0 días / vencidos",
@@ -5945,6 +5957,7 @@ function init() {
   elements.todayLabel.textContent = `Operacion local - ${formatShortDate(new Date().toISOString())}`;
   createProductRefreshButton();
   hydrateSettings();
+  ensureStorefrontStructure();
   bindEvents();
   renderAll();
   loadProducts();
@@ -5984,14 +5997,65 @@ function bindEvents() {
     scrollStoreSection("products");
   });
   elements.storeCategoryMenu.addEventListener("click", handleStoreCategoryClick);
-  $$("[data-store-scroll]").forEach((button) => {
-    button.addEventListener("click", () => scrollStoreSection(button.dataset.storeScroll));
+  document.addEventListener("click", (event) => {
+    const scrollBtn = event.target.closest("#tienda [data-store-scroll]");
+    if (scrollBtn) scrollStoreSection(scrollBtn.dataset.storeScroll);
+    const heroDot = event.target.closest("#tienda .store-hero-dots button[data-hero-dot]");
+    if (heroDot) {
+      setStoreHeroSlide(Number(heroDot.dataset.heroDot));
+    }
+    const heroNav = event.target.closest("#tienda [data-hero-nav]");
+    if (heroNav) {
+      const step = heroNav.dataset.heroNav === "prev" ? -1 : 1;
+      setStoreHeroSlide((setStoreHeroSlide.active || 0) + step);
+    }
   });
   elements.storeLoginButton.addEventListener("click", openLoginDialog);
-  elements.clearStoreCartButton.addEventListener("click", clearStoreCart);
-  elements.storeDeliveryType.addEventListener("change", renderStoreCart);
-  elements.storeCustomer.addEventListener("change", fillStoreCustomerAddress);
-  elements.storeCheckoutForm.addEventListener("submit", createOnlineOrder);
+  document.getElementById("storeCheckoutLoginButton")?.addEventListener("click", openLoginDialog);
+  document.getElementById("storeCheckoutRegisterButton")?.addEventListener("click", () => {
+    openLoginDialog();
+    showAccountView("register");
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.id === "storePrescriptionFile") handleStorePrescriptionFileChange(event);
+  });
+  document.addEventListener("input", (event) => {
+    if (event.target.id === "storePrescriptionNotes") handleStorePrescriptionNotesInput(event);
+  });
+  if (elements.clearStoreCartButton) elements.clearStoreCartButton.addEventListener("click", clearStoreCart);
+  document.addEventListener("change", (event) => {
+    if (event.target.id === "storeDeliveryType") renderStoreCart();
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.id === "storeCustomer") fillStoreCustomerAddress();
+  });
+  if (elements.storeCheckoutForm) elements.storeCheckoutForm.addEventListener("submit", createOnlineOrder);
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target.id === "storeCheckoutSubmitButton") {
+      syncPaymentMethodSelect();
+      createOnlineOrder(event);
+    }
+    if (target.id === "ckoStep1Next") handleCheckoutStep1Next();
+    if (target.id === "ckoStep2Next") handleCheckoutStep2Next();
+    if (target.id === "ckoEditDelivery") goToCheckoutStep("delivery");
+    if (target.id === "ckoDeliveryChangeCp") {
+      const input = document.getElementById("ckoPostalCode");
+      if (input) { input.value = ""; input.focus(); }
+      document.getElementById("ckoDeliverySummary")?.setAttribute("hidden", "");
+    }
+    const stepEl = target.closest("[data-cko-step]");
+    if (stepEl) {
+      const idx = parseInt(stepEl.dataset.ckoStep, 10);
+      const currentIdx = ["cart", "delivery", "payment"].indexOf(state.storeCheckoutStep);
+      if (idx <= currentIdx) {
+        goToCheckoutStep(["cart", "delivery", "payment"][idx - 1]);
+      }
+    }
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.name === "ckoPayment") handlePaymentRadioChange(event.target.value);
+  });
   elements.storeLoginForm.addEventListener("submit", loginStoreCustomer);
   elements.storeCustomerForm.addEventListener("submit", saveStoreCustomer);
   elements.showRegisterButton.addEventListener("click", () => showAccountView("register"));
@@ -6305,6 +6369,10 @@ function handleDocumentAction(event) {
   const id = String(action.dataset.id || action.getAttribute("data-id") || "").trim();
   if (action.dataset.action === "add-store-item") addStoreItem(id);
   if (action.dataset.action === "remove-store-item") removeStoreItem(id);
+  if (action.dataset.action === "toggle-quick-cart") toggleQuickCartDrawer();
+  if (action.dataset.action === "close-quick-cart") closeQuickCartDrawer();
+  if (action.dataset.action === "open-store-checkout") openStoreCheckoutSection();
+  if (action.dataset.action === "close-store-checkout") closeStoreCheckoutSection();
   if (action.dataset.action === "edit-customer") {
     event.preventDefault();
     editCustomer(id);
@@ -8253,6 +8321,1205 @@ function sendStoreLinkToConversation() {
 }
 
 
+function getStoreBrandName() {
+  const pharmacy = state.settings?.pharmacy || {};
+  return String(pharmacy.tradeName || pharmacy.legalName || "MASTER CRM").trim() || "MASTER CRM";
+}
+
+function getStoreBrandLabel() {
+  const name = getStoreBrandName();
+  if (/master/i.test(name)) return "MASTER CR";
+  return name.length > 16 ? "Farmacia" : name;
+}
+
+function setStoreHeroSlide(index) {
+  const slides = document.querySelectorAll("#tienda .store-hero-slide");
+  const dots = document.querySelectorAll("#tienda .store-hero-dots button");
+  if (!slides.length) return;
+  const safeIndex = ((index % slides.length) + slides.length) % slides.length;
+  slides.forEach((slide, i) => slide.classList.toggle("is-active", i === safeIndex));
+  dots.forEach((dot, i) => dot.classList.toggle("is-active", i === safeIndex));
+  setStoreHeroSlide.active = safeIndex;
+}
+setStoreHeroSlide.active = 0;
+
+function ensureStorefrontStructure() {
+  const tienda = document.getElementById("tienda");
+  if (!tienda) return;
+  if (storefrontStructureReady && document.getElementById("storeQuickCartDrawer")) return;
+
+  tienda.querySelector(".store-topline")?.remove();
+  tienda.querySelector(".store-delivery")?.remove();
+  tienda.querySelector(".store-service-row")?.remove();
+  tienda.querySelector(".store-promo-banner")?.remove();
+
+  const header = tienda.querySelector(".storefront-header");
+  if (header) {
+    header.classList.add("store-header-bar");
+    const logo = header.querySelector(".storefront-logo");
+    let brand = header.querySelector(".store-brand");
+    if (!brand) {
+      brand = document.createElement("div");
+      brand.className = "store-brand";
+      brand.id = "storeBrandMark";
+      brand.innerHTML = `<span class="store-brand-text">${escapeHTML(getStoreBrandLabel())}</span>`;
+      logo?.replaceWith(brand);
+    }
+    const searchInput = header.querySelector("#storeSearch");
+    if (searchInput) searchInput.placeholder = "¿Qué necesitas hoy?";
+    header.querySelector(".store-cart-link")?.setAttribute("data-action", "toggle-quick-cart");
+    header.querySelector(".store-cart-link")?.removeAttribute("data-store-scroll");
+  }
+
+  let subnav = tienda.querySelector(".storefront-subnav");
+  if (!subnav) {
+    subnav = document.createElement("nav");
+    subnav.className = "storefront-subnav";
+    subnav.setAttribute("aria-label", "Categorías de tienda");
+    tienda.querySelector(".storefront-nav")?.replaceWith(subnav);
+  }
+  subnav.innerHTML = `
+    <button type="button" data-store-scroll="catalog">Todo</button>
+    <button type="button" data-store-scroll="promos">Ofertas</button>
+    <button type="button" data-store-scroll="categories">Medicamentos</button>
+    <button type="button" data-store-scroll="categories">Cuidado personal</button>
+    <button type="button" data-store-scroll="categories">Categorías</button>
+    <button type="button" data-store-scroll="contact">Contacto</button>
+  `;
+  tienda.querySelector(".storefront-nav")?.remove();
+
+  let hero = tienda.querySelector(".store-hero");
+  if (!hero) {
+    hero = document.createElement("section");
+    hero.className = "store-hero";
+    hero.id = "storeHomeAnchor";
+    (subnav || header)?.insertAdjacentElement("afterend", hero);
+  }
+  hero.innerHTML = `
+    <p class="store-hero-kicker">Promoción online</p>
+    <div class="store-hero-carousel" id="storeHeroCarousel">
+      <button class="store-hero-arrow store-hero-arrow--prev" type="button" data-hero-nav="prev" aria-label="Anterior">‹</button>
+      <div class="store-hero-track">
+        <article class="store-hero-slide is-active" data-slide="0"><span>Banner 1</span></article>
+        <article class="store-hero-slide" data-slide="1"><span>Banner 2</span></article>
+        <article class="store-hero-slide" data-slide="2"><span>Banner 3</span></article>
+      </div>
+      <button class="store-hero-arrow store-hero-arrow--next" type="button" data-hero-nav="next" aria-label="Siguiente">›</button>
+      <div class="store-hero-dots" aria-hidden="true">
+        <button type="button" class="is-active" data-hero-dot="0" aria-label="Banner 1"></button>
+        <button type="button" data-hero-dot="1" aria-label="Banner 2"></button>
+        <button type="button" data-hero-dot="2" aria-label="Banner 3"></button>
+      </div>
+    </div>
+  `;
+
+  let benefits = tienda.querySelector("#storeBenefitsRow");
+  if (!benefits) {
+    benefits = document.createElement("section");
+    benefits.className = "store-benefits-row";
+    benefits.id = "storeBenefitsRow";
+    benefits.innerHTML = `
+      <article><span>⚡</span><strong>Entregas rápidas</strong><p>Pedidos ágiles y seguros</p></article>
+      <article><span>📋</span><strong>Tenemos tu receta</strong><p>Receta completa siempre</p></article>
+      <article><span>🔍</span><strong>Lo buscamos por ti</strong><p>Localizamos lo que necesitas</p></article>
+      <article><span>📍</span><strong>Envíos locales</strong><p>Cobertura en tu zona</p></article>
+    `;
+    hero.insertAdjacentElement("afterend", benefits);
+  }
+
+  let prescription = tienda.querySelector("#storePrescriptionCard");
+  if (!prescription) {
+    prescription = document.createElement("section");
+    prescription.className = "store-prescription-card";
+    prescription.id = "storePrescriptionCard";
+    prescription.innerHTML = `
+      <div class="store-prescription-copy">
+        <span class="store-prescription-icon">📄</span>
+        <div>
+          <h3>Sube tu receta médica</h3>
+          <p>Te ayudamos a surtir tu tratamiento</p>
+        </div>
+      </div>
+      <button class="primary-button store-prescription-btn" type="button">Tengo una imagen</button>
+    `;
+    benefits.insertAdjacentElement("afterend", prescription);
+  }
+
+  const storefront = tienda.querySelector(".storefront");
+  let productsHeading = tienda.querySelector("#storeProductsAnchor");
+  if (!productsHeading) {
+    productsHeading = tienda.querySelector(".store-products-heading") || document.createElement("div");
+    productsHeading.className = "store-section-heading store-products-heading";
+    productsHeading.id = "storeProductsAnchor";
+    productsHeading.innerHTML = `<h2>Productos del mes</h2>`;
+  } else {
+    productsHeading.innerHTML = `<h2>Productos del mes</h2>`;
+  }
+
+  let featuredGrid = document.getElementById("storeFeaturedGrid");
+  if (!featuredGrid) {
+    featuredGrid = document.createElement("section");
+    featuredGrid.className = "store-featured-grid product-grid";
+    featuredGrid.id = "storeFeaturedGrid";
+  }
+
+  let categoriesSection = tienda.querySelector("#storeCategoriesAnchor");
+  if (!categoriesSection) {
+    categoriesSection = tienda.querySelector(".store-categories-section");
+  }
+  if (categoriesSection) {
+    categoriesSection.id = "storeCategoriesAnchor";
+    const categoriesHeading = categoriesSection.querySelector(".store-section-heading");
+    if (categoriesHeading) categoriesHeading.innerHTML = `<h2>Categorías</h2>`;
+    if (!categoriesSection.querySelector("#storeCategoryMenu")) {
+      const menu = document.createElement("div");
+      menu.className = "store-category-menu";
+      menu.id = "storeCategoryMenu";
+      categoriesSection.appendChild(menu);
+    }
+  }
+
+  const productGrid = document.getElementById("storeProductGrid");
+  const storeLayout = tienda.querySelector(".store-layout");
+
+  ensureStoreCartPanels(tienda);
+
+  let catalogSection = document.getElementById("storeCatalogAnchor");
+  if (storefront && productGrid && !catalogSection) {
+    catalogSection = document.createElement("section");
+    catalogSection.className = "store-catalog-section";
+    catalogSection.id = "storeCatalogAnchor";
+    catalogSection.innerHTML = `<div class="store-section-heading"><h2>Catálogo</h2></div>`;
+    const hiddenSelect = document.getElementById("storeCategory");
+    if (hiddenSelect) {
+      hiddenSelect.hidden = true;
+      hiddenSelect.classList.add("store-category-select-hidden");
+    }
+    catalogSection.appendChild(productGrid);
+    storefront.appendChild(catalogSection);
+    storeLayout?.remove();
+  }
+
+  let promosSection = tienda.querySelector("#storePromosAnchor") || tienda.querySelector(".store-promos-section");
+  if (promosSection) {
+    promosSection.id = "storePromosAnchor";
+    promosSection.innerHTML = `
+      <div class="store-section-heading"><h2>Promociones especiales</h2></div>
+      <div class="store-promo-grid" id="storePromoGrid">
+        <article class="store-promo-card"><span>Banner 1</span></article>
+        <article class="store-promo-card"><span>Banner 2</span></article>
+        <article class="store-promo-card"><span>Banner 3</span></article>
+      </div>
+    `;
+  }
+
+  let contact = document.getElementById("storeContactAnchor");
+  if (!contact && storefront) {
+    contact = document.createElement("section");
+    contact.className = "store-contact-section";
+    contact.id = "storeContactAnchor";
+    contact.innerHTML = `
+      <div class="store-section-heading"><h2>Contacto</h2></div>
+      <div class="store-contact-card panel-card">
+        <p class="store-contact-line" id="storeContactPhone"></p>
+        <p class="store-contact-line" id="storeContactWhatsapp"></p>
+      </div>
+    `;
+    storefront.appendChild(contact);
+  }
+
+  let footer = document.getElementById("storeFooter");
+  if (!footer && storefront) {
+    footer = document.createElement("footer");
+    footer.className = "store-footer";
+    footer.id = "storeFooter";
+    footer.innerHTML = `
+      <div class="store-footer-grid">
+        <div>
+          <strong class="store-footer-brand" id="storeFooterBrand"></strong>
+          <p class="store-footer-copy">Tu farmacia digital con entrega local.</p>
+        </div>
+        <div>
+          <h4>Contacto</h4>
+          <p id="storeFooterPhone"></p>
+          <p id="storeFooterWhatsapp"></p>
+        </div>
+        <div>
+          <h4>Información</h4>
+          <p>Horarios y envíos</p>
+          <p>Atención por WhatsApp</p>
+        </div>
+        <div>
+          <h4>Categorías</h4>
+          <p id="storeFooterCategories"></p>
+        </div>
+      </div>
+    `;
+    storefront.appendChild(footer);
+  }
+
+  if (!document.getElementById("storeFloatingCart")) {
+    const fab = document.createElement("button");
+    fab.type = "button";
+    fab.className = "store-floating-cart";
+    fab.id = "storeFloatingCart";
+    fab.dataset.action = "toggle-quick-cart";
+    fab.setAttribute("aria-label", "Abrir carrito");
+    fab.innerHTML = `<span class="store-floating-cart-icon">🛒</span><span class="store-floating-cart-count" id="storeFloatingCartCount">0</span>`;
+    tienda.appendChild(fab);
+  } else {
+    const fab = document.getElementById("storeFloatingCart");
+    fab.dataset.action = "toggle-quick-cart";
+    fab.removeAttribute("data-store-scroll");
+  }
+
+  if (storefront && productsHeading && featuredGrid && categoriesSection && promosSection) {
+    prescription.insertAdjacentElement("afterend", productsHeading);
+    productsHeading.insertAdjacentElement("afterend", featuredGrid);
+    featuredGrid.insertAdjacentElement("afterend", categoriesSection);
+    if (catalogSection) categoriesSection.insertAdjacentElement("afterend", catalogSection);
+    if (catalogSection) catalogSection.insertAdjacentElement("afterend", promosSection);
+    else categoriesSection.insertAdjacentElement("afterend", promosSection);
+  }
+
+  if (storefrontHeroTimer) {
+    window.clearInterval(storefrontHeroTimer);
+    storefrontHeroTimer = null;
+  }
+  if (tienda.querySelector(".store-hero-carousel")) {
+    storefrontHeroTimer = window.setInterval(() => {
+      setStoreHeroSlide((setStoreHeroSlide.active || 0) + 1);
+    }, 5000);
+  }
+
+  storefrontStructureReady = true;
+}
+
+function migrateLegacyStoreCart(tienda) {
+  const legacySection = document.getElementById("storeCartSection");
+  const legacyAside = legacySection?.querySelector(".store-cart");
+  if (!legacySection || !legacyAside || document.getElementById("storeQuickCartDrawer")) return;
+  legacySection.remove();
+}
+
+function ensureStoreCartPanels(tienda) {
+  migrateLegacyStoreCart(tienda);
+
+  if (!document.getElementById("storeQuickCartDrawer")) {
+    const drawer = document.createElement("aside");
+    drawer.id = "storeQuickCartDrawer";
+    drawer.className = "store-quick-cart-drawer";
+    drawer.hidden = true;
+    drawer.innerHTML = `
+      <div class="store-quick-cart-header">
+        <div>
+          <p class="eyebrow">Resumen</p>
+          <h3>Carrito</h3>
+        </div>
+        <button class="dialog-close-btn" type="button" data-action="close-quick-cart" aria-label="Cerrar">×</button>
+      </div>
+      <div class="ticket-list store-quick-cart-list" id="storeQuickCartList"></div>
+      <div class="totals-box store-quick-cart-totals">
+        <div><span>Subtotal</span><strong id="storeQuickSubtotal">$0</strong></div>
+        <div><span>Total</span><strong id="storeQuickTotal">$0</strong></div>
+      </div>
+      <button class="primary-button store-quick-checkout-btn" type="button" data-action="open-store-checkout">Finalizar compra</button>
+    `;
+    tienda.appendChild(drawer);
+  }
+
+  if (!document.getElementById("storeCartSection")) {
+    const cartAside = tienda.querySelector(".store-cart");
+    const checkoutSection = document.createElement("div");
+    checkoutSection.id = "storeCartSection";
+    checkoutSection.className = "store-checkout-section";
+    checkoutSection.hidden = true;
+    checkoutSection.innerHTML = `
+      <div class="cko-topbar">
+        <div class="cko-topbar-inner">
+          <div class="cko-brand">
+            <span class="cko-brand-icon">💊</span>
+            <span class="cko-brand-name" id="ckoBrandName">Mi Farmacia</span>
+          </div>
+          <button class="cko-back-btn" type="button" data-action="close-store-checkout">← Volver a la tienda</button>
+        </div>
+      </div>
+
+      <div class="cko-steps">
+        <div class="cko-step is-active" data-cko-step="1">
+          <span class="cko-step-circle">1</span>
+          <span class="cko-step-label">Carrito</span>
+        </div>
+        <span class="cko-step-line" id="ckoStepLine1"></span>
+        <div class="cko-step" data-cko-step="2">
+          <span class="cko-step-circle">2</span>
+          <span class="cko-step-label">Entrega</span>
+        </div>
+        <span class="cko-step-line" id="ckoStepLine2"></span>
+        <div class="cko-step" data-cko-step="3">
+          <span class="cko-step-circle">3</span>
+          <span class="cko-step-label">Pago</span>
+        </div>
+      </div>
+
+      <div class="cko-body">
+        <div class="cko-left">
+          <div class="cko-step-content" id="ckoStepCart">
+            <div class="cko-card">
+              <h3 class="cko-card-title">Datos de contacto</h3>
+              <p class="cko-card-text">Inicia sesión o regístrate para agilizar tu compra.</p>
+              <div class="cko-auth-actions">
+                <button class="cko-btn cko-btn-outline" type="button" id="storeCheckoutLoginButton">Iniciar sesión</button>
+                <button class="cko-btn cko-btn-outline" type="button" id="storeCheckoutRegisterButton">Registrarme</button>
+              </div>
+              <div class="cko-contact-divider"><span>o continúa como invitado</span></div>
+              <div class="cko-field-row">
+                <label class="cko-field">
+                  <span>Correo electrónico</span>
+                  <input type="email" id="ckoContactEmail" placeholder="tu@correo.com" autocomplete="email" />
+                </label>
+              </div>
+              <label class="cko-checkbox">
+                <input type="checkbox" id="ckoOffersCheck" />
+                <span>Quiero recibir ofertas y novedades por e-mail</span>
+              </label>
+              <div class="cko-field-row cko-field-row--sm">
+                <label class="cko-field">
+                  <span>Cliente registrado</span>
+                  <select id="storeCustomer"></select>
+                </label>
+              </div>
+            </div>
+            <div class="cko-card">
+              <h3 class="cko-card-title">Entrega</h3>
+              <div class="cko-field-row">
+                <label class="cko-field cko-cp-field">
+                  <span>Código Postal</span>
+                  <input type="text" id="ckoPostalCode" placeholder="00000" maxlength="5" inputmode="numeric" />
+                  <a class="cko-cp-link" href="#" onclick="return false">No sé mi CP</a>
+                </label>
+              </div>
+            </div>
+            <button class="cko-btn cko-btn-primary cko-step-btn" type="button" id="ckoStep1Next">Continuar</button>
+          </div>
+
+          <div class="cko-step-content" id="ckoStepDelivery" hidden>
+            <div class="cko-card">
+              <h3 class="cko-card-title">Entrega</h3>
+              <div class="cko-field-row">
+                <label class="cko-field">
+                  <span>Tipo de envío</span>
+                  <select id="storeDeliveryType">
+                    <option value="Local">Local / entrega a domicilio</option>
+                    <option value="Nacional">Nacional / paquetería</option>
+                  </select>
+                </label>
+              </div>
+              <div class="cko-delivery-summary" id="ckoDeliverySummary" hidden>
+                <div class="cko-delivery-summary-line" id="ckoDeliverySummaryText"></div>
+                <button class="cko-delivery-change-btn" type="button" id="ckoDeliveryChangeCp">Cambiar</button>
+              </div>
+            </div>
+            <div class="cko-card">
+              <h3 class="cko-card-title">Datos del destinatario</h3>
+              <div class="cko-field-row cko-field-row--2">
+                <label class="cko-field">
+                  <span>Nombre</span>
+                  <input type="text" id="ckoDelName" placeholder="Nombre(s)" />
+                </label>
+                <label class="cko-field">
+                  <span>Apellidos</span>
+                  <input type="text" id="ckoDelLast" placeholder="Apellidos" />
+                </label>
+              </div>
+              <div class="cko-field-row cko-field-row--2">
+                <label class="cko-field">
+                  <span>Calle</span>
+                  <input type="text" id="ckoDelStreet" placeholder="Calle" />
+                </label>
+                <div class="cko-field-row cko-field-row--num">
+                  <label class="cko-field">
+                    <span>N° exterior</span>
+                    <input type="text" id="ckoDelExt" placeholder="123" />
+                  </label>
+                  <label class="cko-checkbox cko-checkbox--inline">
+                    <input type="checkbox" id="ckoDelNoNumber" />
+                    <span>Sin número</span>
+                  </label>
+                </div>
+              </div>
+              <div class="cko-field-row cko-field-row--2">
+                <label class="cko-field">
+                  <span>N° interior <small class="cko-opt">(opcional)</small></span>
+                  <input type="text" id="ckoDelInt" placeholder="Depto, oficina" />
+                </label>
+                <label class="cko-field">
+                  <span>Referencia <small class="cko-opt">(opcional)</small></span>
+                  <input type="text" id="ckoDelRef" placeholder="Entre calles, edificio" />
+                </label>
+              </div>
+              <div class="cko-field-row cko-field-row--2">
+                <label class="cko-field">
+                  <span>Colonia</span>
+                  <input type="text" id="ckoDelColonia" placeholder="Colonia" />
+                </label>
+                <label class="cko-field">
+                  <span>Ciudad</span>
+                  <input type="text" id="ckoDelCity" placeholder="Ciudad" />
+                </label>
+              </div>
+            </div>
+            <div class="cko-card">
+              <h3 class="cko-card-title">Datos de facturación</h3>
+              <label class="cko-checkbox">
+                <input type="checkbox" id="ckoInvoiceCompany" />
+                <span>Facturar como empresa / persona jurídica</span>
+              </label>
+              <label class="cko-checkbox">
+                <input type="checkbox" id="ckoSameBilling" checked />
+                <span>Mis datos de facturación y entrega son los mismos</span>
+              </label>
+            </div>
+            <div id="storePrescriptionBlock" class="cko-card cko-prescription" hidden>
+              <h3 class="cko-card-title">Receta médica requerida</h3>
+              <p class="cko-card-text">Tu pedido incluye medicamento que requiere receta médica. Adjunta tu receta para validación antes de completar la compra.</p>
+              <ul class="cko-prescription-list" id="storePrescriptionProductList"></ul>
+              <label class="cko-field cko-upload">
+                <span>Adjuntar receta (imagen o PDF)</span>
+                <input type="file" id="storePrescriptionFile" accept="image/*,.pdf,application/pdf" />
+              </label>
+              <p class="cko-file-name" id="storePrescriptionFileName" hidden></p>
+              <label class="cko-field">
+                <span>Notas para validación</span>
+                <textarea id="storePrescriptionNotes" rows="2" placeholder="Opcional"></textarea>
+              </label>
+              <p class="cko-status" id="storePrescriptionStatus">Receta pendiente de revisión</p>
+              <p class="cko-hint">La farmacia revisará la receta antes de confirmar el surtido.</p>
+              <p class="cko-error" id="storePrescriptionError" hidden>Adjunta receta médica para continuar.</p>
+            </div>
+            <button class="cko-btn cko-btn-primary cko-step-btn" type="button" id="ckoStep2Next">Continuar para el pago</button>
+          </div>
+
+          <div class="cko-step-content" id="ckoStepPayment" hidden>
+            <div class="cko-card" id="ckoSummaryCard">
+              <h3 class="cko-card-title">Resumen de datos</h3>
+              <div class="cko-summary-data">
+                <div class="cko-summary-data-row"><span>Email</span><span id="ckoConfirmEmail"></span></div>
+                <div class="cko-summary-data-row"><span>Dirección</span><span id="ckoConfirmAddress"></span></div>
+                <div class="cko-summary-data-row"><span>Envío</span><span id="ckoConfirmShipping"></span></div>
+              </div>
+              <button class="cko-edit-link" type="button" id="ckoEditDelivery">Agregar</button>
+            </div>
+            <div class="cko-card">
+              <h3 class="cko-card-title">Opción de pago</h3>
+              <div class="cko-payment-options">
+                <label class="cko-payment-option" data-payment="Tarjeta">
+                  <input type="radio" name="ckoPayment" value="Tarjeta" />
+                  <span class="cko-payment-opt-radio"></span>
+                  <span class="cko-payment-opt-label">Tarjeta de crédito o débito</span>
+                  <span class="cko-payment-opt-arrow">→</span>
+                </label>
+                <div class="cko-payment-detail" data-payment-detail="Tarjeta" hidden>
+                  <div class="cko-payment-detail-inner">
+                    <p class="cko-payment-detail-note">Pasarela de pago segura (futura implementación)</p>
+                    <div class="cko-field-row">
+                      <label class="cko-field"><span>Número de tarjeta</span><input type="text" placeholder="0000 0000 0000 0000" disabled /></label>
+                    </div>
+                    <div class="cko-field-row cko-field-row--2">
+                      <label class="cko-field"><span>Titular</span><input type="text" placeholder="Como aparece en la tarjeta" disabled /></label>
+                      <label class="cko-field"><span>Vencimiento</span><input type="text" placeholder="MM/AA" disabled /></label>
+                    </div>
+                    <div class="cko-field-row cko-field-row--2">
+                      <label class="cko-field"><span>CVV</span><input type="text" placeholder="123" disabled /></label>
+                      <label class="cko-field"><span>Teléfono</span><input type="text" placeholder="5512345678" disabled /></label>
+                    </div>
+                  </div>
+                </div>
+                <label class="cko-payment-option" data-payment="Efectivo">
+                  <input type="radio" name="ckoPayment" value="Efectivo" />
+                  <span class="cko-payment-opt-radio"></span>
+                  <span class="cko-payment-opt-label">Efectivo</span>
+                  <span class="cko-payment-opt-arrow">→</span>
+                </label>
+                <div class="cko-payment-detail" data-payment-detail="Efectivo" hidden>
+                  <div class="cko-payment-detail-inner">
+                    <div class="cko-field-row">
+                      <label class="cko-field"><span>¿Dónde quieres pagar?</span>
+                        <select>
+                          <option value="">Selecciona</option>
+                          <option>Oxxo</option>
+                          <option>Farmacia</option>
+                          <option>Contra entrega</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p class="cko-payment-detail-note">Recibirás un código de pago para realizar tu depósito en efectivo.</p>
+                  </div>
+                </div>
+                <label class="cko-payment-option" data-payment="Transferencia">
+                  <input type="radio" name="ckoPayment" value="Transferencia" />
+                  <span class="cko-payment-opt-radio"></span>
+                  <span class="cko-payment-opt-label">Transferencia</span>
+                  <span class="cko-payment-opt-arrow">→</span>
+                </label>
+                <div class="cko-payment-detail" data-payment-detail="Transferencia" hidden>
+                  <div class="cko-payment-detail-inner">
+                    <p class="cko-payment-detail-note">Recibirás los datos de transferencia al confirmar tu pedido.</p>
+                  </div>
+                </div>
+                <label class="cko-payment-option" data-payment="Mercado Pago">
+                  <input type="radio" name="ckoPayment" value="Mercado Pago" />
+                  <span class="cko-payment-opt-radio"></span>
+                  <span class="cko-payment-opt-label">Mercado Pago</span>
+                  <span class="cko-payment-opt-arrow">→</span>
+                </label>
+                <div class="cko-payment-detail" data-payment-detail="Mercado Pago" hidden>
+                  <div class="cko-payment-detail-inner">
+                    <p class="cko-payment-detail-note">Te enviaremos a la pasarela de Mercado Pago al confirmar tu pedido.</p>
+                  </div>
+                </div>
+                <label class="cko-payment-option" data-payment="Clip">
+                  <input type="radio" name="ckoPayment" value="Clip" />
+                  <span class="cko-payment-opt-radio"></span>
+                  <span class="cko-payment-opt-label">Clip</span>
+                  <span class="cko-payment-opt-arrow">→</span>
+                </label>
+                <div class="cko-payment-detail" data-payment-detail="Clip" hidden>
+                  <div class="cko-payment-detail-inner">
+                    <p class="cko-payment-detail-note">Te enviaremos a la pasarela de Clip al confirmar tu pedido.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button class="cko-btn cko-btn-primary cko-step-btn cko-submit-btn" type="button" id="storeCheckoutSubmitButton">Realizar pedido</button>
+          </div>
+        </div>
+
+        <div class="cko-right">
+          <div class="cko-summary">
+            <h3 class="cko-summary-title">Resumen del pedido</h3>
+            <div class="cko-summary-items" id="storeCartList"></div>
+            <div class="cko-summary-totals">
+              <div class="cko-summary-row"><span>Subtotal</span><strong id="storeCheckoutSubtotal">$0</strong></div>
+              <div class="cko-summary-row"><span>Envío</span><strong id="storeCheckoutShipping">Gratis</strong></div>
+              <div class="cko-summary-row cko-summary-row--total"><span>Total</span><strong id="storeCheckoutTotal">$0</strong></div>
+            </div>
+            <div class="cko-coupon">
+              <span class="cko-coupon-icon">🏷️</span>
+              <span>Agregar cupón de descuento</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    tienda.appendChild(checkoutSection);
+    cartAside?.remove();
+    tienda.querySelector(".store-layout")?.remove();
+  }
+
+  syncStoreCheckoutElements();
+}
+
+function syncStoreCheckoutElements() {
+  elements.storeCartList = document.getElementById("storeCartList");
+  elements.storeCheckoutForm = document.getElementById("storeCheckoutForm");
+  elements.storeSubtotal = document.getElementById("storeSubtotal");
+  elements.storeShipping = document.getElementById("storeShipping");
+  elements.storeTotal = document.getElementById("storeTotal");
+  elements.clearStoreCartButton = document.getElementById("clearStoreCartButton");
+  elements.storeCustomer = document.getElementById("storeCustomer");
+  elements.storeDeliveryType = document.getElementById("storeDeliveryType");
+  elements.storeAddress = document.getElementById("storeAddress");
+  elements.storePaymentMethod = document.getElementById("storePaymentMethod");
+  if (!elements.storePaymentMethod) {
+    const hidden = document.createElement("select");
+    hidden.id = "storePaymentMethod";
+    hidden.hidden = true;
+    document.getElementById("tienda")?.appendChild(hidden);
+    elements.storePaymentMethod = hidden;
+  }
+}
+
+function getCheckoutPaymentValue() {
+  const checked = document.querySelector('input[name="ckoPayment"]:checked');
+  return checked ? checked.value : "Pendiente";
+}
+
+function productRequiresPrescription(product) {
+  if (!product) return false;
+  if (product.requiresRecipe === true) return true;
+  if (product.requiresPrescription === true) return true;
+  if (product.requiresReceta === true) return true;
+  const typeText = `${product.type || ""} ${product.classification || ""}`.toLowerCase();
+  if (/receta|controlado|requiere receta/.test(typeText)) return true;
+  if (classificationRequiresRecipe(product.type)) return true;
+  const classification = state.classifications.find(
+    (item) => item.id === product.classificationId || item.name === product.type,
+  );
+  if (classification && /receta|controlado/i.test(String(classification.name || ""))) return true;
+  return false;
+}
+
+function getCartPrescriptionProducts() {
+  const seen = new Set();
+  return state.storeCart
+    .map((item) => getProduct(item.productId))
+    .filter((product) => {
+      if (!product || seen.has(product.id)) return false;
+      if (!productRequiresPrescription(product)) return false;
+      seen.add(product.id);
+      return true;
+    });
+}
+
+function cartRequiresPrescription() {
+  return getCartPrescriptionProducts().length > 0;
+}
+
+function canCompleteStoreCheckout() {
+  if (!cartRequiresPrescription()) return true;
+  return Boolean(state.storePrescriptionUpload?.attached);
+}
+
+function resetStorePrescriptionUpload() {
+  state.storePrescriptionUpload = {
+    attached: false,
+    fileName: "",
+    fileType: "",
+    notes: "",
+    file: null,
+  };
+  const fileInput = document.getElementById("storePrescriptionFile");
+  const notesInput = document.getElementById("storePrescriptionNotes");
+  if (fileInput) fileInput.value = "";
+  if (notesInput) notesInput.value = "";
+}
+
+function renderStoreCartLine(item, product) {
+  const initials = (product.name || "?")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase();
+  const imageHtml = product.imageUrl
+    ? `<img src="${escapeHTML(product.imageUrl)}" alt="${escapeHTML(product.name)}" />`
+    : `<span class="cko-item-img-placeholder">${escapeHTML(initials)}</span>`;
+  const recipeBadge = productRequiresPrescription(product)
+    ? '<span class="cko-recipe-badge">Requiere receta</span>'
+    : "";
+  return `
+    <div class="cko-item">
+      <div class="cko-item-img">${imageHtml}</div>
+      <div class="cko-item-body">
+        ${recipeBadge}
+        <strong class="cko-item-name">${escapeHTML(product.name)}</strong>
+        <span class="cko-item-qty">${item.quantity} × ${currency.format(product.price)}</span>
+      </div>
+      <div class="cko-item-total">${currency.format(product.price * item.quantity)}</div>
+      <button class="cko-item-remove" type="button" data-action="remove-store-item" data-id="${item.lineId}" aria-label="Quitar">×</button>
+    </div>
+  `;
+}
+
+function renderStorePrescriptionCheckout() {
+  const block = document.getElementById("storePrescriptionBlock");
+  const list = document.getElementById("storePrescriptionProductList");
+  const status = document.getElementById("storePrescriptionStatus");
+  const error = document.getElementById("storePrescriptionError");
+  const fileName = document.getElementById("storePrescriptionFileName");
+  const submitBtn = document.getElementById("storeCheckoutSubmitButton");
+  const prescriptionProducts = getCartPrescriptionProducts();
+  const needsPrescription = prescriptionProducts.length > 0;
+
+  if (block) block.hidden = !needsPrescription;
+  if (list) {
+    list.innerHTML = needsPrescription
+      ? prescriptionProducts.map((product) => `<li>${escapeHTML(product.name)}</li>`).join("")
+      : "";
+  }
+
+  const attached = Boolean(state.storePrescriptionUpload?.attached);
+  if (status) {
+    status.textContent = attached
+      ? "Receta adjunta · pendiente de revisión"
+      : "Receta pendiente de revisión";
+    status.classList.toggle("is-attached", attached);
+  }
+  if (fileName) {
+    fileName.hidden = !attached;
+    fileName.textContent = attached ? `Archivo: ${state.storePrescriptionUpload.fileName}` : "";
+  }
+  if (error) error.hidden = !needsPrescription || attached;
+  if (submitBtn) {
+    if (state.storeCart.length === 0) {
+      submitBtn.disabled = true;
+    } else {
+      submitBtn.disabled = needsPrescription && !attached;
+    }
+    submitBtn.hidden = state.storeCheckoutStep !== "payment";
+  }
+  const step2Btn = document.getElementById("ckoStep2Next");
+  if (step2Btn) {
+    step2Btn.disabled = needsPrescription && !attached;
+  }
+}
+
+function syncPaymentMethodSelect() {
+  const checked = document.querySelector('input[name="ckoPayment"]:checked');
+  const select = document.getElementById("storePaymentMethod");
+  if (checked && select) select.value = checked.value;
+}
+
+function handleStorePrescriptionFileChange(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    state.storePrescriptionUpload.attached = false;
+    state.storePrescriptionUpload.fileName = "";
+    state.storePrescriptionUpload.fileType = "";
+    state.storePrescriptionUpload.file = null;
+    renderStorePrescriptionCheckout();
+    return;
+  }
+  const allowed = file.type.startsWith("image/") || file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+  if (!allowed) {
+    event.target.value = "";
+    showToast("Adjunta una imagen o PDF");
+    return;
+  }
+  state.storePrescriptionUpload.attached = true;
+  state.storePrescriptionUpload.fileName = file.name;
+  state.storePrescriptionUpload.fileType = file.type;
+  state.storePrescriptionUpload.file = file;
+  renderStorePrescriptionCheckout();
+}
+
+function handleStorePrescriptionNotesInput(event) {
+  state.storePrescriptionUpload.notes = event.target.value.trim();
+}
+
+function toggleQuickCartDrawer(forceOpen) {
+  const drawer = document.getElementById("storeQuickCartDrawer");
+  if (!drawer) return;
+  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : drawer.hidden;
+  drawer.hidden = !shouldOpen;
+  state.storeQuickCartOpen = shouldOpen;
+  if (shouldOpen) renderStoreCart();
+}
+
+function closeQuickCartDrawer() {
+  toggleQuickCartDrawer(false);
+}
+
+function goToCheckoutStep(step) {
+  state.storeCheckoutStep = step;
+  renderCheckoutStep();
+  scrollCheckoutTop();
+}
+
+function scrollCheckoutTop() {
+  const checkout = document.getElementById("storeCartSection");
+  if (!checkout || checkout.hidden) return;
+  const topbar = checkout.querySelector(".cko-topbar");
+  if (topbar) topbar.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderCheckoutStep() {
+  const step = state.storeCheckoutStep || "cart";
+  const steps = ["cart", "delivery", "payment"];
+  const stepIndex = steps.indexOf(step);
+  const stepEls = document.querySelectorAll("[data-cko-step]");
+  const lines = [document.getElementById("ckoStepLine1"), document.getElementById("ckoStepLine2")];
+  const contents = ["ckoStepCart", "ckoStepDelivery", "ckoStepPayment"].map((id) => document.getElementById(id));
+
+  stepEls.forEach((el, i) => {
+    el.classList.toggle("is-active", i === stepIndex);
+    el.classList.toggle("is-done", i < stepIndex);
+  });
+  if (lines[0]) lines[0].classList.toggle("is-done", stepIndex >= 1);
+  if (lines[1]) lines[1].classList.toggle("is-done", stepIndex >= 2);
+  contents.forEach((el, i) => {
+    if (el) el.hidden = i !== stepIndex;
+  });
+
+  const submitBtn = document.getElementById("storeCheckoutSubmitButton");
+  if (step === "payment" && submitBtn) {
+    submitBtn.hidden = false;
+  } else if (submitBtn) {
+    submitBtn.hidden = true;
+  }
+
+  renderStorePrescriptionCheckout();
+  if (step === "payment") renderPaymentSummary();
+}
+
+function handleCheckoutStep1Next() {
+  if (!state.storeCart.length) return;
+  goToCheckoutStep("delivery");
+}
+
+function handleCheckoutStep2Next() {
+  if (!state.storeCart.length) return;
+  if (cartRequiresPrescription() && !Boolean(state.storePrescriptionUpload?.attached)) {
+    renderStorePrescriptionCheckout();
+    const error = document.getElementById("storePrescriptionError");
+    if (error) error.hidden = false;
+    showToast("Adjunta receta médica para continuar.");
+    return;
+  }
+  goToCheckoutStep("payment");
+}
+
+function renderPaymentSummary() {
+  const email = document.getElementById("ckoConfirmEmail");
+  const addr = document.getElementById("ckoConfirmAddress");
+  const ship = document.getElementById("ckoConfirmShipping");
+  if (email) {
+    const input = document.getElementById("ckoContactEmail");
+    email.textContent = input?.value?.trim() || "No proporcionado";
+  }
+  if (addr) {
+    const street = document.getElementById("ckoDelStreet")?.value || "";
+    const ext = document.getElementById("ckoDelExt")?.value || "";
+    const col = document.getElementById("ckoDelColonia")?.value || "";
+    const city = document.getElementById("ckoDelCity")?.value || "";
+    addr.textContent = [street, ext, col, city].filter(Boolean).join(", ") || "No proporcionada";
+  }
+  if (ship) {
+    const type = document.getElementById("storeDeliveryType");
+    ship.textContent = type?.value || "Local";
+  }
+}
+
+function handlePaymentRadioChange(value) {
+  document.querySelectorAll(".cko-payment-detail").forEach((el) => {
+    el.hidden = el.dataset.paymentDetail !== value;
+  });
+  const select = document.getElementById("storePaymentMethod");
+  if (select) select.value = value;
+}
+
+function openStoreCheckoutSection() {
+  closeQuickCartDrawer();
+  const checkout = document.getElementById("storeCartSection");
+  if (!checkout) return;
+  const tienda = document.getElementById("tienda");
+  if (tienda) tienda.classList.add("store-checkout-mode");
+  checkout.hidden = false;
+  const brandEl = document.getElementById("ckoBrandName");
+  if (brandEl) brandEl.textContent = getStoreBrandLabel();
+  state.storeCheckoutStep = "cart";
+  renderStoreCart();
+  renderCheckoutStep();
+  const topbar = checkout.querySelector(".cko-topbar");
+  if (topbar) topbar.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeStoreCheckoutSection() {
+  const checkout = document.getElementById("storeCartSection");
+  if (checkout) checkout.hidden = true;
+  const tienda = document.getElementById("tienda");
+  if (tienda) tienda.classList.remove("store-checkout-mode");
+  scrollStoreSection("catalog");
+}
+
+function renderStoreProductCard(product, options = {}) {
+  const featured = Boolean(options.featured);
+  const initials = (product.name || "?")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+  const offerBadge =
+    featured && product.stock > 0 ? '<span class="store-product-offer">Oferta</span>' : "";
+  return `
+    <article class="product-card store-product-card${featured ? " store-product-card--featured" : ""}">
+      ${offerBadge}
+      <div class="product-visual store-product-visual">
+        ${product.imageUrl ? `<img src="${escapeHTML(product.imageUrl)}" alt="${escapeHTML(product.name)}" loading="lazy" />` : `<span class="store-product-placeholder">${escapeHTML(initials)}</span>`}
+      </div>
+      <div class="store-product-body">
+        ${featured ? "" : `<p class="product-category">${escapeHTML(product.category)}</p>`}
+        <h3>${escapeHTML(product.name)}</h3>
+        ${featured ? "" : `<p class="store-product-description">${escapeHTML(product.description)}</p>`}
+        <p class="store-product-price">${currency.format(product.price)}</p>
+        <p class="store-product-stock">${product.stock > 0 ? "Envío disponible" : "Sin stock"}</p>
+      </div>
+      <div class="product-actions store-product-actions">
+        <button class="primary-button small" type="button" data-action="add-store-item" data-id="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>
+          Agregar
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function injectStorefrontStyles() {
+  let style = document.getElementById("storefront-polish-styles");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "storefront-polish-styles";
+    document.head.appendChild(style);
+  }
+  style.textContent = `
+    #tienda { --store-header: var(--master-blue-text); --store-accent: var(--master-blue); }
+    #tienda .storefront { background: var(--master-bg); margin: -28px -32px 0; }
+    #tienda .store-header-bar { display: grid; grid-template-columns: minmax(110px, 150px) minmax(240px, 1fr) auto auto; align-items: center; gap: 16px; padding: 14px 40px; min-height: 72px; background: var(--store-header); border-bottom: 0; }
+    #tienda .store-brand { display: flex; align-items: center; min-height: 40px; padding: 0 12px; border: 1px solid var(--master-border); border-radius: var(--radius-input); background: var(--master-blue-soft); }
+    #tienda .store-brand-text { color: var(--master-card); font-size: 0.95rem; font-weight: 700; }
+    #tienda .store-search-bar { border: 0; background: var(--master-card); border-radius: var(--radius-input); min-height: 44px; }
+    #tienda .store-search-bar input { text-align: left; padding-left: 16px; font-size: 0.92rem; font-weight: 500; }
+    #tienda .store-search-bar button { color: var(--store-header); font-size: 1.1rem; }
+    #tienda .store-icon-button, #tienda .store-cart-link { color: var(--master-card); font-size: 0.88rem; font-weight: 600; }
+    #tienda .storefront-subnav { display: flex; flex-wrap: wrap; gap: 6px 20px; justify-content: center; padding: 10px 40px; background: var(--master-card); border-bottom: 1px solid var(--master-border); }
+    #tienda .storefront-subnav button { border: 0; background: transparent; color: var(--master-text); font-size: 0.86rem; font-weight: 600; padding: 6px 0; }
+    #tienda .storefront-subnav button:hover { color: var(--master-blue-text); }
+    #tienda .store-hero { padding: 20px 40px 10px; }
+    #tienda .store-hero-kicker { margin: 0 0 8px; color: var(--master-muted); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+    #tienda .store-hero-carousel { position: relative; }
+    #tienda .store-hero-track { position: relative; min-height: 220px; border-radius: var(--radius-card); overflow: hidden; background: linear-gradient(135deg, var(--master-blue-soft), var(--master-card)); border: 1px solid var(--master-border); }
+    #tienda .store-hero-slide { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; transition: opacity 320ms ease; color: var(--master-blue-text); font-size: 1.1rem; font-weight: 700; }
+    #tienda .store-hero-slide.is-active { opacity: 1; }
+    #tienda .store-hero-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 36px; height: 36px; border: 0; border-radius: var(--radius-btn); background: var(--master-card); color: var(--master-blue-text); font-size: 1.4rem; line-height: 1; box-shadow: var(--shadow-soft); cursor: pointer; }
+    #tienda .store-hero-arrow--prev { left: 12px; }
+    #tienda .store-hero-arrow--next { right: 12px; }
+    #tienda .store-hero-dots { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+    #tienda .store-hero-dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: var(--radius-btn); background: var(--master-border); }
+    #tienda .store-hero-dots button.is-active { background: var(--master-blue); }
+    #tienda .store-benefits-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 16px 40px; border: 1px solid var(--master-border); border-radius: var(--radius-card); background: var(--master-card); overflow: hidden; }
+    #tienda .store-benefits-row article { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px; text-align: center; border-right: 1px solid var(--master-border); }
+    #tienda .store-benefits-row article:last-child { border-right: 0; }
+    #tienda .store-benefits-row span { font-size: 1.2rem; }
+    #tienda .store-benefits-row strong { font-size: 0.82rem; color: var(--master-blue-text); }
+    #tienda .store-benefits-row p { margin: 0; font-size: 0.72rem; color: var(--master-muted); }
+    #tienda .store-prescription-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 40px 20px; padding: 16px 20px; border: 1px solid var(--master-border); border-radius: var(--radius-card); background: var(--master-card); }
+    #tienda .store-prescription-copy { display: flex; align-items: center; gap: 14px; }
+    #tienda .store-prescription-icon { font-size: 1.6rem; }
+    #tienda .store-prescription-copy h3 { margin: 0; font-size: 0.95rem; color: var(--master-blue-text); }
+    #tienda .store-prescription-copy p { margin: 2px 0 0; font-size: 0.8rem; color: var(--master-muted); }
+    #tienda .store-prescription-btn { min-height: 40px; border-radius: var(--radius-btn); background: var(--store-header); white-space: nowrap; }
+    #tienda .store-section-heading { margin-bottom: 14px; }
+    #tienda .store-section-heading h2 { margin: 0; color: var(--master-blue-text); font-size: 1.2rem; font-weight: 700; }
+    #tienda .store-categories-section, #tienda .store-promos-section, #tienda .store-products-heading, #tienda .store-catalog-section, #tienda .store-contact-section { padding: 0 40px; margin-bottom: 24px; }
+    #tienda .store-featured-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; padding: 0 40px; }
+    #tienda .store-promo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    #tienda .store-promo-card { display: grid; place-items: center; min-height: 110px; padding: 16px; border-radius: var(--radius-card); background: linear-gradient(135deg, var(--master-blue-soft), var(--master-card)); border: 1px solid var(--master-border); }
+    #tienda .store-promo-card span { color: var(--master-blue-text); font-size: 0.9rem; font-weight: 700; }
+    #tienda .store-category-menu { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    #tienda .store-category-menu button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px; border: 1px solid var(--master-border); border-radius: var(--radius-btn); color: var(--master-text); background: var(--master-card); font-size: 0.82rem; font-weight: 600; }
+    #tienda .store-category-menu button.active { border-color: var(--master-blue); color: var(--master-blue-text); background: var(--master-blue-soft); }
+    #tienda .store-category-menu strong { min-width: 22px; height: 20px; font-size: 0.7rem; color: var(--master-blue-text); background: var(--master-card); border: 1px solid var(--master-border); border-radius: var(--radius-btn); }
+    #tienda .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+    #tienda .product-card { position: relative; display: flex; flex-direction: column; min-height: 280px; padding: 12px; border: 1px solid var(--master-border); border-radius: var(--radius-card); background: var(--master-card); box-shadow: var(--shadow-soft); }
+    #tienda .store-product-card--featured { min-height: 300px; }
+    #tienda .store-product-offer { position: absolute; top: 10px; left: 10px; z-index: 1; padding: 2px 8px; border-radius: var(--radius-input); color: var(--master-warning-text); background: var(--master-warning-soft); font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+    #tienda .product-visual { width: 100%; height: 120px; margin-bottom: 8px; border-radius: var(--radius-input); background: linear-gradient(180deg, var(--master-blue-soft), var(--master-card)); }
+    #tienda .store-product-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--master-blue-text); font-size: 1.1rem; font-weight: 700; }
+    #tienda .product-visual span { display: none; }
+    #tienda .store-product-body { display: flex; flex: 1; flex-direction: column; gap: 4px; }
+    #tienda .store-product-body h3 { margin: 0; font-size: 0.84rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #tienda .store-product-description { margin: 0; color: var(--master-muted); font-size: 0.76rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #tienda .store-product-price { margin: 4px 0 0; color: var(--master-blue-text); font-size: 1rem; font-weight: 700; }
+    #tienda .store-product-stock { margin: 0; color: var(--master-success-text); font-size: 0.72rem; }
+    #tienda .product-actions { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--master-border); }
+    #tienda .product-actions .primary-button { width: 100%; min-height: 36px; border-radius: var(--radius-btn); background: var(--store-header); font-size: 0.82rem; }
+    #tienda .store-footer { margin-top: 12px; padding: 28px 40px 36px; background: var(--store-header); color: var(--master-card); }
+    #tienda .store-footer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+    #tienda .store-footer h4 { margin: 0 0 8px; color: var(--master-card); font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    #tienda .store-footer p { margin: 0 0 4px; font-size: 0.8rem; line-height: 1.45; color: var(--master-blue-soft); }
+    #tienda .store-footer-brand { display: block; margin-bottom: 6px; color: var(--master-card); font-size: 1rem; }
+    #tienda .store-floating-cart { position: fixed; right: 28px; bottom: 28px; z-index: 40; display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: var(--radius-card); background: var(--store-header); box-shadow: var(--shadow-soft); cursor: pointer; }
+    #tienda .store-floating-cart-icon { font-size: 1.3rem; line-height: 1; }
+    #tienda .store-floating-cart-count { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-btn); color: var(--master-text); background: var(--master-warning-soft); font-size: 0.72rem; font-weight: 700; line-height: 20px; text-align: center; }
+    #tienda .store-quick-cart-drawer { position: fixed; top: 0; right: 0; z-index: 45; display: flex; flex-direction: column; gap: 12px; width: min(360px, calc(100vw - 24px)); height: 100vh; padding: 18px; background: var(--master-card); border-left: 1px solid var(--master-border); box-shadow: var(--shadow-soft); overflow: auto; }
+    #tienda .store-quick-cart-drawer[hidden] { display: none; }
+    #tienda .store-quick-cart-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    #tienda .store-quick-cart-header h3 { margin: 4px 0 0; color: var(--master-blue-text); font-size: 1.05rem; }
+    #tienda .store-quick-cart-list { flex: 1; overflow: auto; }
+    #tienda .store-quick-cart-totals { margin-top: auto; }
+    #tienda .store-quick-checkout-btn { width: 100%; border-radius: var(--radius-btn); background: var(--store-header); }
+
+    #tienda.store-checkout-mode .store-header-bar,
+    #tienda.store-checkout-mode .storefront-subnav,
+    #tienda.store-checkout-mode .store-hero,
+    #tienda.store-checkout-mode .store-benefits-row,
+    #tienda.store-checkout-mode .store-prescription-card,
+    #tienda.store-checkout-mode .store-products-heading,
+    #tienda.store-checkout-mode .store-featured-grid,
+    #tienda.store-checkout-mode .store-categories-section,
+    #tienda.store-checkout-mode #storeCategoriesAnchor,
+    #tienda.store-checkout-mode .store-catalog-section,
+    #tienda.store-checkout-mode .store-promos-section,
+    #tienda.store-checkout-mode .store-contact-section,
+    #tienda.store-checkout-mode .store-footer,
+    #tienda.store-checkout-mode #storeFloatingCart,
+    #tienda.store-checkout-mode #storeQuickCartDrawer { display: none !important; }
+    #tienda.store-checkout-mode .storefront { margin-bottom: 0; padding-bottom: 0; }
+
+    #tienda .store-checkout-section[hidden] { display: none; }
+    #tienda.store-checkout-mode .store-checkout-section { display: block; }
+
+    .cko-topbar { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 14px 32px; }
+    .cko-topbar-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+    .cko-brand { display: flex; align-items: center; gap: 8px; }
+    .cko-brand-icon { font-size: 1.3rem; }
+    .cko-brand-name { font-weight: 700; font-size: 1rem; color: #1e40af; }
+    .cko-back-btn { border: 0; background: none; color: #2563eb; font-size: 0.88rem; font-weight: 600; cursor: pointer; padding: 6px 12px; border-radius: 8px; }
+    .cko-back-btn:hover { background: #f1f5f9; }
+
+    .cko-steps { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 24px 32px 0; max-width: 480px; margin: 0 auto; }
+    .cko-step { display: flex; align-items: center; gap: 6px; }
+    .cko-step-circle { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #e2e8f0; color: #94a3b8; font-size: 0.72rem; font-weight: 700; transition: background 200ms, color 200ms; }
+    .cko-step.is-active .cko-step-circle { background: #2563eb; color: #fff; }
+    .cko-step.is-done .cko-step-circle { background: #16a34a; color: #fff; }
+    .cko-step-label { font-size: 0.78rem; font-weight: 600; color: #94a3b8; transition: color 200ms; }
+    .cko-step.is-active .cko-step-label { color: #1e293b; }
+    .cko-step.is-done .cko-step-label { color: #16a34a; }
+    .cko-step-line { width: 40px; height: 2px; background: #e2e8f0; flex-shrink: 0; }
+    .cko-step-line.is-done { background: #16a34a; }
+
+    .cko-body { max-width: 1200px; margin: 0 auto; padding: 24px 32px 48px; display: grid; grid-template-columns: 1fr 380px; gap: 32px; align-items: start; }
+
+    .cko-left { display: flex; flex-direction: column; gap: 20px; }
+    .cko-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+    .cko-card-title { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: #0f172a; }
+    .cko-card-text { margin: 0 0 16px; font-size: 0.88rem; color: #64748b; line-height: 1.5; }
+    .cko-auth-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .cko-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 18px; border-radius: 10px; font-size: 0.88rem; font-weight: 600; cursor: pointer; border: 0; transition: background 120ms, box-shadow 120ms; }
+    .cko-btn-outline { border: 1px solid #d1d5db; background: #fff; color: #374151; }
+    .cko-btn-outline:hover { background: #f9fafb; border-color: #9ca3af; }
+    .cko-btn-primary { background: #2563eb; color: #fff; }
+    .cko-btn-primary:hover { background: #1d4ed8; }
+    .cko-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+    .cko-submit-btn { width: 100%; min-height: 48px; font-size: 1rem; margin-top: 4px; }
+    .cko-submit-btn:disabled { background: #94a3b8; }
+
+    .cko-contact-divider { display: flex; align-items: center; gap: 12px; margin: 14px 0; }
+    .cko-contact-divider::before,
+    .cko-contact-divider::after { content: ""; flex: 1; height: 1px; background: #e2e8f0; }
+    .cko-contact-divider span { font-size: 0.78rem; color: #94a3b8; white-space: nowrap; }
+
+    .cko-field { display: grid; gap: 6px; font-size: 0.84rem; font-weight: 600; color: #334155; }
+    .cko-opt { font-weight: 400; color: #94a3b8; font-size: 0.78rem; }
+    .cko-field input[type="text"],
+    .cko-field input[type="email"],
+    .cko-field select,
+    .cko-field textarea { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 0.88rem; color: #0f172a; background: #fff; font-weight: 500; }
+    .cko-field input:focus,
+    .cko-field select:focus,
+    .cko-field textarea:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .cko-field-row { display: grid; gap: 14px; }
+    .cko-field-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cko-field-row--sm label { font-size: 0.78rem; font-weight: 500; color: #64748b; }
+    .cko-field-row--sm select { font-size: 0.82rem; padding: 8px 10px; }
+
+    .cko-payment-options { display: grid; gap: 6px; }
+    .cko-payment-option { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer; transition: border-color 150ms, background 150ms, box-shadow 150ms; }
+    .cko-payment-option:hover { border-color: #94a3b8; background: #f8fafc; }
+    .cko-payment-option:has(input:checked) { border-color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 1px #2563eb; }
+    .cko-payment-option input[type="radio"] { display: none; }
+    .cko-payment-option input[type="radio"]:checked + .cko-payment-opt-radio { border-color: #2563eb; background: #2563eb; }
+    .cko-payment-option input[type="radio"]:checked + .cko-payment-opt-radio::after { transform: scale(1); }
+    .cko-payment-option input[type="radio"]:checked ~ .cko-payment-opt-label { color: #1e40af; font-weight: 700; }
+    .cko-payment-option input[type="radio"]:checked ~ .cko-payment-opt-arrow { opacity: 1; transform: translateX(0); }
+    .cko-payment-opt-radio { display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid #d1d5db; border-radius: 50%; flex-shrink: 0; transition: border-color 150ms, background 150ms; }
+    .cko-payment-opt-radio::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #fff; transform: scale(0); transition: transform 150ms; }
+    .cko-payment-opt-label { flex: 1; font-size: 0.9rem; color: #334155; }
+    .cko-payment-opt-arrow { font-size: 1rem; color: #2563eb; opacity: 0; transform: translateX(-4px); transition: opacity 150ms, transform 150ms; }
+
+    .cko-prescription { border-color: #fbbf24; background: #fffbeb; }
+    .cko-prescription-list { margin: 0 0 14px; padding-left: 20px; font-size: 0.84rem; color: #92400e; }
+    .cko-prescription-list li { margin-bottom: 4px; }
+    .cko-upload input[type="file"] { margin-top: 4px; font-size: 0.84rem; }
+    .cko-file-name { margin: 4px 0 0; font-size: 0.82rem; color: #16a34a; font-weight: 600; }
+    .cko-status { margin: 10px 0 0; font-size: 0.84rem; font-weight: 600; color: #d97706; }
+    .cko-status.is-attached { color: #16a34a; }
+    .cko-hint { margin: 4px 0 0; font-size: 0.78rem; color: #94a3b8; }
+    .cko-error { margin: 8px 0 0; font-size: 0.84rem; font-weight: 600; color: #dc2626; }
+
+    .cko-right { position: sticky; top: 24px; }
+    .cko-summary { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+    .cko-summary-title { margin: 0 0 16px; font-size: 1rem; font-weight: 700; color: #0f172a; }
+    .cko-summary-items { display: flex; flex-direction: column; gap: 12px; }
+
+    .cko-item { display: grid; grid-template-columns: 48px 1fr auto; gap: 12px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; position: relative; }
+    .cko-item:last-child { border-bottom: 0; padding-bottom: 0; }
+    .cko-item-img { width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: #f1f5f9; flex-shrink: 0; }
+    .cko-item-img img { width: 100%; height: 100%; object-fit: contain; }
+    .cko-item-img-placeholder { display: grid; place-items: center; width: 100%; height: 100%; font-size: 0.72rem; font-weight: 700; color: #94a3b8; }
+    .cko-item-body { min-width: 0; }
+    .cko-item-name { display: block; font-size: 0.84rem; font-weight: 600; color: #0f172a; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .cko-item-qty { display: block; margin-top: 2px; font-size: 0.78rem; color: #64748b; }
+    .cko-item-total { font-size: 0.88rem; font-weight: 700; color: #0f172a; white-space: nowrap; }
+    .cko-item-remove { position: absolute; top: 0; right: 0; border: 0; background: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; padding: 2px; line-height: 1; }
+    .cko-item-remove:hover { color: #ef4444; }
+    .cko-recipe-badge { display: inline-flex; margin-bottom: 3px; padding: 1px 7px; border-radius: 6px; color: #92400e; background: #fffbeb; font-size: 0.64rem; font-weight: 700; text-transform: uppercase; }
+
+    .cko-summary-totals { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: grid; gap: 6px; }
+    .cko-summary-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; color: #475569; }
+    .cko-summary-row strong { font-weight: 600; color: #0f172a; }
+    .cko-summary-row--total { font-size: 1.05rem; font-weight: 700; padding-top: 6px; border-top: 1px solid #e2e8f0; margin-top: 2px; }
+    .cko-summary-row--total strong { font-weight: 800; color: #1e40af; }
+
+    .cko-coupon { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 12px; border: 1px dashed #d1d5db; border-radius: 10px; color: #64748b; font-size: 0.84rem; cursor: pointer; }
+    .cko-coupon:hover { border-color: #2563eb; color: #2563eb; background: #f8fafc; }
+    .cko-coupon-icon { font-size: 1rem; }
+
+    #tienda #storeCheckoutSubmitButton:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .cko-step-content { display: flex; flex-direction: column; gap: 20px; }
+    .cko-step-content[hidden] { display: none; }
+    .cko-step-btn { width: 100%; min-height: 48px; font-size: 1rem; }
+    .cko-step-btn:disabled { opacity: 0.4; cursor: not-allowed; background: #94a3b8; }
+    .cko-checkbox { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0; font-size: 0.84rem; color: #475569; cursor: pointer; }
+    .cko-checkbox input[type="checkbox"] { width: 18px; height: 18px; margin-top: 1px; accent-color: #2563eb; flex-shrink: 0; }
+    .cko-checkbox--inline { display: inline-flex; margin: 0; align-items: center; }
+    .cko-cp-field { position: relative; }
+    .cko-cp-link { display: block; margin-top: 4px; font-size: 0.78rem; color: #2563eb; text-decoration: none; }
+    .cko-cp-link:hover { text-decoration: underline; }
+    .cko-field-row--num { display: flex; gap: 10px; align-items: flex-end; }
+    .cko-field-row--num .cko-field { flex: 1; }
+    .cko-delivery-summary { margin-top: 10px; padding: 10px 12px; background: #f8fafc; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .cko-delivery-summary-line { font-size: 0.84rem; color: #0f172a; font-weight: 600; }
+    .cko-delivery-change-btn { border: 0; background: none; color: #2563eb; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .cko-delivery-change-btn:hover { text-decoration: underline; }
+
+    .cko-payment-detail { margin: -4px 0 6px; }
+    .cko-payment-detail-inner { padding: 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+    .cko-payment-detail-note { margin: 0 0 10px; font-size: 0.82rem; color: #64748b; }
+    .cko-payment-detail-inner .cko-field { font-weight: 500; color: #64748b; }
+    .cko-payment-detail-inner .cko-field input:disabled { background: #f1f5f9; color: #94a3b8; }
+
+    .cko-summary-data { display: grid; gap: 8px; margin-bottom: 10px; }
+    .cko-summary-data-row { display: flex; justify-content: space-between; font-size: 0.84rem; color: #475569; }
+    .cko-summary-data-row span:first-child { font-weight: 600; color: #334155; }
+    .cko-summary-data-row span:last-child { text-align: right; max-width: 60%; }
+    .cko-edit-link { border: 0; background: none; color: #2563eb; font-size: 0.82rem; font-weight: 600; cursor: pointer; padding: 0; }
+    .cko-edit-link:hover { text-decoration: underline; }
+
+    @media (max-width: 960px) {
+      .cko-body { grid-template-columns: 1fr; }
+      .cko-steps { padding: 20px 16px 0; }
+      .cko-body { padding: 16px 16px 32px; }
+      .cko-topbar { padding: 10px 16px; }
+      .cko-field-row--2 { grid-template-columns: 1fr; }
+      .cko-right { position: static; }
+      #tienda .store-header-bar, #tienda .storefront-subnav, #tienda .store-hero, #tienda .store-benefits-row, #tienda .store-prescription-card, #tienda .store-featured-grid, #tienda .store-categories-section, #tienda .store-catalog-section, #tienda .store-promos-section, #tienda .store-contact-section, #tienda .store-footer { padding-left: 16px; padding-right: 16px; margin-left: 0; margin-right: 0; }
+      #tienda .store-benefits-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #tienda .store-benefits-row article { border-bottom: 1px solid var(--master-border); }
+      #tienda .store-featured-grid, #tienda .store-promo-grid, #tienda .store-footer-grid { grid-template-columns: 1fr; }
+      #tienda .store-prescription-card { flex-direction: column; align-items: stretch; }
+      #tienda .store-hero-track { min-height: 180px; }
+      #tienda .store-quick-cart-drawer { width: min(100vw, 360px); }
+    }
+  `;
+}
+
 function isProductVisibleInPublicStore(product) {
   if (!product) return false;
   if (product.deleted === true || product.eliminado === true) return false;
@@ -8261,91 +9528,105 @@ function isProductVisibleInPublicStore(product) {
 }
 
 function renderStore() {
-  const categoryNames = [
-    "Todas",
-    ...new Set(
-      state.products
-        .filter(isProductVisibleInPublicStore)
-        .map((product) => product.category)
-        .filter(Boolean),
-    ),
+  ensureStorefrontStructure();
+  injectStorefrontStyles();
+
+  const brand = document.querySelector("#storeBrandMark .store-brand-text");
+  if (brand) brand.textContent = getStoreBrandLabel();
+
+  const footerBrand = document.getElementById("storeFooterBrand");
+  if (footerBrand) footerBrand.textContent = getStoreBrandLabel();
+
+  const visibleProducts = state.products.filter(isProductVisibleInPublicStore);
+  const categories = [
+    ...new Set(visibleProducts.map((product) => product.category).filter(Boolean)),
   ];
-  const categories = categoryNames;
+
+  if (state.storeCategory && !categories.includes(state.storeCategory)) {
+    state.storeCategory = "";
+  }
+
   elements.storeCategory.innerHTML = categories
     .map((category) => `<option value="${escapeHTML(category)}">${escapeHTML(category)}</option>`)
     .join("");
-  elements.storeCategory.value = state.storeCategory;
-  elements.storeCategoryMenu.innerHTML = categories
-    .map((category) => {
-      const count =
-        category === "Todas"
-          ? state.products.filter(isProductVisibleInPublicStore).length
-          : state.products.filter((product) => isProductVisibleInPublicStore(product) && product.category === category).length;
-      return `
-        <button class="${category === state.storeCategory ? "active" : ""}" type="button" data-category="${escapeHTML(category)}">
-          <span>${escapeHTML(category)}</span>
-          <strong>${count}</strong>
-        </button>
-      `;
-    })
-    .join("");
+  if (state.storeCategory) elements.storeCategory.value = state.storeCategory;
 
-  const products = state.products.filter((product) => {
-    const matchesCategory = state.storeCategory === "Todas" || product.category === state.storeCategory;
+  elements.storeCategoryMenu.innerHTML = categories.length
+    ? categories
+        .map((category) => {
+          const count = visibleProducts.filter((product) => product.category === category).length;
+          return `
+            <button class="${category === state.storeCategory ? "active" : ""}" type="button" data-category="${escapeHTML(category)}">
+              <span>${escapeHTML(category)}</span>
+              <strong>${count}</strong>
+            </button>
+          `;
+        })
+        .join("")
+    : emptyState("Sin categorías disponibles.");
+
+  const catalogProducts = visibleProducts.filter((product) => {
+    const matchesCategory = !state.storeCategory || product.category === state.storeCategory;
     const text = `${product.sku || ""} ${product.name} ${product.category} ${product.description}`.toLowerCase();
-    return isProductVisibleInPublicStore(product) && matchesCategory && text.includes(state.storeQuery);
+    return matchesCategory && text.includes(state.storeQuery);
   });
 
-  elements.storeProductGrid.innerHTML = products.length
-    ? products
-        .map(
-          (product) => `
-            <article class="product-card">
-              <div class="product-visual">
-                ${product.imageUrl ? `<img src="${escapeHTML(product.imageUrl)}" alt="${escapeHTML(product.name)}" loading="lazy" />` : ""}
-                <span>${escapeHTML(product.type)}</span>
-              </div>
-              <div>
-                <p class="product-category">${escapeHTML(product.category)}</p>
-                <h3>${escapeHTML(product.name)}</h3>
-                <p>${escapeHTML(product.description)}</p>
-                <p>Precio: ${currency.format(product.price)}</p>
-                <p>Stock: ${product.stock}</p>
-              </div>
-              <div class="product-actions">
-                <strong>Cantidad 1</strong>
-                <button class="primary-button small" type="button" data-action="add-store-item" data-id="${product.id}" ${product.stock <= 0 ? "disabled" : ""}>
-                  Agregar al carrito
-                </button>
-                <button class="ghost-button small" type="button">♡ Favoritos</button>
-              </div>
-            </article>
-          `,
-        )
-        .join("")
+  const featuredProducts = visibleProducts.filter((product) => product.stock > 0).slice(0, 5);
+  const featuredGrid = document.getElementById("storeFeaturedGrid");
+  if (featuredGrid) {
+    featuredGrid.innerHTML = featuredProducts.length
+      ? featuredProducts.map((product) => renderStoreProductCard(product, { featured: true })).join("")
+      : emptyState("Sin productos destacados.");
+  }
+
+  elements.storeProductGrid.innerHTML = catalogProducts.length
+    ? catalogProducts.map((product) => renderStoreProductCard(product)).join("")
     : emptyState("No hay productos disponibles.");
 
+  const phone = state.settings?.pharmacy?.phone || state.settings?.businessPhone || "";
+  const whatsapp = state.settings?.pharmacy?.whatsapp || state.settings?.businessPhone || "";
+  const phoneEl = document.getElementById("storeContactPhone");
+  const whatsappEl = document.getElementById("storeContactWhatsapp");
+  if (phoneEl) phoneEl.textContent = phone ? `Teléfono: ${phone}` : "Teléfono: —";
+  if (whatsappEl) whatsappEl.textContent = whatsapp ? `WhatsApp: ${whatsapp}` : "WhatsApp: —";
+  const footerPhone = document.getElementById("storeFooterPhone");
+  const footerWhatsapp = document.getElementById("storeFooterWhatsapp");
+  const footerCategories = document.getElementById("storeFooterCategories");
+  if (footerPhone) footerPhone.textContent = phone || "—";
+  if (footerWhatsapp) footerWhatsapp.textContent = whatsapp || "—";
+  if (footerCategories) footerCategories.textContent = categories.slice(0, 4).join(" · ") || "—";
+
   renderStoreCart();
+}
+
+function openStoreCartSection() {
+  openStoreCheckoutSection();
 }
 
 function handleStoreCategoryClick(event) {
   const button = event.target.closest("[data-category]");
   if (!button) return;
-  state.storeCategory = button.dataset.category;
-  elements.storeCategory.value = state.storeCategory;
+  state.storeCategory = state.storeCategory === button.dataset.category ? "" : button.dataset.category;
+  if (elements.storeCategory.value) elements.storeCategory.value = state.storeCategory;
   renderStore();
-  scrollStoreSection("products");
+  scrollStoreSection("catalog");
 }
 
 function scrollStoreSection(section) {
+  if (section === "cart") {
+    toggleQuickCartDrawer(true);
+    return;
+  }
+
   const targets = {
     home: "#storeHomeAnchor",
+    catalog: "#storeCatalogAnchor",
     products: "#storeProductsAnchor",
     categories: "#storeCategoriesAnchor",
     promos: "#storePromosAnchor",
-    cart: ".store-cart",
+    contact: "#storeContactAnchor",
   };
-  const target = document.querySelector(targets[section] || "#storeProductsAnchor");
+  const target = document.querySelector(targets[section] || "#storeCatalogAnchor");
   if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -8360,45 +9641,92 @@ function addStoreItem(productId) {
   if (line) line.quantity += 1;
   else state.storeCart.push({ lineId: createId("cart"), productId, quantity: 1 });
   renderStoreCart();
+  toggleQuickCartDrawer(true);
 }
 
 function removeStoreItem(lineId) {
   state.storeCart = state.storeCart.filter((item) => item.lineId !== lineId);
+  if (!cartRequiresPrescription()) resetStorePrescriptionUpload();
   renderStoreCart();
 }
 
 function clearStoreCart() {
   state.storeCart = [];
+  resetStorePrescriptionUpload();
   renderStoreCart();
+  closeStoreCheckoutSection();
 }
 
 function renderStoreCart() {
+  syncStoreCheckoutElements();
   const totals = storeTotals();
-  elements.storeCartList.innerHTML = state.storeCart.length
+  const linesHtml = state.storeCart.length
     ? state.storeCart
         .map((item) => {
           const product = getProduct(item.productId);
-          return `
-            <div class="ticket-line">
-              <div>
-                <strong>${escapeHTML(product.name)}</strong>
-                <span>${item.quantity} x ${currency.format(product.price)}</span>
-              </div>
-              <button class="ghost-button small" type="button" data-action="remove-store-item" data-id="${item.lineId}">Quitar</button>
-            </div>
-          `;
+          return renderStoreCartLine(item, product);
         })
         .join("")
     : emptyState("El carrito esta vacio.");
 
-  elements.storeSubtotal.textContent = currency.format(totals.subtotal);
-  elements.storeShipping.textContent = totals.shipping === 0 ? "Gratis" : currency.format(totals.shipping);
-  elements.storeTotal.textContent = currency.format(totals.total);
+  if (elements.storeCartList) elements.storeCartList.innerHTML = linesHtml;
+  const quickList = document.getElementById("storeQuickCartList");
+  if (quickList) quickList.innerHTML = linesHtml;
+
+  if (elements.storeSubtotal) elements.storeSubtotal.textContent = currency.format(totals.subtotal);
+  if (elements.storeShipping) elements.storeShipping.textContent = totals.shipping === 0 ? "Gratis" : currency.format(totals.shipping);
+  if (elements.storeTotal) elements.storeTotal.textContent = currency.format(totals.total);
+
+  const checkoutSubtotal = document.getElementById("storeCheckoutSubtotal");
+  const checkoutShipping = document.getElementById("storeCheckoutShipping");
+  const checkoutTotal = document.getElementById("storeCheckoutTotal");
+  if (checkoutSubtotal) checkoutSubtotal.textContent = currency.format(totals.subtotal);
+  if (checkoutShipping) checkoutShipping.textContent = totals.shipping === 0 ? "Gratis" : currency.format(totals.shipping);
+  if (checkoutTotal) checkoutTotal.textContent = currency.format(totals.total);
+
+  const quickSubtotal = document.getElementById("storeQuickSubtotal");
+  const quickTotal = document.getElementById("storeQuickTotal");
+  if (quickSubtotal) quickSubtotal.textContent = currency.format(totals.subtotal);
+  if (quickTotal) quickTotal.textContent = currency.format(totals.total);
+
+  const cartCount = state.storeCart.reduce((total, item) => total + item.quantity, 0);
+  const floatingCount = document.getElementById("storeFloatingCartCount");
+  if (floatingCount) floatingCount.textContent = String(cartCount);
+
+  if (!state.storeCart.length) {
+    resetStorePrescriptionUpload();
+    const submitBtn = document.getElementById("storeCheckoutSubmitButton");
+    if (submitBtn) submitBtn.disabled = true;
+    const step1Btn = document.getElementById("ckoStep1Next");
+    if (step1Btn) step1Btn.disabled = true;
+    const step2Btn = document.getElementById("ckoStep2Next");
+    if (step2Btn) step2Btn.disabled = true;
+  } else {
+    const step1Btn = document.getElementById("ckoStep1Next");
+    if (step1Btn) step1Btn.disabled = false;
+    renderStorePrescriptionCheckout();
+  }
+
+  const checkout = document.getElementById("storeCartSection");
+  if (checkout && !checkout.hidden) renderCheckoutStep();
+}
+
+function getCheckoutAddressString() {
+  const parts = [
+    document.getElementById("ckoDelStreet")?.value,
+    document.getElementById("ckoDelExt")?.value,
+    document.getElementById("ckoDelInt")?.value,
+    document.getElementById("ckoDelColonia")?.value,
+    document.getElementById("ckoDelCity")?.value,
+  ];
+  return parts.filter(Boolean).join(", ");
 }
 
 function fillStoreCustomerAddress() {
   const customer = getCustomer(elements.storeCustomer.value);
-  if (customer && !elements.storeAddress.value.trim()) elements.storeAddress.value = customer.address || "";
+  if (customer && !elements.storeAddress?.value.trim()) {
+    if (elements.storeAddress) elements.storeAddress.value = customer.address || "";
+  }
 }
 
 function storeTotals() {
@@ -8412,7 +9740,14 @@ function storeTotals() {
 
 function createOnlineOrder(event) {
   event.preventDefault();
+  syncPaymentMethodSelect();
   if (!state.storeCart.length) return showToast("Agrega productos antes de generar pedido");
+  if (!canCompleteStoreCheckout()) {
+    renderStorePrescriptionCheckout();
+    const error = document.getElementById("storePrescriptionError");
+    if (error) error.hidden = false;
+    return showToast("Adjunta receta médica para continuar.");
+  }
 
   const customer = getCustomer(elements.storeCustomer.value);
   if (!customer) return showToast("Selecciona o registra un cliente");
@@ -8439,7 +9774,7 @@ function createOnlineOrder(event) {
     paymentStatus: resolveInitialOrderPaymentStatus(paymentStatus, initialStatus),
     paymentMethod: elements.storePaymentMethod.value === "Pendiente" ? "pendiente" : normalizePaymentMethod(elements.storePaymentMethod.value),
     deliveryType,
-    address: elements.storeAddress.value.trim(),
+    address: (elements.storeAddress?.value || getCheckoutAddressString()).trim(),
     subtotal: totals.subtotal,
     discount: 0,
     shipping: totals.shipping,
@@ -8474,8 +9809,10 @@ function createOnlineOrder(event) {
     createSaleFromOrder(order);
   }
   state.storeCart = [];
+  resetStorePrescriptionUpload();
   persistAll();
   elements.storeCheckoutForm.reset();
+  closeStoreCheckoutSection();
   renderAll();
   showToast(`Pedido ${order.id} generado`);
 }
