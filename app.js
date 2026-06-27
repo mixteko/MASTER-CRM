@@ -8252,12 +8252,20 @@ function sendStoreLinkToConversation() {
   showToast("Liga de tienda enviada");
 }
 
+
+function isProductVisibleInPublicStore(product) {
+  if (!product) return false;
+  if (product.deleted === true || product.eliminado === true) return false;
+  if (product.status !== "Activo") return false;
+  return isCategoryVisibleInStore(product.category);
+}
+
 function renderStore() {
   const categoryNames = [
     "Todas",
     ...new Set(
       state.products
-        .filter((product) => product.status === "Activo" && isCategoryVisibleInStore(product.category))
+        .filter(isProductVisibleInPublicStore)
         .map((product) => product.category)
         .filter(Boolean),
     ),
@@ -8271,8 +8279,8 @@ function renderStore() {
     .map((category) => {
       const count =
         category === "Todas"
-          ? state.products.filter((product) => product.status === "Activo" && isCategoryVisibleInStore(product.category)).length
-          : state.products.filter((product) => product.status === "Activo" && product.category === category).length;
+          ? state.products.filter(isProductVisibleInPublicStore).length
+          : state.products.filter((product) => isProductVisibleInPublicStore(product) && product.category === category).length;
       return `
         <button class="${category === state.storeCategory ? "active" : ""}" type="button" data-category="${escapeHTML(category)}">
           <span>${escapeHTML(category)}</span>
@@ -8285,12 +8293,7 @@ function renderStore() {
   const products = state.products.filter((product) => {
     const matchesCategory = state.storeCategory === "Todas" || product.category === state.storeCategory;
     const text = `${product.sku || ""} ${product.name} ${product.category} ${product.description}`.toLowerCase();
-    return (
-      product.status === "Activo" &&
-      isCategoryVisibleInStore(product.category) &&
-      matchesCategory &&
-      text.includes(state.storeQuery)
-    );
+    return isProductVisibleInPublicStore(product) && matchesCategory && text.includes(state.storeQuery);
   });
 
   elements.storeProductGrid.innerHTML = products.length
