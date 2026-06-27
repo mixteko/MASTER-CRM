@@ -4495,6 +4495,9 @@ const state = {
   saleRangeFilter: "all",
   saleDateFrom: "",
   saleDateTo: "",
+  salesSubTab: "ventas",
+  rentabilidadRange: "month",
+  rentabilidadGateway: "all",
 };
 
 let storefrontStructureReady = false;
@@ -4998,6 +5001,33 @@ const SALE_RANGE_LABELS = {
   month: "Mes",
   custom: "Personalizado",
 };
+
+const GATEWAY_FEE_RULES = {
+  efectivo: { rate: 0, iva: false, label: "Efectivo" },
+  transferencia: { rate: 0, iva: false, label: "Transferencia" },
+  mercado_pago: { rate: 0.035, iva: true, label: "Mercado Pago" },
+  clip: { rate: 0.036, iva: true, label: "Clip" },
+  tarjeta: { rate: 0.035, iva: true, label: "Tarjeta" },
+  pendiente: { rate: 0, iva: false, label: "Pendiente" },
+  otro: { rate: 0, iva: false, label: "Otro" },
+};
+
+const RENTABILIDAD_RANGES = [
+  { key: "today", label: "Hoy" },
+  { key: "week", label: "Semana" },
+  { key: "month", label: "Mes" },
+  { key: "year", label: "Año" },
+];
+
+const RENTABILIDAD_GATEWAYS = [
+  { key: "all", label: "Todas" },
+  { key: "efectivo", label: "Efectivo" },
+  { key: "transferencia", label: "Transferencia" },
+  { key: "mercado_pago", label: "Mercado Pago" },
+  { key: "clip", label: "Clip" },
+  { key: "tarjeta", label: "Tarjeta" },
+  { key: "pendiente", label: "Pendiente" },
+];
 
 const PAYMENT_CONFIG_VERSION = 3;
 
@@ -6454,6 +6484,18 @@ function handleDocumentAction(event) {
       showToast("La fecha inicio no puede ser mayor que la fecha fin.");
       return;
     }
+    renderSales();
+  }
+  if (action.dataset.action === "filter-rentabilidad-range") {
+    state.rentabilidadRange = action.dataset.range || "month";
+    renderSales();
+  }
+  if (action.dataset.action === "filter-rentabilidad-gateway") {
+    state.rentabilidadGateway = action.dataset.gateway || "all";
+    renderSales();
+  }
+  if (action.dataset.action === "switch-sales-tab") {
+    state.salesSubTab = action.dataset.salesTab || "ventas";
     renderSales();
   }
   if (action.dataset.action === "close-order-dialog") closeOrderDialog();
@@ -11213,6 +11255,87 @@ function calculateSaleProfit(sale, products = state.products) {
   return { profit: total - totalCost, hasCost: true, cost: totalCost, total };
 }
 
+function estimatePaymentGatewayFee(total, gateway) {
+  const base = toNumber(total);
+  const rule = GATEWAY_FEE_RULES[normalizePaymentMethod(gateway)] || GATEWAY_FEE_RULES.otro;
+  const comision = base * rule.rate;
+  const iva = rule.iva ? comision * 0.16 : 0;
+  return { comision, iva, total: comision + iva, rate: rule.rate, hasIva: rule.iva };
+}
+
+function calculateOrderFinancials(sale, products = state.products) {
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const subtotalProductos = items.reduce((sum, item) => sum + toNumber(item.subtotal), 0);
+  const { totalCost } = calculateSaleCost(sale, products);
+  const gateway = normalizePaymentMethod(sale.paymentMethod);
+  const totalCobrado = toNumber(sale.total);
+  const envioCobrado = toNumber(sale.shipping ?? sale.shippingCost);
+  const envioReal = envioCobrado > 0 ? envioCobrado * 0.7 : 0;
+  const descuentosCupones = toNumber(sale.discount);
+  const fee = estimatePaymentGatewayFee(totalCobrado, gateway);
+  const devoluciones = 0;
+  const gananciaBruta = totalCobrado - totalCost - descuentosCupones;
+  const gananciaNeta = gananciaBruta - envioReal - fee.total - devoluciones;
+  return {
+    folio: sale.id || sale.orderId || "—",
+    fecha: sale.createdAt || "",
+    cliente: sale.customerName || "—",
+    gateway,
+    gatewayLabel: GATEWAY_FEE_RULES[gateway]?.label || gateway,
+    subtotalProductos,
+    costoProductos: totalCost,
+    envioCobrado,
+    envioReal,
+    pasarelaPago: gateway,
+    comisionPasarela: fee.comision,
+    ivaComision: fee.iva,
+    comisionTotal: fee.total,
+    totalCobrado,
+    descuentosCupones,
+    devoluciones,
+    gananciaBruta,
+    gananciaNeta,
+  };
+}
+
+function calculateNetProfit(financials) {
+  if (!financials) return 0;
+  return toNumber(financials.gananciaNeta);
+}
+
+function getProfitMargin(totalCobrado, gananciaNeta) {
+  const total = toNumber(totalCobrado);
+  if (total <= 0) return 0;
+  return (toNumber(gananciaNeta) / total) * 100;
+}
+
+function getRentabilidadSales() {
+  return state.sales.filter((sale) => {
+    const status = normalizeSaleStatus(sale.status, sale.paymentStatus);
+    if (status === "cancelada") return false;
+    if (!isSaleInRentabilidadRange(sale, state.rentabilidadRange)) return false;
+    if (state.rentabilidadGateway !== "all") {
+      if (normalizePaymentMethod(sale.paymentMethod) !== state.rentabilidadGateway) return false;
+    }
+    return true;
+  });
+}
+
+function isSaleInRentabilidadRange(sale, rangeFilter) {
+  if (rangeFilter === "today") return isSaleInDateRange(sale, "today", "", "");
+  if (rangeFilter === "week") return isSaleInDateRange(sale, "week", "", "");
+  if (rangeFilter === "month") return isSaleInDateRange(sale, "month", "", "");
+  if (rangeFilter === "year") {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    const saleDate = new Date(sale.createdAt);
+    if (Number.isNaN(saleDate.getTime())) return false;
+    return saleDate >= start && saleDate <= end;
+  }
+  return true;
+}
+
 function calculateSalesSummary(sales, products = state.products) {
   let totalSold = 0;
   let totalCollected = 0;
@@ -11580,6 +11703,14 @@ function renderSaleIdCell(sale) {
 
 function renderSales() {
   ensureSalesViewPolish();
+  ensureSalesSubTabs();
+  renderSalesSubTabs();
+
+  if (state.salesSubTab === "rentabilidad") {
+    renderRentabilidad();
+    return;
+  }
+
   renderSaleFilters();
 
   const summary = calculateSalesSummary(getSalesForSummary());
@@ -11624,6 +11755,228 @@ function renderSales() {
         })
         .join("")
     : tableEmpty(10, emptyMessage);
+}
+
+function ensureSalesSubTabs() {
+  const section = document.getElementById("ventas");
+  if (!section || document.getElementById("salesSubTabBar")) return;
+  injectRentabilidadStyles();
+  const heading = section.querySelector(".sales-page-heading");
+  const tabBar = document.createElement("nav");
+  tabBar.id = "salesSubTabBar";
+  tabBar.className = "sales-subtab-bar";
+  tabBar.setAttribute("aria-label", "Secciones de Ventas");
+  tabBar.innerHTML = `
+    <button class="sales-subtab is-active" type="button" data-action="switch-sales-tab" data-sales-tab="ventas">Ventas</button>
+    <button class="sales-subtab" type="button" data-action="switch-sales-tab" data-sales-tab="rentabilidad">Rentabilidad</button>
+  `;
+  heading?.insertAdjacentElement("afterend", tabBar);
+  const rentabilidadSection = document.createElement("section");
+  rentabilidadSection.id = "rentabilidadPanel";
+  rentabilidadSection.className = "rentabilidad-panel";
+  rentabilidadSection.hidden = true;
+  tabBar.insertAdjacentElement("afterend", rentabilidadSection);
+}
+
+function renderSalesSubTabs() {
+  const tab = state.salesSubTab || "ventas";
+  document.querySelectorAll("#salesSubTabBar .sales-subtab").forEach((btn) => {
+    btn.classList.toggle("is-active", btn.dataset.salesTab === tab);
+  });
+  const rentabilidadPanel = document.getElementById("rentabilidadPanel");
+  const salesPanels = document.querySelectorAll("#ventas > .sales-summary-panel, #ventas > .sales-list-panel");
+  if (tab === "rentabilidad") {
+    if (rentabilidadPanel) rentabilidadPanel.hidden = false;
+    salesPanels.forEach((el) => el.setAttribute("hidden", ""));
+  } else {
+    if (rentabilidadPanel) rentabilidadPanel.hidden = true;
+    salesPanels.forEach((el) => el.removeAttribute("hidden"));
+  }
+}
+
+function renderRentabilidad() {
+  const panel = document.getElementById("rentabilidadPanel");
+  if (!panel) return;
+  const sales = getRentabilidadSales();
+  const financials = sales.map((sale) => calculateOrderFinancials(sale));
+  const totals = financials.reduce(
+    (acc, fin) => {
+      acc.totalCobrado += fin.totalCobrado;
+      acc.costoProductos += fin.costoProductos;
+      acc.comisiones += fin.comisionTotal;
+      acc.envioReal += fin.envioReal;
+      acc.gananciaNeta += fin.gananciaNeta;
+      return acc;
+    },
+    { totalCobrado: 0, costoProductos: 0, comisiones: 0, envioReal: 0, gananciaNeta: 0 },
+  );
+  const byGateway = groupFinancialsByGateway(financials);
+  panel.innerHTML = `
+    <div class="rentabilidad-filters-row">
+      <div class="rentabilidad-filter-group" role="group" aria-label="Rango de fecha">
+        ${RENTABILIDAD_RANGES.map((r) => `
+          <button class="rentabilidad-chip${state.rentabilidadRange === r.key ? " is-active" : ""}" type="button" data-action="filter-rentabilidad-range" data-range="${r.key}">${r.label}</button>
+        `).join("")}
+      </div>
+      <div class="rentabilidad-filter-group" role="group" aria-label="Pasarela de pago">
+        ${RENTABILIDAD_GATEWAYS.map((g) => `
+          <button class="rentabilidad-chip${state.rentabilidadGateway === g.key ? " is-active" : ""}" type="button" data-action="filter-rentabilidad-gateway" data-gateway="${g.key}">${g.label}</button>
+        `).join("")}
+      </div>
+    </div>
+    <p class="rentabilidad-disclaimer">Cálculos estimados. Las comisiones reales se ajustarán cuando se conecte la pasarela de pago.</p>
+    <div class="rentabilidad-kpis">
+      <article class="rentabilidad-kpi rentabilidad-kpi--primary">
+        <span class="rentabilidad-kpi-label">Total vendido</span>
+        <strong>${currency.format(totals.totalCobrado)}</strong>
+      </article>
+      <article class="rentabilidad-kpi">
+        <span class="rentabilidad-kpi-label">Costo estimado productos</span>
+        <strong>${currency.format(totals.costoProductos)}</strong>
+      </article>
+      <article class="rentabilidad-kpi">
+        <span class="rentabilidad-kpi-label">Comisiones estimadas</span>
+        <strong>${currency.format(totals.comisiones)}</strong>
+      </article>
+      <article class="rentabilidad-kpi">
+        <span class="rentabilidad-kpi-label">Envío real estimado</span>
+        <strong>${currency.format(totals.envioReal)}</strong>
+      </article>
+      <article class="rentabilidad-kpi ${totals.gananciaNeta >= 0 ? "rentabilidad-kpi--positive" : "rentabilidad-kpi--negative"}">
+        <span class="rentabilidad-kpi-label">Ganancia neta estimada</span>
+        <strong>${currency.format(totals.gananciaNeta)}</strong>
+      </article>
+    </div>
+    <div class="rentabilidad-table-wrap">
+      <table class="rentabilidad-table">
+        <thead>
+          <tr>
+            <th>Folio</th>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Total cobrado</th>
+            <th>Costo productos</th>
+            <th>Comisión pasarela</th>
+            <th>Envío real</th>
+            <th>Ganancia neta</th>
+            <th>Margen %</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${financials.length
+            ? financials.map((fin) => {
+                const margin = getProfitMargin(fin.totalCobrado, fin.gananciaNeta);
+                const tone = fin.gananciaNeta >= 0 ? "is-positive" : "is-negative";
+                return `
+                  <tr>
+                    <td><strong>${escapeHTML(fin.folio)}</strong></td>
+                    <td>${escapeHTML(formatCompactDateTime(fin.fecha) || "—")}</td>
+                    <td title="${escapeHTML(fin.cliente)}">${escapeHTML(fin.cliente)}</td>
+                    <td>${currency.format(fin.totalCobrado)}</td>
+                    <td>${currency.format(fin.costoProductos)}</td>
+                    <td>${currency.format(fin.comisionTotal)} <span class="rentabilidad-gateway-badge">${escapeHTML(fin.gatewayLabel)}</span></td>
+                    <td>${currency.format(fin.envioReal)}</td>
+                    <td class="rentabilidad-${tone}">${currency.format(fin.gananciaNeta)}</td>
+                    <td class="rentabilidad-${tone}">${margin.toFixed(1)}%</td>
+                  </tr>
+                `;
+              }).join("")
+            : tableEmpty(9, "Sin ventas en este rango o filtro.")}
+        </tbody>
+      </table>
+    </div>
+    <div class="rentabilidad-gateway-section">
+      <h3 class="rentabilidad-section-title">Comparativo por pasarela</h3>
+      <div class="rentabilidad-gateway-grid">
+        ${byGateway.length
+          ? byGateway.map((g) => `
+              <article class="rentabilidad-gateway-card">
+                <span class="rentabilidad-gateway-name">${escapeHTML(g.label)}</span>
+                <div class="rentabilidad-gateway-stat"><span>Ventas</span><strong>${g.count}</strong></div>
+                <div class="rentabilidad-gateway-stat"><span>Total cobrado</span><strong>${currency.format(g.totalCobrado)}</strong></div>
+                <div class="rentabilidad-gateway-stat"><span>Comisión total</span><strong>${currency.format(g.comisionTotal)}</strong></div>
+                <div class="rentabilidad-gateway-stat ${g.gananciaNeta >= 0 ? "is-positive" : "is-negative"}"><span>Ganancia neta</span><strong>${currency.format(g.gananciaNeta)}</strong></div>
+              </article>
+            `).join("")
+          : emptyState("Sin datos de pasarelas.")}
+      </div>
+    </div>
+  `;
+}
+
+function groupFinancialsByGateway(financials) {
+  const map = {};
+  financials.forEach((fin) => {
+    const key = fin.gateway;
+    if (!map[key]) {
+      map[key] = {
+        key,
+        label: fin.gatewayLabel,
+        count: 0,
+        totalCobrado: 0,
+        comisionTotal: 0,
+        gananciaNeta: 0,
+      };
+    }
+    map[key].count += 1;
+    map[key].totalCobrado += fin.totalCobrado;
+    map[key].comisionTotal += fin.comisionTotal;
+    map[key].gananciaNeta += fin.gananciaNeta;
+  });
+  return Object.values(map).sort((a, b) => b.totalCobrado - a.totalCobrado);
+}
+
+function injectRentabilidadStyles() {
+  if (document.getElementById("rentabilidad-styles")) return;
+  const style = document.createElement("style");
+  style.id = "rentabilidad-styles";
+  style.textContent = `
+    .sales-subtab-bar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--master-border, #e2e8f0); }
+    .sales-subtab { border: 0; background: none; padding: 10px 20px; font-size: 0.88rem; font-weight: 600; color: var(--master-muted, #64748b); cursor: pointer; border-bottom: 2px solid transparent; transition: color 150ms, border-color 150ms; }
+    .sales-subtab:hover { color: var(--master-text, #0f172a); }
+    .sales-subtab.is-active { color: var(--master-blue-text, #1e40af); border-bottom-color: var(--master-blue, #2563eb); }
+    .rentabilidad-panel { display: flex; flex-direction: column; gap: 16px; }
+    .rentabilidad-panel[hidden] { display: none; }
+    .rentabilidad-filters-row { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+    .rentabilidad-filter-group { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rentabilidad-chip { border: 1px solid var(--master-border, #e2e8f0); background: var(--master-card, #fff); color: var(--master-text, #334155); font-size: 0.8rem; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer; transition: border-color 150ms, background 150ms, color 150ms; }
+    .rentabilidad-chip:hover { border-color: var(--master-blue, #2563eb); color: var(--master-blue-text, #1e40af); }
+    .rentabilidad-chip.is-active { background: var(--master-blue, #2563eb); color: #fff; border-color: var(--master-blue, #2563eb); }
+    .rentabilidad-disclaimer { font-size: 0.78rem; color: var(--master-muted, #94a3b8); margin: 0; }
+    .rentabilidad-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .rentabilidad-kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px; border: 1px solid var(--master-border, #e2e8f0); border-radius: 12px; background: var(--master-card, #fff); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    .rentabilidad-kpi--primary { border-color: var(--master-blue, #2563eb); background: #eff6ff; }
+    .rentabilidad-kpi--positive { border-color: #16a34a; background: #f0fdf4; }
+    .rentabilidad-kpi--negative { border-color: #dc2626; background: #fef2f2; }
+    .rentabilidad-kpi-label { font-size: 0.76rem; font-weight: 600; color: var(--master-muted, #64748b); text-transform: uppercase; letter-spacing: 0.03em; }
+    .rentabilidad-kpi strong { font-size: 1.25rem; font-weight: 800; color: var(--master-text, #0f172a); }
+    .rentabilidad-kpi--primary strong { color: var(--master-blue-text, #1e40af); }
+    .rentabilidad-kpi--positive strong { color: #16a34a; }
+    .rentabilidad-kpi--negative strong { color: #dc2626; }
+    .rentabilidad-table-wrap { overflow-x: auto; border: 1px solid var(--master-border, #e2e8f0); border-radius: 12px; background: var(--master-card, #fff); }
+    .rentabilidad-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .rentabilidad-table thead th { text-align: left; padding: 10px 12px; font-size: 0.76rem; font-weight: 700; color: var(--master-muted, #64748b); text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--master-border, #e2e8f0); white-space: nowrap; }
+    .rentabilidad-table tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; color: var(--master-text, #0f172a); }
+    .rentabilidad-table tbody tr:last-child td { border-bottom: 0; }
+    .rentabilidad-table tbody tr:hover { background: #f8fafc; }
+    .rentabilidad-gateway-badge { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 4px; font-size: 0.68rem; font-weight: 700; background: #f1f5f9; color: var(--master-muted, #64748b); }
+    .rentabilidad-is-positive { color: #16a34a; font-weight: 700; }
+    .rentabilidad-is-negative { color: #dc2626; font-weight: 700; }
+    .rentabilidad-gateway-section { display: flex; flex-direction: column; gap: 12px; }
+    .rentabilidad-section-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--master-text, #0f172a); }
+    .rentabilidad-gateway-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+    .rentabilidad-gateway-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--master-border, #e2e8f0); border-radius: 12px; background: var(--master-card, #fff); }
+    .rentabilidad-gateway-name { font-size: 0.9rem; font-weight: 700; color: var(--master-blue-text, #1e40af); }
+    .rentabilidad-gateway-stat { display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: var(--master-muted, #64748b); }
+    .rentabilidad-gateway-stat strong { color: var(--master-text, #0f172a); }
+    .rentabilidad-gateway-stat.is-positive strong { color: #16a34a; }
+    .rentabilidad-gateway-stat.is-negative strong { color: #dc2626; }
+    @media (max-width: 720px) {
+      .rentabilidad-kpis { grid-template-columns: 1fr 1fr; }
+      .rentabilidad-gateway-grid { grid-template-columns: 1fr; }
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 function populateCommerceCustomerSelect(select, selectedId = "") {
